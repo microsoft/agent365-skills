@@ -37,7 +37,7 @@ copilot plugin install agent365@agent365-skills
 
 ## What's Included
 
-- **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and local CLI testing
+- **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, AgentsPlayground smoke testing, and local CLI testing
 - **Automatic agent detection** — skills classify your agent by framework (.NET AgentFramework, Node.js LangChain) and registration type (M365 custom engine Entra app ID / Blueprint / all other) before any code runs; no manual selection required
 - **MCP configuration** for WorkIQ tool servers (Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse)
 - **Validator scripts** that run as stop hooks to verify each skill completed correctly
@@ -113,6 +113,19 @@ token resolver into your agent entry point and message handler.
 "Enable tracing"               "Add OTel"
 ```
 
+### `test-local` — Smoke Test with AgentsPlayground
+
+Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in
+the background, and opens AgentsPlayground pointed at your local endpoint — no deployment
+or Bot Framework auth required.
+
+**Trigger phrases:**
+```
+"Test this agent locally"        "Run agent locally"
+"Open AgentsPlayground"          "Launch local test session"
+"Smoke test this agent"          "Test without deploying"
+```
+
 ### `add-cli` — Add Local CLI Runner
 
 Scaffolds an interactive terminal REPL for testing your agent locally without deploying to
@@ -156,6 +169,11 @@ I have a new .NET AgentFramework agent. Register it with Agent 365 and add Work 
 ```
 Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — I'll need to know what to give our Global Administrator.
+```
+
+**Smoke test without deploying (AgentsPlayground):**
+```
+Test my agent locally without deploying to Teams.
 ```
 
 **Set up local testing:**

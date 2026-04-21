@@ -337,7 +337,66 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 ---
 
-## Phase 8: Final Summary
+## Phase 8: Launch Local Test Session
+
+**TaskCreate** — "Launch local test session"
+
+Ask the user:
+
+```
+AskUserQuestion:
+  question: "Build succeeded. Want to start the agent and open AgentsPlayground for a quick smoke test?"
+  options:
+    - "Yes — start agent and open AgentsPlayground"
+    - "No — I'll test later"
+```
+
+### If yes
+
+Inform the user:
+> Starting the agent in the background. AgentsPlayground will open once it initializes.
+
+**For .NET AgentFramework:**
+
+```bash
+dotnet run
+```
+
+Wait 4 seconds, then:
+
+```bash
+agentsplayground -e "http://localhost:5000/api/messages" -c "emulator"
+```
+
+**For Node.js LangChain:**
+
+```bash
+npm start
+```
+
+Wait 3 seconds, then:
+
+```bash
+agentsplayground -e "http://localhost:3978/api/messages" -c "emulator"
+```
+
+Tell the user:
+> **What to watch for in the terminal:**
+> - `.NET`: Look for `[Microsoft.Agents.A365.Observability] Exporting span:` lines — confirms traces are flowing.
+> - `Node.js`: Look for observability log lines from `@microsoft/agents-a365-observability`.
+>
+> Observability is currently **disabled** (`EnableAgent365Exporter: false` / `ENABLE_A365_OBSERVABILITY_EXPORTER=false`).
+> Set it to `true` in your config when you're ready to export traces to the A365 service.
+
+### If no
+
+Skip launch — proceed to Final Summary.
+
+**TaskUpdate** — Mark complete.
+
+---
+
+## Phase 9: Final Summary
 
 1. **TaskList** — Show all completed tasks.
 

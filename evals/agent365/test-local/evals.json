@@ -1,0 +1,95 @@
+{
+  "skill_name": "test-local",
+  "eval_instructions": "When running these evals, test against real .NET AgentFramework and Node.js LangChain agent projects. The agent must not modify any source files — all actions are read-only against the codebase.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Test this agent locally",
+      "description": "Happy path — .NET AgentFramework agent, agentsplayground already installed, user confirms launch",
+      "expected_output": "The skill detects .NET AgentFramework, confirms agentsplayground is installed, runs dotnet build successfully, asks the user whether to launch, starts dotnet run in the background, launches agentsplayground -e http://localhost:5000/api/messages -c emulator, and guides the smoke test.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type detected as .NET AgentFramework",
+        "Phase 1: Default port set to 5000",
+        "Phase 2: agentsplayground --version is run to check installation",
+        "Phase 2: agentsplayground is confirmed installed — no install attempted",
+        "Phase 3: dotnet build is run and succeeds",
+        "Phase 4: User is asked whether to start agent and open playground",
+        "Phase 4: dotnet run is started in background after user confirms",
+        "Phase 4: agentsplayground -e http://localhost:5000/api/messages -c emulator is launched",
+        "Phase 5: User is told to watch terminal for Microsoft.Agents.A365.Observability log lines",
+        "Phase 5: User is told to set EnableAgent365Exporter: true to export to A365 service",
+        "Phase 6: Final summary shows agent endpoint and emulator mode note",
+        "No source files are modified"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run agent locally",
+      "description": "Happy path — Node.js LangChain agent, agentsplayground already installed, user confirms launch",
+      "expected_output": "The skill detects Node.js LangChain, confirms agentsplayground is installed, runs npm install successfully, asks the user whether to launch, starts npm start in the background, launches agentsplayground -e http://localhost:3978/api/messages -c emulator, and guides the smoke test.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type detected as Node.js LangChain",
+        "Phase 1: Default port set to 3978",
+        "Phase 2: agentsplayground --version is run to check installation",
+        "Phase 2: agentsplayground is confirmed installed — no install attempted",
+        "Phase 3: npm install is run and succeeds",
+        "Phase 4: User is asked whether to start agent and open playground",
+        "Phase 4: npm start is started in background after user confirms",
+        "Phase 4: agentsplayground -e http://localhost:3978/api/messages -c emulator is launched",
+        "Phase 5: User is told to watch terminal for observability log lines",
+        "Phase 5: User is told to set ENABLE_A365_OBSERVABILITY_EXPORTER=true to export",
+        "Phase 6: Final summary shows agent endpoint and emulator mode note",
+        "No source files are modified"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Open agentsplayground",
+      "description": "agentsplayground not installed — skill installs it automatically",
+      "expected_output": "The skill detects the agent type, finds agentsplayground is missing, runs npm install -g @microsoft/agentsplayground, confirms it installed, then continues the normal launch flow.",
+      "files": [],
+      "expectations": [
+        "Phase 2: agentsplayground --version returns nothing — not installed",
+        "Phase 2: npm install -g @microsoft/agentsplayground is run",
+        "Phase 2: agentsplayground --version is re-run to confirm successful install",
+        "Skill continues to Phase 3 after successful install",
+        "No source files are modified"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Launch local test session",
+      "description": "User declines to launch — skill shows manual commands and exits cleanly",
+      "expected_output": "The skill completes detection, install check, and build, then asks the user whether to launch. When the user says no, the skill shows the two terminal commands and exits without starting any processes.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type detected",
+        "Phase 2: agentsplayground confirmed or installed",
+        "Phase 3: Build passes",
+        "Phase 4: User is asked whether to launch — user says no",
+        "Phase 4: Manual commands are shown (start command + agentsplayground command)",
+        "Phase 4: No background process is started",
+        "Phase 6: Final summary shown",
+        "No source files are modified"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Smoke test this agent",
+      "description": "Build fails — skill stops before attempting launch",
+      "expected_output": "The skill detects the agent type, confirms agentsplayground is installed, attempts to build, encounters build errors, presents the error output to the user, and stops without launching anything.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type detected",
+        "Phase 2: agentsplayground confirmed installed",
+        "Phase 3: Build command is run and fails",
+        "Phase 3: Error output is shown to user",
+        "Phase 3: Skill stops — does not proceed to Phase 4",
+        "No background processes are started",
+        "No source files are modified"
+      ]
+    }
+  ]
+}
