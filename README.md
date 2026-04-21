@@ -38,6 +38,7 @@ copilot plugin install agent365@agent365-skills
 ## What's Included
 
 - **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and local CLI testing
+- **Automatic agent detection** — skills classify your agent by framework (.NET AgentFramework, Node.js LangChain) and registration type (M365 custom engine Entra app ID / Blueprint / all other) before any code runs; no manual selection required
 - **MCP configuration** for WorkIQ tool servers (Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse)
 - **Validator scripts** that run as stop hooks to verify each skill completed correctly
 - **Reference patterns** for both .NET AgentFramework and Node.js LangChain agents
