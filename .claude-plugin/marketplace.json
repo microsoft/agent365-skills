@@ -3,9 +3,13 @@
   "displayName": "Agent 365 Skills",
   "description": "Production-ready skills for instrumenting and registering Microsoft Agent 365 agents — works with Claude Code, GitHub Copilot CLI, and Claude CLI.",
   "version": "1.0.0",
+  "owner": {
+    "name": "Microsoft",
+    "url": "https://github.com/biswapm"
+  },
   "publisher": "Microsoft Agent 365 Platform Team",
-  "homepage": "https://github.com/microsoft/Agent365-Samples",
-  "repository": "https://github.com/microsoft/agent365-skills",
+  "homepage": "https://github.com/biswapm/agent365-skills",
+  "repository": "https://github.com/biswapm/agent365-skills",
   "license": "MIT",
   "plugins": [
     {
