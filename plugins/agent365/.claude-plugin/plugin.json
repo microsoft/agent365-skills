@@ -1,32 +1,14 @@
 {
   "name": "agent365",
-  "displayName": "Agent 365",
-  "description": "Instrument A365 observability and create agent blueprints — for .NET AgentFramework and Node.js LangChain agents.",
   "version": "1.1.0",
-  "skills": [
-    {
-      "name": "instrument-observability",
-      "displayName": "Instrument A365 Observability",
-      "description": "Detects agent type (dotnet AgentFramework, Node.js LangChain, or custom), validates it against the A365 supported list, instruments OTel tracing with BaggageBuilder and the agentic token resolver, configures environment variables, verifies the build passes, and explains Defender trace pickup requirements.",
-      "skillFile": "./skills/instrument-observability/SKILL.md"
-    },
-    {
-      "name": "a365-setup",
-      "displayName": "A365 Setup",
-      "description": "Full Agent 365 CLI setup lifecycle. Asks two path-determination questions (agent type and capabilities), then follows the correct path: verifies CLI, validates Azure prerequisites, configures the blueprint (AI Teammate path), runs a365 setup all, and publishes and deploys the agent (AI Teammate path). Supports .NET AgentFramework, Node.js LangChain, and Python agents.",
-      "skillFile": "./skills/a365-setup/SKILL.md"
-    },
-    {
-      "name": "add-workiq-tools",
-      "displayName": "Add WorkIQ Tools",
-      "description": "Adds A365 WorkIQ MCP tools to an existing .NET AgentFramework or Node.js LangChain agent. Runs a365 develop list-available, adds selected servers via a365 develop add-mcp-servers, wires GetMcpToolsAsync in agent code, and guides the permissions handoff.",
-      "skillFile": "./skills/add-workiq-tools/SKILL.md"
-    },
-    {
-      "name": "add-cli",
-      "displayName": "Add CLI Runner",
-      "description": "Adds a local CLI runner to an existing .NET AgentFramework or Node.js LangChain agent, enabling developers to chat with the agent interactively from the terminal without deploying to Teams or a messaging endpoint.",
-      "skillFile": "./skills/add-cli/SKILL.md"
-    }
-  ]
+  "description": "Skills for Microsoft Agent 365 — register blueprints, add WorkIQ MCP tools, instrument observability, and add local CLI runners. Supports .NET AgentFramework and Node.js LangChain.",
+  "author": {
+    "name": "Microsoft",
+    "url": "https://github.com/biswapm"
+  },
+  "repository": "https://github.com/biswapm/agent365-skills",
+  "homepage": "https://github.com/biswapm/agent365-skills",
+  "license": "MIT",
+  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "blueprint"],
+  "skills": "./skills/"
 }

@@ -1,24 +1,19 @@
 {
   "name": "agent365-skills",
-  "displayName": "Agent 365 Skills",
-  "description": "Production-ready skills for instrumenting and registering Microsoft Agent 365 agents — works with Claude Code, GitHub Copilot CLI, and Claude CLI.",
+  "description": "Production-ready skills for Microsoft Agent 365 — blueprint setup, WorkIQ MCP tools, OTel observability, and local CLI runners. Works with Claude Code.",
   "version": "1.0.0",
   "owner": {
     "name": "Microsoft",
     "url": "https://github.com/biswapm"
   },
-  "publisher": "Microsoft Agent 365 Platform Team",
-  "homepage": "https://github.com/biswapm/agent365-skills",
   "repository": "https://github.com/biswapm/agent365-skills",
+  "homepage": "https://github.com/biswapm/agent365-skills",
   "license": "MIT",
   "plugins": [
     {
       "name": "agent365",
-      "displayName": "Agent 365",
       "description": "Instrument observability and create agent blueprints — for .NET AgentFramework and Node.js LangChain agents.",
-      "source": "./plugins/agent365",
-      "category": "development",
-      "tags": ["agent365", "microsoft", "observability", "opentelemetry", "langchain", "dotnet", "blueprint", "m365"]
+      "source": "./plugins/agent365"
     }
   ]
 }
