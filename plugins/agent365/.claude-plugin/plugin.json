@@ -8,112 +8,25 @@
       "name": "instrument-observability",
       "displayName": "Instrument A365 Observability",
       "description": "Detects agent type (dotnet AgentFramework, Node.js LangChain, or custom), validates it against the A365 supported list, instruments OTel tracing with BaggageBuilder and the agentic token resolver, configures environment variables, verifies the build passes, and explains Defender trace pickup requirements.",
-      "skillFile": "./skills/instrument-observability/SKILL.md",
-      "userInvocable": true,
-      "argumentHint": "Optional: path to agent project, or framework hint (dotnet|nodejs|python)",
-      "triggers": [
-        "instrument observability",
-        "instrument observability for this agent",
-        "add a365 observability",
-        "add observability",
-        "add observability for this agent",
-        "add otel",
-        "instrument agent",
-        "enable tracing",
-        "add telemetry",
-        "observe this agent",
-        "set up observability",
-        "add tracing",
-        "emit traces",
-        "instrument for defender",
-        "instrument traces",
-        "add a365 traces",
-        "wire up observability",
-        "make my agent a365 compliant",
-        "make this agent a365 compliant",
-        "make this agent a365 ready",
-        "prepare agent for a365"
-      ]
+      "skillFile": "./skills/instrument-observability/SKILL.md"
     },
     {
       "name": "a365-setup",
       "displayName": "A365 Setup",
       "description": "Full Agent 365 CLI setup lifecycle. Asks two path-determination questions (agent type and capabilities), then follows the correct path: verifies CLI, validates Azure prerequisites, configures the blueprint (AI Teammate path), runs a365 setup all, and publishes and deploys the agent (AI Teammate path). Supports .NET AgentFramework, Node.js LangChain, and Python agents.",
-      "skillFile": "./skills/a365-setup/SKILL.md",
-      "userInvocable": true,
-      "argumentHint": "Optional: agent project path",
-      "triggers": [
-        "run a365 setup",
-        "create blueprint",
-        "register agent",
-        "setup agent blueprint",
-        "onboard agent",
-        "create agent blueprint",
-        "run cli setup",
-        "run a365 register",
-        "register blueprint",
-        "provision agent",
-        "deploy agent",
-        "publish agent",
-        "a365 full setup",
-        "setup and deploy agent",
-        "onboard and deploy",
-        "publish and deploy agent",
-        "set up agent 365",
-        "configure agent 365 cli",
-        "run agent 365 setup"
-      ]
+      "skillFile": "./skills/a365-setup/SKILL.md"
     },
     {
       "name": "add-workiq-tools",
       "displayName": "Add WorkIQ Tools",
-      "description": "Installs and registers A365 WorkIQ MCP tools from the Microsoft Agents A365 SDK into an existing .NET AgentFramework or Node.js LangChain agent. WorkIQ tools provide pre-built M365 data access: Teams messages, SharePoint documents, calendar, Planner tasks, and user presence.",
-      "skillFile": "./skills/add-workiq-tools/SKILL.md",
-      "userInvocable": true,
-      "argumentHint": "Optional: tool categories (teams|sharepoint|calendar|tasks|presence|all)",
-      "triggers": [
-        "add workiq tools",
-        "add a365 tools",
-        "add work intelligence tools",
-        "add microsoft 365 tools",
-        "wire up workiq",
-        "add workiq to this agent",
-        "add mcp workiq",
-        "add workiq mcp tools",
-        "enable workiq",
-        "add m365 tools to agent",
-        "add teams tools",
-        "add sharepoint tools",
-        "add calendar tools",
-        "add graph tools",
-        "add mcp tools to this agent",
-        "wire up mcp tools"
-      ]
+      "description": "Adds A365 WorkIQ MCP tools to an existing .NET AgentFramework or Node.js LangChain agent. Runs a365 develop list-available, adds selected servers via a365 develop add-mcp-servers, wires GetMcpToolsAsync in agent code, and guides the permissions handoff.",
+      "skillFile": "./skills/add-workiq-tools/SKILL.md"
     },
     {
       "name": "add-cli",
       "displayName": "Add CLI Runner",
       "description": "Adds a local CLI runner to an existing .NET AgentFramework or Node.js LangChain agent, enabling developers to chat with the agent interactively from the terminal without deploying to Teams or a messaging endpoint.",
-      "skillFile": "./skills/add-cli/SKILL.md",
-      "userInvocable": true,
-      "argumentHint": "Optional: CLI runner name",
-      "triggers": [
-        "add cli to this agent",
-        "add a console runner",
-        "add terminal interface",
-        "run agent from command line",
-        "add local chat cli",
-        "add cli runner",
-        "add repl to agent",
-        "add local cli",
-        "test agent from terminal",
-        "add console chat",
-        "run this agent locally",
-        "add interactive cli",
-        "chat with agent from terminal",
-        "add dotnet cli runner",
-        "add node cli runner"
-      ]
+      "skillFile": "./skills/add-cli/SKILL.md"
     }
   ]
 }
