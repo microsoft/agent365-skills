@@ -97,9 +97,9 @@ After both questions are answered, set `isAITeammate = true` if `capabilities = 
 
 **RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. Do NOT run `az account show`, ask about deployment type, or gather Azure values — those belong to Steps 3 and 2 respectively. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
 
-**RULE 5 — INPUT FIELDS.** In Step 3 (AI Teammate path only), present exactly 5 fields (Azure-hosted) or 2 fields (self-hosted). Do NOT ask the user for a client app ID — the CLI resolves it automatically by the well-known app name "Agent 365 CLI".
+**RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 
-**RULE 6 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
+**RULE 6 — INPUT FIELDS.** In Step 3 (AI Teammate path only), present exactly 5 fields (Azure-hosted) or 4 fields (self-hosted). Do NOT ask the user for a client app ID — the CLI resolves it automatically by the well-known app name "Agent 365 CLI".
 
 ---
 
@@ -330,6 +330,54 @@ Ask: **"Would you like to use a dev tunnel for local development, or provide a c
 - **devtunnel**: Creates a secure tunnel from the internet to your local machine. Tunnel URL becomes `messagingEndpoint`.
 - **custom**: Ask the user to provide their `messagingEndpoint` URL (e.g., `https://myagent.example.com/api/messages`).
 
+#### Set up a dev tunnel (devtunnel path only)
+
+> ⛔ **Run this only if the user chose devtunnel.**
+
+```bash
+# Step 1 — Check if devtunnel CLI is installed
+devtunnel --version
+```
+
+If not installed:
+
+```bash
+# Windows
+winget install Microsoft.devtunnel
+
+# macOS / Linux
+curl -sL https://aka.ms/DevTunnelCliInstall | bash
+
+# After install, restart the terminal or source your profile, then confirm:
+devtunnel --version
+```
+
+Log in (first-time setup only — skip if already authenticated):
+
+```bash
+# Interactive (requires browser)
+devtunnel user login
+
+# Headless / CI environment
+devtunnel user login --device-code
+```
+
+Start the tunnel for your local agent port (default: **3978**):
+
+```bash
+devtunnel host -p 3978 --allow-anonymous
+```
+
+The CLI outputs a URL like `https://abc123-3978.devtunnels.ms`. Set:
+
+```
+messagingEndpoint = https://<tunnel-subdomain>.devtunnels.ms/api/messages
+```
+
+> Keep this terminal running — the tunnel is active as long as this process is alive.
+> If the tunnel URL changes on restart, update the endpoint with:
+> `a365 setup blueprint --update-endpoint https://<new-url>/api/messages`
+
 ### Derive naming values from base name
 
 Using `agentBaseName` and domain from `managerEmail`:
@@ -448,18 +496,28 @@ After displaying full output, ask: **"Do you want to proceed with the setup show
 ### 4.3 — Apply setup
 
 ```bash
-# Standard path:
+# Standard path (agentType 3 — Discoverability or Discoverability + Observability):
 cd "<project_dir>" && a365 setup all --agent-name <agent_name>
 
-# AI Teammate path:
+# AI Teammate path (agentType 2 or agentType 3 — AI Teammate):
 cd "<project_dir>" && a365 setup all
 ```
 
-This single command performs all setup in sequence:
+What `a365 setup all` provisions depends on your path:
+
+**Discoverability path** (`agentType 3`, `isAITeammate = false`):
+- Creates the Agent 365 Blueprint in Entra ID (agent identity + app registration)
+- Configures blueprint permissions for Discoverability
+- Does NOT create Azure infrastructure (no Resource Group, App Service Plan, or Web App)
+- Does NOT register a messaging endpoint
+- Agent will appear in the M365 catalog but will not receive messages until a messaging endpoint is configured separately
+
+**AI Teammate path** (`isAITeammate = true`):
 - Creates/validates Azure infrastructure (Resource Group, App Service Plan, Web App, Managed Identity)
 - Creates the Agent 365 Blueprint in Entra ID
 - Configures blueprint permissions
 - Registers the messaging endpoint
+- Agent is fully deployed and can receive messages from Teams
 
 Monitor output carefully:
 - The CLI logs progress in numbered steps (e.g., `[1/5]`). Watch for errors or warnings.

@@ -33,12 +33,23 @@ Grep: "biz.?chat" (regex)        in ToolingManifest.json, manifest.json
 Grep: "teams.?channel" (regex)   in ToolingManifest.json, manifest.json
 ```
 
-**If any signal found AND user does NOT confirm AI Teammate → STOP.**
+**If any M365 signal is found**, first check for M365 custom engine markers before stopping:
 
-> Tell the user:
+```
+Glob: **/a365.config.json                            → M365 custom engine agent (allowed)
+Glob: **/a365.generated.config.json                 → M365 custom engine agent (allowed)
+Grep: "entraAppId"      in a365.config.json         → agentType 1 (Entra app ID)
+Grep: "blueprintId"     in a365.config.json         → agentType 2 (Blueprint)
+```
+
+- **M365 signal found AND a365 custom engine marker found** → This is an M365 custom engine agent (agentType 1 or 2). **Do NOT block.** Continue to Step 2 and pre-fill `agentType` accordingly.
+- **M365 signal found AND NO a365 custom engine marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.
+
+> Tell the user (STOP case only):
 > "This agent is configured for Teams channels, BizChat, or Microsoft Copilot.
-> Non-AI-teammate agents cannot be registered as A365 blueprints.
-> Only AI Teammate agents are supported. If this detection is wrong, confirm explicitly."
+> Non-AI-teammate channel bots cannot be registered as A365 blueprints.
+> Only AI Teammate agents and M365 custom engine agents are supported.
+> If this detection is wrong (e.g., this is an M365 custom engine agent), confirm explicitly."
 
 Write marker: `.a365setup-m365-blocked` (setup) or skip instrumentation (observability).
 
@@ -137,6 +148,64 @@ AskUserQuestion:
     - Python agent
     - Other / I'll point you to the right file
 ```
+
+---
+
+---
+
+## A365 Setup — Registration Type Classification
+
+The a365-setup skill classifies agents into one of three registration types **orthogonal to framework type**. Use these signals to pre-fill `agentType` before asking the user.
+
+### agentType 1 — M365 custom engine agent (Entra app ID)
+
+The agent already has an Entra app registration but NO A365 Blueprint. You are adding observability or WorkIQ tools to an existing M365 custom engine agent.
+
+| Signal | Detection |
+|--------|-----------|
+| M365 auth signals present | See Step 1 greps above |
+| No Blueprint configuration | `a365.config.json` absent or missing `blueprintId` |
+| Entra app ID referenced | `Grep "entraAppId" **/a365.config.json` OR `Grep "MicrosoftAppId" **/appsettings.json` |
+| No `needDeployment` field | `a365.config.json` exists but lacks `needDeployment` |
+
+**Pre-fill:** `agentType = 1`. Capabilities options: Observability, Observability + WorkIQ.
+
+### agentType 2 — M365 custom engine agent (Blueprint)
+
+The agent has both an Entra app registration AND an existing A365 Blueprint. You are deploying it as an AI Teammate.
+
+| Signal | Detection |
+|--------|-----------|
+| Blueprint ID present | `Grep "blueprintId" **/a365.config.json` OR `Grep "agentBlueprintId" **/a365.generated.config.json` |
+| M365 auth signals present | See Step 1 greps above |
+| `needDeployment` in config | `Grep "needDeployment" **/a365.config.json` |
+
+**Pre-fill:** `agentType = 2`. Capabilities options: AI Teammate only.
+
+### agentType 3 — All other agents
+
+Standard A365 agent with no M365 custom engine configuration. Fresh setup or Discoverability-only registration.
+
+| Signal | Detection |
+|--------|-----------|
+| No M365 signals | Step 1 greps return nothing |
+| No existing a365 config | `a365.config.json` absent |
+| Standard agent framework | dotnet-agentframework or nodejs-langchain detected |
+
+**Pre-fill:** `agentType = 3`. Capabilities options: Discoverability, Discoverability + Observability, AI Teammate.
+
+### Discoverability detection signals
+
+Agents needing Discoverability capability (agentType 3, non-AI Teammate) typically show these signals:
+
+| Signal | Meaning |
+|--------|---------|
+| No `a365.config.json` | Agent has never been registered |
+| No `ToolingManifest.json` | No WorkIQ tools configured |
+| No `manifest/manifest.json` | Agent has never been published |
+| Agent has observable business logic | Standard LLM agent with no Teams/M365 channel config |
+
+If all four signals are true and the user hasn't specified AI Teammate intent, suggest: **"Would you like to register this agent for Discoverability only, or deploy it as an AI Teammate?"**
 
 ---
 
