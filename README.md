@@ -47,15 +47,32 @@ copilot plugin install agent365@agent365-skills
 
 ## Skills
 
-### `a365-setup` — Create Blueprint & Configure Permissions
+### `a365-setup` — Register, Configure & Deploy
 
-Runs the A365 CLI lifecycle: validates prerequisites, initializes config, creates the agent
-blueprint, and configures permissions.
+Full A365 CLI lifecycle. Asks two questions up front — your agent registration type and the
+capabilities you want — then follows the right path automatically:
+
+| Registration type | Available capabilities |
+|------------------|----------------------|
+| M365 custom engine — Entra app ID | Observability, Observability + WorkIQ |
+| M365 custom engine — Blueprint | AI Teammate |
+| All other agents | Discoverability, Discoverability + Observability, AI Teammate |
+
+**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs
+`a365 setup all` (provisions Azure infra, Blueprint, messaging endpoint), reviews and
+publishes the manifest, and deploys the agent code.
+
+**Discoverability path** — registers the Blueprint and configures permissions. No Azure
+infrastructure or messaging endpoint is created; the agent appears in the M365 catalog.
+
+**Entra app ID path** — validates prerequisites and runs `a365 setup all` to add
+Observability or WorkIQ permissions to an existing M365 custom engine app.
 
 **Trigger phrases:**
 ```
 "Run a365 setup"         "Create blueprint"
-"Register agent"         "Onboard agent"
+"Register agent"         "Deploy agent"
+"Onboard agent"          "Provision agent"
 ```
 
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
@@ -110,16 +127,28 @@ Teams or a messaging endpoint. Uses no extra runtime dependencies.
 
 ## Starter Prompts
 
-**Register a new agent and add WorkIQ tools:**
-```
-I have a new .NET AgentFramework agent. Register it with Agent 365 and add Work IQ Mail and Calendar.
-```
-
-**Full setup from scratch:**
+**Register a new agent as an AI Teammate (full deployment):**
 ```
 This agent has never been deployed to Agent 365. Walk me through blueprint setup,
 adding WorkIQ SharePoint and Teams tools, instrumentation with observability,
 and a local CLI for testing.
+```
+
+**Register for Discoverability only (no messaging endpoint):**
+```
+I want to register this agent so it shows up in the M365 catalog,
+but I'm not ready to deploy it as an AI Teammate yet. Set up Discoverability.
+```
+
+**M365 custom engine agent — add observability:**
+```
+This is an M365 custom engine agent with an existing Entra app ID.
+Add A365 observability and WorkIQ tools to it.
+```
+
+**Register a new agent and add WorkIQ tools:**
+```
+I have a new .NET AgentFramework agent. Register it with Agent 365 and add Work IQ Mail and Calendar.
 ```
 
 **Add specific WorkIQ tools to an existing agent:**
@@ -204,10 +233,23 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 
 ## Supported Agent Types
 
-| Agent Type | Framework | Language |
-|-----------|-----------|---------|
-| .NET AgentFramework | Microsoft.Agents.A365 / AgentApplication | C# |
-| Node.js LangChain | @langchain/core + @microsoft/agents-hosting | TypeScript |
+### By framework
+
+| Framework | Package | Language |
+|-----------|---------|---------|
+| .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
+| Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
+
+### By registration type
+
+| Type | Description | Supported capabilities |
+|------|-------------|----------------------|
+| M365 custom engine — Entra app ID | Existing M365 app; no Blueprint yet | Observability, WorkIQ |
+| M365 custom engine — Blueprint | Existing Blueprint; deploying as AI Teammate | AI Teammate |
+| All other agents | Standard A365 agent; fresh setup | Discoverability, AI Teammate |
+
+Skills auto-detect the registration type from `a365.config.json` and M365 signals and
+pre-fill the selection before asking the user to confirm.
 
 ---
 
