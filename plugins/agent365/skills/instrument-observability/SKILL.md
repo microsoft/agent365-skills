@@ -91,21 +91,17 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 1. **Bash** — Run package installation:
    ```bash
-   dotnet add package Microsoft.Agent.Observability --version <version-from-reference>
-   dotnet add package Azure.Identity --version <version-from-reference>
+   dotnet add package Microsoft.Agents.A365.Observability
    ```
 
-2. **Verify** the packages appear in the `.csproj` file.
+2. **Verify** the package appears in the `.csproj` file.
 
 ### For Node.js LangChain
 
 1. **Bash** — Run package installation:
    ```bash
-   npm install @azure/monitor-opentelemetry-exporter@<version-from-reference> \
-               @opentelemetry/api@<version-from-reference> \
-               @opentelemetry/sdk-node@<version-from-reference> \
-               @opentelemetry/instrumentation@<version-from-reference> \
-               @azure/identity@<version-from-reference>
+   npm install @microsoft/agents-a365-observability
+   npm install @microsoft/agents-a365-runtime
    ```
 
 2. **Verify** the packages appear in `package.json`.
@@ -123,8 +119,8 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 1. **Read** the current entry point (`Program.cs` or detected file).
 
 2. **Edit** — Add observability wiring following the reference pattern:
-   - Add `using Microsoft.Agent.Observability;`
-   - Add `builder.Services.AddA365Tracing();` after service registration
+   - Add the full using block from `references/dotnet-observability.md` (5 namespaces)
+   - Add `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing code — only add new lines, never remove.
@@ -153,9 +149,9 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 1. **Read** the detected message handler file.
 
 2. **Edit** — Add BaggageBuilder context extraction following the reference pattern:
-   - Add `using Microsoft.Agent.Observability;`
-   - Extract tenant, agent, correlation IDs from context
-   - Add to baggage: `BaggageBuilder.Add("tenantId", tenantId);` etc.
+   - Add the full using block from `references/dotnet-observability.md` if not already present
+   - Call `new BaggageBuilder().TenantId(...).AgentId(...).ConversationId(...).Build();` — `Build()` returns void, no `using var`. Do NOT use `FromTurnContext()` — it causes a `TypeLoadException` at runtime in current beta packages.
+   - Call `_agentTokenCache.RegisterObservability(...)` with `AuthHandlerName = string.Empty` included
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing handler logic.
@@ -164,10 +160,12 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Add baggage context following the reference pattern:
-   - Import `context, propagation` from `@opentelemetry/api`
-   - Extract tenant, agent, correlation IDs from request/context
-   - Add to active span baggage
+2. **Edit** — Add BaggageBuilder context following the reference pattern in `references/nodejs-observability.md`:
+   - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
+   - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
+   - Call `new BaggageBuilder().tenantId(...).agentId(...).correlationId(...).build()`
+   - Wrap the handler body in `await baggageScope.runAsync(async () => { ... })`
+   - Exchange and cache the observability token inside the scope (best-effort, catch errors)
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing handler logic.
