@@ -10,7 +10,11 @@ patterns for `dotnet/agent-framework/sample-agent`.
 
 | Package | Purpose |
 |---------|---------|
-| `Microsoft.Agents.A365.Observability` | Core OTel tracer + BaggageBuilder + A365 exporter + AddA365Tracing() + AddAgenticTracingExporter() DI extensions |
+| `Microsoft.Agents.A365.Observability` | `IExporterTokenCache`, `AddAgenticTracingExporter()` DI extension |
+| `Microsoft.Agents.A365.Observability.Runtime` | `AddA365Tracing()` — `ObservabilityBuilderExtensions` |
+| `Microsoft.Agents.A365.Observability.Runtime.Common` | `BaggageBuilder`, `EnvironmentUtils` |
+| `Microsoft.Agents.A365.Observability.Common` | `BaggageBuilderExtensions` — `FromTurnContext()` |
+| `Microsoft.Agents.A365.Observability.Caching` | `AgenticTokenStruct`, `IExporterTokenCache<T>` |
 | `Microsoft.Agents.A365.Observability.Extensions.SemanticKernel` | SK-specific auto-instrumentation (optional) |
 | `Microsoft.Agents.A365.Observability.Extensions.AgentFramework` | AgentFramework auto-instrumentation (optional) |
 
@@ -70,8 +74,11 @@ builder.AddA365Tracing();
 ## Agent Class — Message Handler
 
 ```csharp
-using Microsoft.Agents.A365.Observability;
-using Microsoft.Agents.A365.Observability.Caching;
+using Microsoft.Agents.A365.Observability;              // AddAgenticTracingExporter, IExporterTokenCache
+using Microsoft.Agents.A365.Observability.Caching;      // AgenticTokenStruct
+using Microsoft.Agents.A365.Observability.Common;       // BaggageBuilderExtensions (FromTurnContext)
+using Microsoft.Agents.A365.Observability.Runtime;      // AddA365Tracing (ObservabilityBuilderExtensions)
+using Microsoft.Agents.A365.Observability.Runtime.Common; // BaggageBuilder, EnvironmentUtils
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -99,10 +106,10 @@ public class SampleAgent : AgentApplication
         CancellationToken cancellationToken)
     {
         // ── A365 Observability: Baggage Context ─────────────────────────────
-        using var baggageScope = new BaggageBuilder()
-            .TenantId(turnContext.Activity.Recipient.TenantId)
-            .AgentId(turnContext.Activity.Recipient.AgenticAppId)
-            .CorrelationId(turnContext.Activity.Id)
+        // Build() returns void — do not use `using var`
+        // FromTurnContext() sets TenantId + AgentId from the turn; no CorrelationId method exists
+        new BaggageBuilder()
+            .FromTurnContext(turnContext)
             .Build();
 
         // Register the agentic token so the exporter can authenticate exports.
@@ -114,7 +121,8 @@ public class SampleAgent : AgentApplication
                 new AgenticTokenStruct
                 {
                     UserAuthorization = UserAuthorization,
-                    TurnContext = turnContext
+                    TurnContext = turnContext,
+                    AuthHandlerName = string.Empty  // required member — set to connection name if using OBO auth
                 },
                 EnvironmentUtils.GetObservabilityAuthenticationScope()
             );
@@ -183,11 +191,12 @@ public class SampleAgent : AgentApplication
 
 | Type | Namespace | Purpose |
 |------|-----------|---------|
-| `BaggageBuilder` | `Microsoft.Agents.A365.Observability` | Propagates tenant/agent/correlation context through OTel spans |
+| `BaggageBuilder` | `Microsoft.Agents.A365.Observability.Runtime.Common` | Propagates tenant/agent context through OTel spans; `Build()` returns void |
+| `BaggageBuilderExtensions` | `Microsoft.Agents.A365.Observability.Common` | `FromTurnContext()` extension — sets TenantId + AgentId from turn |
+| `EnvironmentUtils` | `Microsoft.Agents.A365.Observability.Runtime.Common` | `GetObservabilityAuthenticationScope()` helper |
+| `IExporterTokenCache<T>` | `Microsoft.Agents.A365.Observability` | DI interface for caching and retrieving agentic tokens |
+| `AgenticTokenStruct` | `Microsoft.Agents.A365.Observability.Caching` | Wraps TurnContext + UserAuthorization + AuthHandlerName for token resolution |
 | `Agent365ExporterOptions` | `Microsoft.Agents.A365.Observability` | Options for the A365 trace exporter (cluster category, token resolver) |
-| `IExporterTokenCache<AgenticTokenStruct>` | `Microsoft.Agents.A365.Observability.Caching` | DI interface for caching and retrieving agentic tokens |
-| `AgenticTokenStruct` | `Microsoft.Agents.A365.Observability.Caching` | Wraps TurnContext + UserAuthorization for token resolution |
-| `EnvironmentUtils` | `Microsoft.Agents.A365.Observability` | Helper to get the observability authentication scope |
 
 ---
 
@@ -226,4 +235,7 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | `AgenticAppId` is null | Missing `AGENTIC_APP_ID` env var | Set it in `.env` or App Service config |
 | Token resolver returns null | `AddAgenticTracingExporter()` not called | Add to `Program.cs` DI |
 | 401 from A365 exporter | OAuth consent not granted | Run `a365 setup permissions observability` |
-| Build error: type not found | Missing `using` directive | Add `using Microsoft.Agents.A365.Observability;` |
+| Build error on `BaggageBuilder` | Wrong namespace | Use `Microsoft.Agents.A365.Observability.Runtime.Common` |
+| Build error on `FromTurnContext` | Missing extension namespace | Add `using Microsoft.Agents.A365.Observability.Common;` |
+| Build error on `AgenticTokenStruct` | Missing required member | Add `AuthHandlerName = string.Empty` to the struct initializer |
+| Build error on `AddA365Tracing` | Wrong namespace | Use `Microsoft.Agents.A365.Observability.Runtime` |
