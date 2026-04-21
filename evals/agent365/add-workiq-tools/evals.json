@@ -1,0 +1,106 @@
+{
+  "skill_name": "add-workiq-tools",
+  "eval_instructions": "Test against real .NET AgentFramework and Node.js LangChain agent projects. The skill MUST use the a365 CLI (a365 develop list-available, a365 develop add-mcp-servers) to manage ToolingManifest.json — never hand-edit it. Verify that GetMcpToolsAsync (or A365McpToolClient) is wired in agent code. Verify that the permissions handoff is clearly explained to the user. The skill does NOT grant permissions directly — it instructs the user or Global Administrator on what to run.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add workiq tools to this agent",
+      "description": "Full flow on a .NET AgentFramework project — a365 setup not yet run",
+      "expected_output": "The skill detects .NET AgentFramework, runs a365 develop list-available, asks the user which servers to add, runs a365 develop add-mcp-servers, installs the tooling NuGet package, wires GetMcpToolsAsync in the agent class, registers IMcpToolRegistrationService in Program.cs, explains that a365 setup all will apply permissions, shows how to get a dev token, and validates the build.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type is detected as .NET AgentFramework",
+        "Phase 1: a365 --version is run to verify CLI is installed",
+        "Phase 1: a365 develop list-configured is run to check existing servers",
+        "Phase 1: AGENTIC_APP_ID is checked in appsettings.json or .env",
+        "Phase 2: a365 develop list-available is run and output is shown to the user",
+        "Phase 2: User is asked which WorkIQ servers to add",
+        "Phase 3: a365 develop add-mcp-servers is run with the selected server name(s)",
+        "Phase 3: ToolingManifest.json is NOT hand-edited — CLI command is used exclusively",
+        "Phase 3: a365 develop list-configured is run to verify servers appear",
+        "Phase 4: dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework is run if package is missing",
+        "Phase 4: IMcpToolRegistrationService and IMcpToolServerConfigurationService are registered in Program.cs",
+        "Phase 4: GetMcpToolsAsync is added to the agent message handler",
+        "Phase 4: No tokenOverride parameter is passed to GetMcpToolsAsync",
+        "Phase 4: All new code is marked: // A365 WorkIQ — added by add-workiq-tools skill",
+        "Phase 5: Blueprint does not exist yet — user is told a365 setup all will apply permissions",
+        "Phase 6: a365 develop get-token command is shown to the user",
+        "Phase 6: SKIP_TOOLING_ON_ERRORS and BEARER_TOKEN env vars are documented",
+        "Phase 6: A WorkIQ dev launch profile is added to launchSettings.json",
+        "Phase 7: dotnet build is run and result is shown",
+        "Phase 8: Summary includes MCP servers added, permissions status, and dev testing steps"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a365 work intelligence tools",
+      "description": "Full flow on a Node.js LangChain project — blueprint already exists",
+      "expected_output": "The skill detects Node.js LangChain, runs a365 develop list-available, adds selected servers via CLI, installs @microsoft/agents-a365-tooling, wires A365McpToolClient.getToolsAsync in the agent, adds env vars to .env, explains that a Global Administrator must run a365 setup permissions mcp since blueprint already exists, shows a365 develop get-token, and validates the build.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type is detected as Node.js LangChain",
+        "Phase 1: a365 develop list-configured is run",
+        "Phase 1: a365.generated.config.json is found with a non-empty agentBlueprintId",
+        "Phase 2: a365 develop list-available is run and output is shown",
+        "Phase 2: User is asked which WorkIQ servers to add",
+        "Phase 3: a365 develop add-mcp-servers is run",
+        "Phase 3: ToolingManifest.json is updated by CLI — not hand-edited",
+        "Phase 4: npm install @microsoft/agents-a365-tooling is run if package is missing",
+        "Phase 4: A365McpToolClient is imported in the agent entry point",
+        "Phase 4: getToolsAsync is called with agentId and userToken",
+        "Phase 4: WorkIQ tools are spread into the existing tools array",
+        "Phase 4: All new code is marked: // A365 WorkIQ — added by add-workiq-tools skill",
+        "Phase 5: Blueprint exists — user is told Global Administrator must run a365 setup permissions mcp",
+        "Phase 5: User is told admin must first verify deploymentProjectPath via a365 config display",
+        "Phase 5: Updated ToolingManifest.json must be shared with the GA",
+        "Phase 6: a365 develop get-token is shown",
+        "Phase 6: BEARER_TOKEN and SKIP_TOOLING_ON_ERRORS added to .env",
+        "Phase 7: npm install and npm run build succeed",
+        "Phase 8: Summary reflects Global Administrator permissions requirement prominently"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add Work IQ Mail and Work IQ Calendar to this agent",
+      "description": "User specifies exact server names — selective install",
+      "expected_output": "The skill uses the user-provided server names directly, runs a365 develop add-mcp-servers with those two servers, wires agent code, and explains only the permissions relevant to Mail and Calendar.",
+      "files": [],
+      "expectations": [
+        "Phase 2: User-provided server names ('Work IQ Mail', 'Work IQ Calendar') are used directly without re-prompting",
+        "Phase 3: a365 develop add-mcp-servers 'Work IQ Mail' 'Work IQ Calendar' is run as a single command",
+        "Phase 3: Both servers appear in a365 develop list-configured output",
+        "Phase 4: Agent code is wired to load tools from both servers",
+        "Phase 8: Summary lists only the two selected servers"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Wire up workiq — already configured",
+      "description": "Idempotency — WorkIQ servers already in ToolingManifest.json, GetMcpToolsAsync already called",
+      "expected_output": "The skill detects that the servers are already configured and GetMcpToolsAsync is already wired, skips those steps, and validates the build.",
+      "files": [],
+      "expectations": [
+        "Phase 1: a365 develop list-configured shows WorkIQ servers already present",
+        "Phase 2: User is informed which servers are already configured",
+        "Phase 3: a365 develop add-mcp-servers is SKIPPED for already-configured servers",
+        "Phase 4: GetMcpToolsAsync / A365McpToolClient presence is detected — wiring is SKIPPED",
+        "Phase 7: Build is still run and validated",
+        "Phase 8: Summary reports the agent was already partially or fully configured"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Add workiq tools — a365 CLI not installed",
+      "description": "Error handling — a365 CLI missing",
+      "expected_output": "The skill detects that a365 CLI is not installed, installs it with the dotnet tool install command, verifies the install, then proceeds with the normal flow.",
+      "files": [],
+      "expectations": [
+        "Phase 1: a365 --version fails — CLI is not installed",
+        "Phase 1: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease is run",
+        "Phase 1: a365 --version is re-run to confirm install succeeded",
+        "Skill does NOT abort — continues with list-available after CLI is installed",
+        "Normal flow resumes from Phase 2 onward"
+      ]
+    }
+  ]
+}

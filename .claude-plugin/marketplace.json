@@ -1,0 +1,20 @@
+{
+  "name": "agent365-skills",
+  "displayName": "Agent 365 Skills",
+  "description": "Production-ready skills for instrumenting and registering Microsoft Agent 365 agents — works with Claude Code, GitHub Copilot CLI, and Claude CLI.",
+  "version": "1.0.0",
+  "publisher": "Microsoft Agent 365 Platform Team",
+  "homepage": "https://github.com/microsoft/Agent365-Samples",
+  "repository": "https://github.com/microsoft/agent365-skills",
+  "license": "MIT",
+  "plugins": [
+    {
+      "name": "agent365",
+      "displayName": "Agent 365",
+      "description": "Instrument observability and create agent blueprints — for .NET AgentFramework and Node.js LangChain agents.",
+      "source": "./plugins/agent365",
+      "category": "development",
+      "tags": ["agent365", "microsoft", "observability", "opentelemetry", "langchain", "dotnet", "blueprint", "m365"]
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "skill_name": "a365-setup",
+  "eval_instructions": "When running these evals, test against real agent projects in clean state. The agent MUST save a workflow-log.md file documenting all phases attempted. Verify that a365 CLI commands are run individually (not chained with &&). Verify that Global Administrator handoff workflow is properly explained when needed. NOTE: This skill does NOT provision Azure infrastructure, deploy code, or publish to Admin Center — it only creates the blueprint, configures permissions, and registers the messaging endpoint.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run a365 setup for this agent",
+      "description": "Test full lifecycle on a .NET AgentFramework project with a365 CLI and Azure CLI available",
+      "expected_output": "The skill validates a365 CLI, Azure CLI, and .NET SDK are installed, guides a365 config init with derived naming conventions, runs a365 setup all (blueprint + permissions + endpoint registration), handles any Global Administrator handoff, and provides clear next steps. Does NOT provision Azure infrastructure, deploy, or publish.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting all phases attempted",
+        "Phase 1: a365 --version is run to verify a365 CLI is installed",
+        "Phase 1: az --version is run to verify Azure CLI is installed",
+        "Phase 1: dotnet --version is run to verify .NET SDK is installed (for .NET agents)",
+        "Phase 1: Commands are run separately — not chained with &&",
+        "Phase 2: a365 config display -g is run to check authentication",
+        "Phase 2: If not authenticated, user is prompted to run a365 auth login",
+        "Phase 2: Active subscription and resource group are reported to user",
+        "Phase 3: a365 config init is run (or verified if a365.config.json exists)",
+        "Phase 3: Naming conventions are derived from project context (folder name, git repo, etc.)",
+        "Phase 3: User is asked to confirm or customize the generated config",
+        "Phase 3: a365.config.json is validated after init",
+        "Phase 4: a365 setup all is run (or individual setup commands)",
+        "Phase 4: If Global Administrator consent is required, user is informed",
+        "Phase 4: Handoff workflow is explained: share blueprint ID with GA, wait for approval, resume",
+        "Phase 4: Blueprint ID is captured and shown to user",
+        "Phase 5: Final summary includes blueprint ID and next steps",
+        "Phase 5: User is offered help with updates or troubleshooting"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Create blueprint for this agent",
+      "description": "Test on a Node.js LangChain agent",
+      "expected_output": "Same as eval 1, but for Node.js agent. Validates node and npm instead of .NET SDK.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting all phases attempted",
+        "Phase 1: a365 --version is run",
+        "Phase 1: az --version is run",
+        "Phase 1: node --version is run to verify Node.js is installed (for Node.js agents)",
+        "Phase 1: npm --version is run to verify npm is installed",
+        "Phase 1: Commands are run separately",
+        "Phase 2: a365 config display -g is run to check authentication",
+        "Phase 3: a365 config init is run or verified",
+        "Phase 3: Naming conventions are derived appropriately",
+        "Phase 4: a365 setup all is run",
+        "Phase 4: Global Administrator workflow is explained if needed",
+        "Phase 4: Blueprint ID is captured and shown",
+        "Phase 5: Final summary provided with next steps"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Register this agent",
+      "description": "Test on an agent with existing a365.config.json (partial setup already done)",
+      "expected_output": "The skill detects existing a365.config.json, skips config init, validates prerequisites, runs remaining setup steps, and provides clear next steps. Does NOT provision Azure infrastructure, deploy, or publish.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting all phases attempted",
+        "Phase 1: Prerequisites are validated",
+        "Phase 2: a365 config display -g confirms authentication",
+        "Phase 3: Existing a365.config.json is detected",
+        "Phase 3: Config init is skipped — config is validated instead",
+        "Phase 3: User is shown the current config values",
+        "Phase 4: a365 setup all is run (or individual steps that are missing)",
+        "Phase 4: Blueprint ID is captured",
+        "Phase 5: Final summary provided"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Register agent with Microsoft 365",
+      "description": "Test error handling — a365 CLI not installed",
+      "expected_output": "The skill attempts to validate a365 CLI, detects it's not installed, provides installation instructions, and exits early.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting the prerequisite check",
+        "Phase 1: a365 --version is attempted",
+        "Phase 1: Command fails (a365 not found or not in PATH)",
+        "Phase 1: User is informed that a365 CLI is required",
+        "Phase 1: Installation instructions are provided (npm install -g @microsoft/a365-cli or equivalent)",
+        "Phase 1: User is asked to install a365 CLI and retry",
+        "No further setup steps are attempted",
+        "Skill exits early with clear instructions"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Onboard agent to A365",
+      "description": "Test error handling — Azure CLI not authenticated",
+      "expected_output": "The skill validates a365 CLI is installed, attempts to check Azure CLI authentication, detects user is not authenticated, provides login instructions, and exits or waits for authentication.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting the authentication check",
+        "Phase 1: a365 --version succeeds",
+        "Phase 1: az --version succeeds",
+        "Phase 2: a365 config display -g is attempted",
+        "Phase 2: Command fails or returns no active subscription",
+        "Phase 2: User is informed that authentication is required",
+        "Phase 2: User is guided to run 'a365 auth login' or 'az login'",
+        "Phase 2: User is asked to authenticate and retry",
+        "No config init or setup steps are attempted before authentication",
+        "Skill exits or pauses with clear instructions"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "/a365-setup Create blueprint",
+      "description": "Test Global Administrator handoff workflow",
+      "expected_output": "The skill runs setup, encounters a Global Administrator consent requirement, explains the handoff workflow clearly, provides the blueprint ID, instructs the user to share with GA, explains the waiting/resume process, and offers to continue after approval.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting the GA handoff",
+        "Phase 1-3: Prerequisites validated, config initialized",
+        "Phase 4: a365 setup all is run",
+        "Phase 4: Output indicates Global Administrator consent is required",
+        "Phase 4: User is clearly informed about the GA requirement",
+        "Phase 4: Blueprint ID is extracted and displayed prominently",
+        "Phase 4: User is told to share the blueprint ID with a Global Administrator",
+        "Phase 4: User is told how the GA grants consent (via Admin Center or specific command)",
+        "Phase 4: User is informed to notify the skill after approval is granted",
+        "Phase 4: Skill offers to wait or continue in a later session",
+        "Phase 5: After approval, summary is provided with next steps"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Run a365 setup all",
+      "description": "Test idempotency — run setup on an agent that's already fully set up",
+      "expected_output": "The skill detects existing config and blueprint, validates everything is already configured, skips redundant steps, and confirms the agent is ready.",
+      "files": [],
+      "expectations": [
+        "A workflow-log.md file is saved documenting the validation",
+        "Phase 1: Prerequisites are validated",
+        "Phase 2: Authentication is confirmed",
+        "Phase 3: Existing a365.config.json is detected and validated",
+        "Phase 4: Blueprint already exists — setup steps are skipped or validated",
+        "Phase 4: User is informed that setup is already complete",
+        "Phase 5: Final summary confirms agent blueprint is configured",
+        "Phase 5: User is offered help with updates or troubleshooting"
+      ]
+    }
+  ]
+}

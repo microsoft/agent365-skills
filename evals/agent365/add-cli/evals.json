@@ -1,0 +1,96 @@
+{
+  "skill_name": "add-cli",
+  "eval_instructions": "Test against real .NET AgentFramework and Node.js LangChain agent projects. The CLI runner must use no new runtime dependencies beyond what the agent already has (readline for Node.js, built-in adapters for .NET). The scaffolded CLI must reuse the same agent factory as production. Verify that the existing HTTP entry point is NOT modified in a breaking way.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a CLI runner to this agent",
+      "description": "Full scaffolding on a .NET AgentFramework project",
+      "expected_output": "The skill detects a .NET AgentFramework project, scaffolds ConsoleCli.cs with a readline REPL loop, adds a --cli mode check to Program.cs, adds a CLI launch profile to launchSettings.json, builds successfully, and tells the user how to start the CLI with dotnet run --cli.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type is detected as .NET AgentFramework",
+        "Phase 1: shared/agent-detection.md heuristics are followed",
+        "Phase 2: Existing CLI files are checked before scaffolding",
+        "Phase 3: ConsoleCli.cs is created in the project root or alongside Program.cs",
+        "Phase 3: ConsoleCli.cs contains a REPL loop using Console.ReadLine()",
+        "Phase 3: ConsoleCli.cs creates Activity objects with Type = ActivityTypes.Message",
+        "Phase 3: CancellationToken is wired to Console.CancelKeyPress for clean Ctrl+C exit",
+        "Phase 3: All scaffolded lines are marked: // A365 CLI — added by add-cli skill",
+        "Phase 4: Program.cs is edited to check for --cli arg or RUN_MODE=cli env var",
+        "Phase 4: CLI mode calls ConsoleCli.RunAsync and returns before app.Run()",
+        "Phase 4: Existing Program.cs HTTP startup code is preserved unchanged",
+        "Phase 4: New Program.cs lines are marked: // A365 CLI — added by add-cli skill",
+        "Phase 4: A 'CLI' launch profile is added to Properties/launchSettings.json",
+        "Phase 5: dotnet build succeeds",
+        "Phase 5: User is told: run with dotnet run --cli or dotnet run --launch-profile CLI",
+        "Phase 6: Summary lists files created/modified and the run command"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a console runner to this agent",
+      "description": "Full scaffolding on a Node.js LangChain project",
+      "expected_output": "The skill detects a Node.js LangChain project, scaffolds src/cli.ts using Node.js readline (no extra deps), adds a 'cli' script to package.json, installs ts-node if needed, builds successfully, and tells the user how to start with npm run cli.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Agent type is detected as Node.js LangChain",
+        "Phase 2: Existing cli.ts or cli.js is checked before scaffolding",
+        "Phase 3: src/cli.ts is created",
+        "Phase 3: cli.ts imports readline from built-in Node.js module (not a third-party package)",
+        "Phase 3: cli.ts imports the agent factory from the existing agentApp or equivalent",
+        "Phase 3: cli.ts implements a REPL loop calling agent.invoke() or agent.stream()",
+        "Phase 3: SIGINT handler is registered for clean Ctrl+C exit",
+        "Phase 3: All scaffolded lines are marked: // A365 CLI — added by add-cli skill",
+        "Phase 4: 'cli' script is added to package.json scripts (ts-node src/cli.ts)",
+        "Phase 4: ts-node is installed as devDependency if not already present",
+        "Phase 4: src/index.ts (HTTP entry point) is NOT broken by the changes",
+        "Phase 5: npm install and npm run build succeed",
+        "Phase 5: User is told: run with npm run cli",
+        "Phase 6: Summary lists files created/modified and the run command"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add cli runner — CLI already exists",
+      "description": "Idempotency — ConsoleCli.cs or cli.ts already present",
+      "expected_output": "The skill detects the existing CLI file, skips scaffolding, verifies the run script is present, and reports that the CLI is already configured.",
+      "files": [],
+      "expectations": [
+        "Phase 2: Existing CLI file is detected (ConsoleCli.cs or cli.ts)",
+        "Phase 3: Scaffolding is SKIPPED — existing file is not overwritten",
+        "Phase 4: Run script / launch profile is verified — added if missing, skipped if present",
+        "Phase 5: Build is still run and validated",
+        "Final summary reports that CLI was already present and confirms run command"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Run this agent from the command line",
+      "description": "Trigger phrase variation — same expected behavior as eval 1 or 2 depending on detected project type",
+      "expected_output": "Trigger phrase is recognized and the skill runs the full CLI scaffolding flow for the detected project type.",
+      "files": [],
+      "expectations": [
+        "Trigger phrase 'run this agent from the command line' activates the add-cli skill",
+        "Agent type is detected before any scaffolding",
+        "Full scaffolding flow completes for the detected type",
+        "Build is validated",
+        "Run command is communicated to the user"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Add local chat cli to this node agent",
+      "description": "Node.js project where ts-node is not installed",
+      "expected_output": "The skill scaffolds cli.ts, installs ts-node as a devDependency, adds the 'cli' script, and verifies the build.",
+      "files": [],
+      "expectations": [
+        "Phase 4: ts-node is not found in package.json devDependencies",
+        "Phase 4: npm install --save-dev ts-node is run",
+        "Phase 4: 'cli' script in package.json uses ts-node src/cli.ts",
+        "Phase 5: npm install and build succeed",
+        "Final summary confirms ts-node was installed and provides npm run cli as the run command"
+      ]
+    }
+  ]
+}
