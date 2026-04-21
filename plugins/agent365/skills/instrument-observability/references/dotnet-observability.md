@@ -10,15 +10,13 @@ patterns for `dotnet/agent-framework/sample-agent`.
 
 | Package | Purpose |
 |---------|---------|
-| `Microsoft.Agents.A365.Observability` | Core OTel tracer + BaggageBuilder + A365 exporter |
-| `Microsoft.Agents.A365.Observability.Runtime` | AddA365Tracing() + AddAgenticTracingExporter() DI extensions |
+| `Microsoft.Agents.A365.Observability` | Core OTel tracer + BaggageBuilder + A365 exporter + AddA365Tracing() + AddAgenticTracingExporter() DI extensions |
 | `Microsoft.Agents.A365.Observability.Extensions.SemanticKernel` | SK-specific auto-instrumentation (optional) |
 | `Microsoft.Agents.A365.Observability.Extensions.AgentFramework` | AgentFramework auto-instrumentation (optional) |
 
 Install commands:
 ```bash
 dotnet add package Microsoft.Agents.A365.Observability
-dotnet add package Microsoft.Agents.A365.Observability.Runtime
 ```
 
 ---
@@ -27,7 +25,6 @@ dotnet add package Microsoft.Agents.A365.Observability.Runtime
 
 ```csharp
 using Microsoft.Agents.A365.Observability;
-using Microsoft.Agents.A365.Observability.Runtime;
 using Microsoft.Agents.A365.Observability.Caching;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -75,7 +72,6 @@ builder.AddA365Tracing();
 ```csharp
 using Microsoft.Agents.A365.Observability;
 using Microsoft.Agents.A365.Observability.Caching;
-using Microsoft.Agents.A365.Observability.Runtime;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -191,7 +187,7 @@ public class SampleAgent : AgentApplication
 | `Agent365ExporterOptions` | `Microsoft.Agents.A365.Observability` | Options for the A365 trace exporter (cluster category, token resolver) |
 | `IExporterTokenCache<AgenticTokenStruct>` | `Microsoft.Agents.A365.Observability.Caching` | DI interface for caching and retrieving agentic tokens |
 | `AgenticTokenStruct` | `Microsoft.Agents.A365.Observability.Caching` | Wraps TurnContext + UserAuthorization for token resolution |
-| `EnvironmentUtils` | `Microsoft.Agents.A365.Observability.Runtime` | Helper to get the observability authentication scope |
+| `EnvironmentUtils` | `Microsoft.Agents.A365.Observability` | Helper to get the observability authentication scope |
 
 ---
 
