@@ -7,12 +7,15 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains two skills:
+This plugin instruments and configures A365 agents. It contains five skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
-| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `a365-setup` | `/agent365:a365-setup` | "run a365 setup", "create blueprint", "register agent" |
+| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
+| `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
+| `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
+| `add-cli` | `/agent365:add-cli` | "add cli to this agent", "add a console runner" |
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -25,21 +28,33 @@ in a better state than they found it.
 ```
 plugins/agent365/
 ├── .claude-plugin/
-│   └── plugin.json               # Skill registry (names, triggers, file paths)
+│   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
+│   ├── a365-setup/
+│   │   └── SKILL.md              # Full A365 CLI lifecycle
 │   ├── instrument-observability/
-│   │   ├── SKILL.md              # Main skill — the AI reads and follows this
+│   │   ├── SKILL.md              # OTel + A365 exporter instrumentation
 │   │   └── references/
 │   │       ├── dotnet-observability.md   # Authoritative .NET code patterns
 │   │       └── nodejs-observability.md  # Authoritative Node.js code patterns
-│   └── a365-setup/
-│       ├── SKILL.md              # Main skill
-│       └── references/           # (placeholder for future CLI reference docs)
+│   ├── add-workiq-tools/
+│   │   ├── SKILL.md              # WorkIQ MCP tool wiring
+│   │   └── references/
+│   │       ├── dotnet-workiq.md  # .NET MCP tool patterns
+│   │       └── nodejs-workiq.md  # Node.js MCP tool patterns
+│   ├── test-local/
+│   │   └── SKILL.md              # AgentsPlayground local smoke testing
+│   └── add-cli/
+│       ├── SKILL.md              # Local terminal REPL scaffold
+│       └── references/
 ├── shared/
 │   └── agent-detection.md        # Shared heuristics for detecting agent type
 ├── scripts/
+│   ├── validate-setup.js         # Stop hook validator for a365-setup
 │   ├── validate-observability.js # Stop hook validator for instrument-observability
-│   └── validate-setup.js         # Stop hook validator for a365-setup
+│   ├── validate-add-workiq-tools.js
+│   ├── validate-test-local.js
+│   └── validate-add-cli.js
 └── AGENTS.md                     # This file
 ```
 
@@ -47,10 +62,16 @@ plugins/agent365/
 ```
 evals/
 └── agent365/
+    ├── a365-setup/
+    │   └── evals.json
     ├── instrument-observability/
-    │   └── evals.json            # Test cases for observability skill
-    └── a365-setup/
-        └── evals.json            # Test cases for setup skill
+    │   └── evals.json
+    ├── add-workiq-tools/
+    │   └── evals.json
+    ├── test-local/
+    │   └── evals.json
+    └── add-cli/
+        └── evals.json
 ```
 
 See [evals/README.md](../evals/README.md) for testing documentation.
@@ -112,8 +133,8 @@ hooks:
 1. Create `skills/<skill-name>/SKILL.md` with the YAML frontmatter above.
 2. Add any reference docs to `skills/<skill-name>/references/`.
 3. Add a validator script to `scripts/validate-<skill-name>.js`.
-4. Register the skill in `.claude-plugin/plugin.json` under `skills[]`.
-5. Update `marketplace.json` description if needed.
+4. Skills are auto-discovered from the `skills/` directory — no changes to `plugin.json` needed.
+5. Add eval cases to `evals/agent365/<skill-name>/evals.json`.
 6. Test with: `claude --plugin-dir /path/to/plugins/agent365`
 
 ---

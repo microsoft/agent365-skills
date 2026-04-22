@@ -6,7 +6,7 @@
       "id": 1,
       "prompt": "Instrument observability for this agent",
       "description": "Test on a .NET AgentFramework project with Program.cs and a message handler",
-      "expected_output": "The skill detects .NET AgentFramework, installs Microsoft.Agents.A365.Observability, wires AddAgenticTracingExporter() and AddA365Tracing() in Program.cs, adds BaggageBuilder.FromTurnContext() context to the message handler with AuthHandlerName in AgenticTokenStruct, updates appsettings.json with observability config, and validates the build passes.",
+      "expected_output": "The skill detects .NET AgentFramework, installs Microsoft.Agents.A365.Observability, wires AddAgenticTracingExporter() and AddA365Tracing() in Program.cs, adds BaggageBuilder context to the message handler using .TenantId().AgentId().ConversationId().Build() with AuthHandlerName in AgenticTokenStruct (FromTurnContext() is NOT used — causes TypeLoadException), updates appsettings.json with observability config, and validates the build passes.",
       "files": [],
       "expectations": [
         "A workflow-log.md file is saved documenting all phases attempted",
