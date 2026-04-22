@@ -39,7 +39,7 @@ copilot plugin install agent365@agent365-skills
 
 - **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, AgentsPlayground smoke testing, and local CLI testing
 - **Automatic agent detection** — skills detect agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status, then ask validation questions before any code runs
-- **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or full AI Teammate deployment
+- **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
 - **Validator scripts** that run as stop hooks to verify each skill completed correctly
 - **Reference patterns** for both .NET AgentFramework and Node.js LangChain agents
@@ -49,26 +49,26 @@ copilot plugin install agent365@agent365-skills
 
 ## Skills
 
-### `a365-setup` — Register, Configure & Deploy
+### `a365-setup` — Register, Configure & Publish
 
 Full A365 CLI lifecycle. Detects your agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status automatically. Asks validation questions, then guides you through capability selection and follows the right path:
 
 | Agent Type | Available Capabilities |
 |------------|----------------------|
-| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration (self-hosted)<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint (self-hosted)<br>• **AI Teammate** — Full Azure deployment with all capabilities |
-| **Standard Agent** | • **Discoverability** — M365 catalog registration (self-hosted)<br>• **Discoverability + Observability** — Registration + telemetry (self-hosted)<br>• **AI Teammate** — Full Azure deployment with auto-provisioned infrastructure |
+| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration (self-hosted)<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint (self-hosted)<br>• **AI Teammate** — Blueprint registration, permissions, and messaging endpoint registration; you provide hosting |
+| **Standard Agent** | • **Discoverability** — M365 catalog registration (self-hosted)<br>• **Discoverability + Observability** — Registration + telemetry (self-hosted)<br>• **AI Teammate** — Blueprint registration, permissions, and messaging endpoint registration; you provide hosting |
 
-**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs `a365 setup all` (provisions Azure Container Apps, Application Insights, Blueprint, permissions), reviews and publishes the manifest, and deploys your agent code.
+**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs `a365 setup all` (creates the Blueprint, grants permissions, and registers your messaging endpoint), then reviews and publishes the agent manifest. You host the agent on your own infrastructure — any cloud or on-premises deployment is supported.
 
-**Discoverability path** — registers the Blueprint and configures permissions. No Azure infrastructure or messaging endpoint is created; the agent appears in the M365 catalog but requires self-hosting.
+**Discoverability path** — registers the Blueprint and configures permissions. The agent appears in the M365 catalog but requires self-hosting; no messaging endpoint is provisioned.
 
 **Observability path** — instruments OpenTelemetry tracing, BaggageBuilder context, and A365 exporter with agentic token resolver for Microsoft Defender integration.
 
 **Trigger phrases:**
 ```
 "Run a365 setup"         "Create blueprint"
-"Register agent"         "Deploy agent"
-"Onboard agent"          "Provision agent"
+"Register agent"         "Onboard agent"
+"Provision agent"        "Publish agent"
 ```
 
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
@@ -153,11 +153,11 @@ Scaffolds an interactive terminal REPL for testing your agent directly from the 
 
 ## Starter Prompts
 
-**Register a new agent as an AI Teammate (full deployment to Azure):**
+**Register a new agent as an AI Teammate:**
 ```
-This agent has never been deployed to Agent 365. Walk me through blueprint setup,
+This agent has never been registered with Agent 365. Walk me through blueprint setup,
 adding WorkIQ SharePoint and Teams tools, instrumentation with observability,
-and a local CLI for testing. Deploy it as an AI Teammate.
+and a local CLI for testing. Register it as an AI Teammate.
 ```
 
 **Register for Discoverability only (no Azure deployment, self-hosted):**
@@ -182,6 +182,7 @@ Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 I have a new .NET AgentFramework agent. Register it with Agent 365 as an AI Teammate
 and add Work IQ Mail, Calendar, and SharePoint tools.
+I'll host the agent myself.
 ```
 
 **Add specific WorkIQ tools to an existing agent:**
@@ -282,8 +283,8 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 
 | Agent Type | Detection Signals | Available Capabilities |
 |------------|------------------|----------------------|
-| **Custom Engine Agent** | M365/Teams/Copilot signals + `a365.config.json` | • **Observability** — OTel tracing, Defender integration, self-hosted<br>• **Observability + WorkIQ** — Adds pre-built M365 tools (Mail, Calendar, Teams, SharePoint, OneDrive, User), self-hosted<br>• **AI Teammate** — Full deployment to Azure Container Apps with all capabilities |
-| **Standard Agent** | No M365 signals, standard agent framework | • **Discoverability** — Blueprint registration only, self-hosted<br>• **Discoverability + Observability** — Registration + telemetry/security, self-hosted<br>• **AI Teammate** — Full Azure deployment with auto-provisioned infrastructure |
+| **Custom Engine Agent** | M365/Teams/Copilot signals + `a365.config.json` | • **Observability** — OTel tracing, Defender integration, self-hosted<br>• **Observability + WorkIQ** — Adds pre-built M365 tools (Mail, Calendar, Teams, SharePoint, OneDrive, User), self-hosted<br>• **AI Teammate** — Blueprint + permissions + endpoint registration; you provide hosting |
+| **Standard Agent** | No M365 signals, standard agent framework | • **Discoverability** — Blueprint registration only, self-hosted<br>• **Discoverability + Observability** — Registration + telemetry/security, self-hosted<br>• **AI Teammate** — Blueprint + permissions + endpoint registration; you provide hosting |
 
 **WorkIQ Tools Available:**
 - **Work IQ Mail** — Read, send, manage email messages
