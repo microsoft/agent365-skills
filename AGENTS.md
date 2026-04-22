@@ -17,6 +17,8 @@ This plugin instruments and configures A365 agents. It contains five skills:
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
+**Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
+
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
 in a better state than they found it.
@@ -33,8 +35,10 @@ plugins/agent365/
 │   ├── make-ai-teammate/
 │   │   ├── SKILL.md              # Full AI Teammate transformation (hosting, observability, notifications, WorkIQ)
 │   │   └── references/
-│   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (all 3 frameworks)
-│   │       └── nodejs-notifications.md  # Notification + lifecycle event patterns
+│   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (Node.js LangChain/OpenAI/Claude)
+│   │       ├── nodejs-notifications.md  # Notification + lifecycle event patterns (Node.js)
+│   │       ├── dotnet-ai-teammate.md    # Complete patterns for .NET AgentFramework
+│   │       └── python-ai-teammate.md   # Complete patterns for Python AgentFramework
 │   ├── a365-setup/
 │   │   └── SKILL.md              # Full A365 CLI lifecycle
 │   ├── instrument-observability/

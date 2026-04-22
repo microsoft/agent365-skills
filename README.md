@@ -2,25 +2,38 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills teach AI agents how to register Agent 365 blueprints, wire WorkIQ MCP tools, and instrument observability using natural language.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills transform Node.js, .NET, and Python agents into production-ready Microsoft Agent 365 AI Teammates: registering blueprints, wiring WorkIQ MCP tools, instrumenting observability, and handling Teams messages and email notifications.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
+
+---
+
+## What is an AI Teammate?
+
+An **AI Teammate** is an agent registered with Microsoft Agent 365 that can receive direct messages in Microsoft Teams, respond to email notifications, and access Microsoft 365 data (mail, calendar, Teams, SharePoint) through WorkIQ tools — all authenticated through your tenant's Entra ID.
+
+**Before these skills:** Your agent is a standalone script or HTTP server. It has no Teams presence, no M365 data access, and no observability.
+
+**After these skills:** Your agent is a live AI Teammate in Microsoft Teams — users can chat with it directly, it can read and respond to emails, and every LLM call is traced in Microsoft Defender.
 
 ---
 
 ## Prerequisites
 
 - **Microsoft Agent 365** tenant with developer access
-- **Node.js 18+** and **.NET 8.0+**
+- **Node.js 18+**, **.NET 8.0+**, or **Python 3.11+** (depending on your agent)
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
 **Supported frameworks:**
 
-| Framework | Package | Language |
+| Framework | Packages | Language |
 |-----------|---------|---------|
-| .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
+| .NET AgentFramework | `Microsoft.Agents.A365.*` / `AgentApplication` | C# |
+| Python AgentFramework | `agent-framework-azure-ai` + `microsoft_agents_a365_*` | Python |
 | Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
+| Node.js OpenAI Agents SDK | `@openai/agents` + `@microsoft/agents-hosting` | TypeScript |
+| Node.js Claude SDK | `@anthropic-ai/sdk` + `@microsoft/agents-hosting` | TypeScript |
 
 ---
 
@@ -42,78 +55,140 @@ copilot plugin install agent365@agent365-skills
 
 ---
 
-## What's Included
+## AI Teammate — End-to-End Flow
 
-- **5 skills** covering full AI Teammate transformation, blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
-- **Automatic agent detection** — skills detect your agent stack, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
-- **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
-- **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
+The fastest path from a plain agent to a live AI Teammate in Teams:
+
+### Step 1 — Transform the code
+
+```
+"Make this agent an AI Teammate"
+```
+
+Runs the `make-ai-teammate` skill. Detects your language and LLM framework,
+confirms with you, then wraps your existing code with the full AI Teammate layer:
+
+**Node.js:**
+
+| File | What's added |
+|------|-------------|
+| `src/index.ts` | Express + `CloudAdapter` + JWT auth + `/api/health` + `/api/messages` |
+| `src/agent.ts` | `AgentApplication` subclass — message routing, typing indicator loop, email notifications, install/uninstall lifecycle |
+| `src/client.ts` | `ObservabilityManager` init, `McpToolRegistrationService` singleton, `InferenceScope` wrapping your LLM call |
+| `src/token-cache.ts` | Agentic token resolver + in-memory cache |
+| `ToolingManifest.json` | Empty MCP server manifest (populated in step 3) |
+| `.env` / `tsconfig.json` | All A365 env vars added, `module: "node16"` ensured |
+
+**.NET:**
+
+| File | What's added |
+|------|-------------|
+| `Program.cs` | `AddAgenticTracingExporter` + `AddA365Tracing` + `IMcpToolRegistrationService` + `/api/messages` + `/api/health` |
+| `Agent/MyAgent.cs` | `AgentApplication` subclass — dual agentic/OBO activity handlers, typing indicators, MCP tool loading |
+| `ToolingManifest.json` | Empty MCP server manifest |
+| `appsettings.json` | A365 auth, token validation, and connection sections |
+
+**Python:**
+
+| File | What's added |
+|------|-------------|
+| `host_agent_server.py` | `CloudAdapterAiohttp` server + `/api/messages` + `/api/health` + notification handler |
+| `agent.py` | `AgentInterface` implementation — MCP tooling, notification handling, token resolver |
+| `token_cache.py` | `cache_agentic_token` / `get_cached_agentic_token` helpers |
+| `agent_interface.py` | Abstract base class |
+| `ToolingManifest.json` | Empty MCP server manifest |
+| `.env` / `pyproject.toml` | All A365 env vars and dependencies added |
+
+Your existing LLM logic, prompts, and tools are preserved. Nothing is deleted.
+
+### Step 2 — Register the Blueprint
+
+```
+"Run a365 setup"
+```
+
+Runs the `a365-setup` skill (AI Teammate path). Collects three inputs from you:
+
+- **Agent Name** — unique display name (`contoso-hr-agent`)
+- **Manager Email** — M365 account from your tenant
+- **Messaging Endpoint** — devtunnel URL for local dev, or your production HTTPS endpoint
+
+Then provisions everything automatically:
+
+```
+a365 config init        →  creates a365.config.json
+a365 setup all          →  Blueprint + Entra identity + permissions + endpoint registration
+a365 publish            →  publishes manifest to M365 Admin Center
+```
+
+### Step 3 — Add WorkIQ tools (optional)
+
+```
+"Add Work IQ Mail and Work IQ Calendar"
+```
+
+Runs the `add-workiq-tools` skill. Shows the full M365 tool catalog, adds the servers you choose
+to `ToolingManifest.json` via the CLI, and tells you (or your Global Administrator) what
+permissions command to run.
+
+Available tools: Mail · Calendar · Teams · SharePoint · OneDrive · Word · User · Copilot · Dataverse
+
+### Step 4 — Test locally
+
+```
+"Test this agent locally"
+```
+
+Runs the `test-local` skill. Builds the agent, starts it on port 3978, and opens
+AgentsPlayground — no Bot Framework auth required in dev.
+
+### Step 5 — Deploy and activate
+
+Deploy to any hosting provider (Azure App Service, Container Apps, AWS, GCP, on-prem).
+Set production env vars:
+
+```dotenv
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+NODE_ENV=production                    # Node.js
+ASPNETCORE_ENVIRONMENT=Production      # .NET
+PYTHON_ENVIRONMENT=production          # Python
+```
+
+Then in your browser:
+1. [Teams Developer Portal](https://dev.teams.microsoft.com) → your blueprint → set **Agent Type = API Based**
+2. Teams → Apps → find your agent → **Request Instance**
+3. Admin approves in [Microsoft Admin Center → Agents](https://admin.cloud.microsoft/#/agents/all/requested)
+4. Search your agent in Teams and start chatting
+
+> **Note:** Agent user creation is asynchronous — it can take minutes to hours before the agent is searchable in Teams.
+
+### What you get
+
+Once live, your AI Teammate can:
+- **Receive Teams messages** directly in 1:1 chat
+- **Handle email notifications** — reads the email via Work IQ Mail, processes it with your LLM, replies via the notifications API
+- **Send typing indicators** while the LLM is thinking
+- **Access M365 data** via WorkIQ tools (mail, calendar, Teams, SharePoint, etc.)
+- **Trace every LLM call** in Microsoft Defender via A365 Observability
 
 ---
 
 ## Skills
 
-### `a365-setup` — Register, Configure & Publish
+### `make-ai-teammate` — Transform Any Agent into an AI Teammate
 
-Full A365 CLI lifecycle. Detects your agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status automatically. Asks validation questions, then guides you through capability selection and follows the right path:
+The full-stack transformation skill. Takes any agent using LangChain, OpenAI Agents SDK, Claude SDK (.NET, Node.js, or Python), or .NET/.Python AgentFramework and makes it a production-ready Microsoft Agent 365 AI Teammate — wrapping your existing LLM code without replacing it.
 
-| Agent Type | Available Capabilities |
-|------------|----------------------|
-| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration (self-hosted)<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint (self-hosted)<br>• **AI Teammate** — Blueprint registration, permissions, and messaging endpoint registration; you provide hosting |
-| **Standard Agent** | • **Discoverability** — M365 catalog registration (self-hosted)<br>• **Discoverability + Observability** — Registration + telemetry (self-hosted)<br>• **AI Teammate** — Blueprint registration, permissions, and messaging endpoint registration; you provide hosting |
+Adds the complete hosting and integration layer in one pass:
 
-**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs `a365 setup all` (creates the Blueprint, grants permissions, and registers your messaging endpoint), then reviews and publishes the agent manifest. You host the agent on your own infrastructure — any cloud or on-premises deployment is supported.
+- **Hosting layer** — Express/CloudAdapter (Node.js) · ASP.NET Core/IAgentHttpAdapter (.NET) · aiohttp/CloudAdapterAiohttp (Python) — with `/api/health` and `/api/messages`
+- **`AgentApplication` subclass** — message routing, typing indicator loop, observability token preloading, email notification dispatch, install/uninstall lifecycle events
+- **Observability** — `ObservabilityManager`/`AddAgenticTracingExporter` initialized before any spans, context propagation, `InferenceScope`/`UseOpenTelemetry` wrapping every LLM call with token counts and finish reasons
+- **`McpToolRegistrationService`** — module-level singleton (Node.js), DI-injected singleton (.NET), or per-turn (Python) wired into the per-turn client factory
+- **Token cache** — per-language token caching with agentic resolver support
+- **`ToolingManifest.json`**, all A365 packages, env vars, and tsconfig/pyproject settings
 
-**Discoverability path** — registers the Blueprint and configures permissions. The agent appears in the M365 catalog but requires self-hosting; no messaging endpoint is provisioned.
-
-**Observability path** — instruments OpenTelemetry tracing, BaggageBuilder context, and A365 exporter with agentic token resolver for Microsoft Defender integration.
-
-**Trigger phrases:**
-```
-"Run a365 setup"         "Create blueprint"
-"Register agent"         "Onboard agent"
-"Provision agent"        "Publish agent"
-```
-
-### `add-workiq-tools` — Add WorkIQ MCP Tools
-
-Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available` to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`, wires `GetMcpToolsAsync` in the agent code, and guides the permissions handoff.
-
-**What WorkIQ provides:** Instead of writing custom Microsoft Graph API integrations, you get ready-to-use MCP tool servers maintained by Microsoft that handle authentication, permissions, and API calls automatically.
-
-**Trigger phrases:**
-```
-"Add workiq tools"                   "Add Work IQ Mail"
-"Add work intelligence tools"        "Add MCP tools to this agent"
-```
-
-### `instrument-observability` — Add A365 Observability
-
-Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365 exporter with agentic token resolver into your agent entry point and message handler.
-
-**Trigger phrases:**
-```
-"Instrument observability"     "Add A365 observability"
-"Enable tracing"               "Add OTel"
-"Instrument for Defender"      "Add telemetry"
-```
-
-### `make-ai-teammate` — Transform Any Node.js Agent into an AI Teammate
-
-The full-stack transformation skill. Takes any Node.js agent using LangChain, OpenAI Agents SDK,
-or Claude SDK and makes it a production-ready Microsoft Agent 365 AI Teammate — wrapping your
-existing LLM code without replacing it.
-
-**What it adds:**
-- **Hosting layer** — Express server with `CloudAdapter`, JWT auth, `/api/health`, `/api/messages`
-- **Agent routing** — `AgentApplication` subclass with message handling and typing indicator loop
-- **Observability** — `ObservabilityManager`, `BaggageBuilder`, `InferenceScope`, token cache
-- **Notifications** — email notification handler using `createEmailResponseActivity`, install/uninstall lifecycle events
-- **WorkIQ tools** — `McpToolRegistrationService` wired into the client factory, `ToolingManifest.json`
-- **All packages and env vars** — installs every required `@microsoft/agents-*` package
-
-Supports **LangChain**, **OpenAI Agents SDK**, and **Claude SDK**. Idempotent — re-runnable on
-agents that are partially configured.
+Supports **LangChain**, **OpenAI Agents SDK**, and **Claude SDK** (Node.js), **AgentFramework** (.NET and Python). Idempotent — re-running on a partially-configured agent only adds what is missing.
 
 **Trigger phrases:**
 ```
@@ -122,9 +197,84 @@ agents that are partially configured.
 "Convert agent to Teams agent"        "Add CloudAdapter to this agent"
 ```
 
+---
+
+### `a365-setup` — Register, Configure & Publish
+
+Full A365 CLI lifecycle. Detects your agent stack and Custom Engine Agent status automatically,
+then asks two questions — agent type and desired capabilities — and follows the right path:
+
+| Agent Type | Available Capabilities |
+|------------|----------------------|
+| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint<br>• **AI Teammate** — Blueprint, permissions, and messaging endpoint registration |
+| **Standard Agent** | • **Discoverability** — M365 catalog registration<br>• **Discoverability + Observability** — Registration + telemetry<br>• **AI Teammate** — Blueprint, permissions, and messaging endpoint registration |
+
+**AI Teammate path** — collects Agent Name, Manager Email, and Messaging Endpoint (devtunnel or custom HTTPS). Creates `a365.config.json`, runs `a365 setup all` (Blueprint + permissions + endpoint), and publishes the manifest to M365 Admin Center. You host the agent on your own infrastructure.
+
+**Discoverability path** — Blueprint + permissions only. Agent appears in the M365 catalog but has no messaging endpoint.
+
+**Observability path** — instruments OTel tracing, BaggageBuilder context, and the A365 exporter with agentic token resolver for Microsoft Defender.
+
+**Trigger phrases:**
+```
+"Run a365 setup"         "Create blueprint"
+"Register agent"         "Onboard agent"
+"Provision agent"        "Publish agent"
+```
+
+---
+
+### `add-workiq-tools` — Add WorkIQ MCP Tools
+
+Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
+to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
+(which writes `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
+and guides the permissions handoff to your Global Administrator.
+
+**What WorkIQ provides:** Ready-to-use MCP tool servers maintained by Microsoft — no custom Graph API integrations needed. Authentication, permissions, and API calls are handled automatically.
+
+| Tool | What it does |
+|------|-------------|
+| Work IQ Mail | Read, send, and manage email |
+| Work IQ Calendar | Read/create events, check availability |
+| Work IQ Teams | Read channel messages, list teams and members |
+| Work IQ SharePoint | Search documents, read files, list sites |
+| Work IQ OneDrive | Manage OneDrive files |
+| Work IQ Word | Read and write Word documents |
+| Work IQ User | Get user profile and presence |
+| Work IQ Copilot | Chat with Microsoft 365 Copilot |
+| Dataverse & Dynamics 365 | CRUD and domain actions |
+
+**Trigger phrases:**
+```
+"Add workiq tools"                   "Add Work IQ Mail"
+"Add work intelligence tools"        "Add MCP tools to this agent"
+```
+
+---
+
+### `instrument-observability` — Add A365 Observability
+
+Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365
+exporter with agentic token resolver into an existing agent entry point and message handler.
+Use `make-ai-teammate` for new agents — use this skill to add observability incrementally to
+an agent that already has a hosting layer.
+
+**Trigger phrases:**
+```
+"Instrument observability"     "Add A365 observability"
+"Enable tracing"               "Add OTel"
+"Instrument for Defender"      "Add telemetry"
+```
+
+---
+
 ### `test-local` — Local Testing with AgentsPlayground
 
-Tests your agent locally without deploying to Azure or Teams. Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in the background, and opens AgentsPlayground pointed at your local endpoint — no Bot Framework auth required.
+Tests your agent locally without deploying to Azure or Teams. Checks prerequisites
+(`agentsplayground` CLI, build tools), builds the agent, starts it in the background on
+port 3978, and opens AgentsPlayground pointed at your local endpoint — no Bot Framework
+auth required.
 
 **Trigger phrases:**
 ```
@@ -137,18 +287,36 @@ Tests your agent locally without deploying to Azure or Teams. Checks prerequisit
 
 ## Starter Prompts
 
-**Transform an existing Node.js agent into a full AI Teammate:**
+**Transform a plain Node.js agent into a full AI Teammate (all-in-one):**
 ```
-I have a Node.js LangChain agent that runs as a plain script. Transform it into
-a Microsoft Agent 365 AI Teammate with hosting, observability, email notifications,
-and WorkIQ tools.
+I have a Node.js LangChain agent that runs as a plain script. Transform it into a
+Microsoft Agent 365 AI Teammate with Teams hosting, observability, email notifications,
+and WorkIQ Mail and Calendar tools.
 ```
 
-**Register a new agent as an AI Teammate:**
+**Transform a .NET AgentFramework agent:**
 ```
-This agent has never been registered with Agent 365. Walk me through blueprint setup,
-adding WorkIQ SharePoint and Teams tools, and instrumentation with observability.
-Register it as an AI Teammate.
+I have a .NET AgentFramework agent. Transform it into a Microsoft Agent 365 AI Teammate
+with full hosting, observability, WorkIQ tools, and email notification handling.
+```
+
+**Transform a Python agent:**
+```
+I have a Python agent using agent-framework-azure-ai. Make it a Microsoft Agent 365
+AI Teammate with Teams hosting, MCP tooling, and email notification handling.
+```
+
+**Register a transformed agent (after make-ai-teammate):**
+```
+The code is ready. Register this agent as an AI Teammate with Agent 365 — create the
+blueprint, grant permissions, and register my messaging endpoint.
+```
+
+**Full flow in one prompt:**
+```
+This agent has never been registered with Agent 365. Walk me through the full AI
+Teammate setup: transform the code, register a blueprint, add WorkIQ Mail and
+Teams tools, and test it locally.
 ```
 
 **Register for Discoverability only (self-hosted):**
@@ -157,23 +325,10 @@ I want to register this agent so it shows up in the M365 catalog,
 but I'll handle hosting and deployment myself. Set up Discoverability.
 ```
 
-**Add Discoverability + Observability (self-hosted with telemetry):**
-```
-Register this agent in the M365 catalog and add observability instrumentation
-for Microsoft Defender integration. I'll host it on my own infrastructure.
-```
-
 **Custom Engine Agent — add observability and WorkIQ:**
 ```
 This is a Custom Engine Agent available in Microsoft Teams and Copilot.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
-```
-
-**Register a new agent with specific WorkIQ tools:**
-```
-I have a new .NET AgentFramework agent. Register it with Agent 365 as an AI Teammate
-and add Work IQ Mail, Calendar, and SharePoint tools.
-I'll host the agent myself.
 ```
 
 **Add specific WorkIQ tools to an existing agent:**
@@ -191,6 +346,16 @@ Test my agent locally without deploying to Teams.
 ```
 Check which Agent 365 skills have already been applied to this agent and tell me what's missing.
 ```
+
+---
+
+## What's Included
+
+- **5 skills** covering full AI Teammate transformation, blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
+- **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK), .NET AgentFramework, and Python AgentFramework
+- **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
+- **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
+- **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
 
 ---
 
@@ -212,7 +377,7 @@ cd my-agent-project
 claude --plugin-dir "/path/to/agent365-skills/plugins/agent365"
 
 # 3. Start with a trigger phrase, e.g.:
-#    "Add workiq tools to this agent"
+#    "Make this agent an AI Teammate"
 ```
 
 The `--plugin-dir` path must be in double quotes if it contains spaces. Use the absolute path.
@@ -252,8 +417,11 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 - [A365 CLI Develop Commands](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/develop)
 - [A365 Observability](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
 - [AI-Guided Setup](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/ai-guided-setup)
-- [.NET Sample Agent](https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/agent-framework/sample-agent)
-- [Node.js Sample Agent](https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain)
+- [Node.js LangChain Sample](https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain/sample-agent)
+- [Node.js OpenAI Sample](https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/openai/sample-agent)
+- [Node.js Claude Sample](https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/claude/sample-agent)
+- [.NET AgentFramework Sample](https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/agent-framework/sample-agent)
+- [Python AgentFramework Sample](https://github.com/microsoft/Agent365-Samples/tree/main/python/agent-framework/sample-agent)
 
 ---
 

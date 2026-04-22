@@ -1,14 +1,16 @@
 {
   "skill_name": "make-ai-teammate",
-  "eval_instructions": "Test against Node.js agents that are NOT yet M365-integrated — plain LangChain scripts, standalone OpenAI apps, Claude SDK demos. The skill must WRAP existing LLM code, not replace it. Verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has ObservabilityManager.configure().start() and McpToolRegistrationService at module level, (4) token-cache.ts exists, (5) ToolingManifest.json exists, (6) all @microsoft/agents-* packages in package.json, (7) tsconfig has module: node16. The skill must be idempotent — re-running on a partially-configured agent should only add what is missing.",
+  "eval_instructions": "Test against agents that are NOT yet M365-integrated across three languages: Node.js (LangChain/OpenAI/Claude), .NET AgentFramework, and Python AgentFramework. The skill must WRAP existing LLM code, not replace it. For Node.js verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has ObservabilityManager.configure().start() and McpToolRegistrationService at module level, (4) token-cache.ts exists, (5) ToolingManifest.json exists, (6) all @microsoft/agents-* packages in package.json, (7) tsconfig has module: node16. For .NET verify: (1) Program.cs has AddAgenticTracingExporter + AddA365Tracing + AddAgent<T> + /api/messages + /api/health, (2) agent class extends AgentApplication with dual isAgenticOnly registrations, (3) .csproj has all Microsoft.Agents.A365.* packages, (4) appsettings.json has AgentApplication + TokenValidation + Connections. For Python verify: (1) host_agent_server.py has CloudAdapterAiohttp + /api/messages + /api/health + on_agent_notification, (2) agent.py implements AgentInterface with process_user_message and setup_mcp_servers, (3) token_cache.py exists, (4) pyproject.toml has all microsoft_agents_a365_* packages. The skill must be idempotent across all languages.",
   "evals": [
     {
       "id": 1,
       "prompt": "Make this agent an AI Teammate",
       "description": "Full transformation of a plain Node.js LangChain script with no M365 integration",
+      "language": "nodejs",
       "expected_output": "The skill detects LangChain, confirms with the user, installs all required @microsoft/agents-* packages, writes src/index.ts with Express + CloudAdapter + JWT auth + health + messages endpoints, writes src/agent.ts with AgentApplication subclass and all handlers, writes src/client.ts wrapping existing LangChain invocation with ObservabilityManager and McpToolRegistrationService, writes src/token-cache.ts, creates ToolingManifest.json with empty mcpServers array, updates .env.example with A365 variables, updates tsconfig.json to node16, validates the build, and tells the user to run a365 setup next.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS from package.json",
         "Phase 0A: LangChain is detected from package.json",
         "Phase 0B: Detection summary shown to user with all 5 'already present' flags as ❌",
         "Phase 0B: User is asked to confirm before any files are written",
@@ -41,10 +43,12 @@
     {
       "id": 2,
       "prompt": "Transform agent to AI Teammate",
-      "description": "OpenAI Agents SDK project — partial integration (hosting already present, no observability or notifications)",
+      "description": "Node.js OpenAI Agents SDK project — partial integration (hosting already present, no observability or notifications)",
+      "language": "nodejs",
       "expected_output": "The skill detects OpenAI Agents SDK and that hosting is already present (CloudAdapter found). It skips Phase 4 (index.ts), adds the AgentApplication class, wires observability and McpToolRegistrationService into client.ts, adds notification handlers to agent.ts, and validates the build. Existing routes and middleware are preserved.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS",
         "Phase 0A: OpenAI Agents SDK detected from package.json (@openai/agents)",
         "Phase 0A: hasHosting is detected as ✅ (CloudAdapter already present)",
         "Phase 0A: hasObservability is detected as ❌, hasNotifications as ❌",
@@ -62,10 +66,12 @@
     {
       "id": 3,
       "prompt": "Add AI Teammate hosting to this Claude agent",
-      "description": "Claude SDK project — no existing M365 integration",
+      "description": "Node.js Claude SDK project — no existing M365 integration",
+      "language": "nodejs",
       "expected_output": "The skill detects Claude SDK (@anthropic-ai/sdk), installs Claude-specific packages (@microsoft/agents-a365-tooling-extensions-claude, @microsoft/agents-a365-observability-extensions-claude), and follows the same full transformation using Claude variants. The Anthropic API key env var is preserved.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS",
         "Phase 0A: Claude SDK detected from @anthropic-ai/sdk in package.json",
         "Phase 1: npm install uses @microsoft/agents-a365-tooling-extensions-claude and @microsoft/agents-a365-observability-extensions-claude",
         "Phase 6: client.ts uses Claude-specific MCP service (agents-a365-tooling-extensions-claude)",
@@ -76,10 +82,12 @@
     {
       "id": 4,
       "prompt": "Make this agent an AI Teammate",
-      "description": "Idempotency — fully configured agent, all components already present",
+      "description": "Node.js idempotency — fully configured agent, all components already present",
+      "language": "nodejs",
       "expected_output": "The skill detects all components are already present, skips all creation phases, runs the build, and reports that the agent is already a complete AI Teammate.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS",
         "Phase 0A: All 5 'already present' flags detected as ✅",
         "Phase 0B: User is shown all-green detection summary",
         "All creation phases (3–8) are skipped",
@@ -90,10 +98,12 @@
     {
       "id": 5,
       "prompt": "Wire up M365 hosting",
-      "description": "Agent with existing Express server (non-CloudAdapter) — migration path",
+      "description": "Node.js agent with existing Express server (non-CloudAdapter) — migration path",
+      "language": "nodejs",
       "expected_output": "The skill finds the existing Express server in index.ts. Instead of overwriting, it migrates it: adds configDotenv() as first line, adds CloudAdapter and authorizeJWT, adds /api/health before auth, adds /api/messages, and preserves any existing routes.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS",
         "Phase 0A: hasHosting detected as ❌ (Express present but no CloudAdapter)",
         "Phase 4: Existing index.ts is migrated — not overwritten from scratch",
         "Phase 4: configDotenv() is added as first line if missing",
@@ -106,16 +116,113 @@
     {
       "id": 6,
       "prompt": "Convert this agent to a Teams agent",
-      "description": "Unknown/unsupported LLM framework (not LangChain, OpenAI, or Claude)",
+      "description": "Node.js unknown/unsupported LLM framework — stub path",
+      "language": "nodejs",
       "expected_output": "The skill detects an unrecognized LLM framework and tells the user. It still adds the hosting layer, agent class, token cache, ToolingManifest.json, and observability init. It stubs out the client factory with a placeholder and tells the user exactly where to integrate their LLM calls.",
       "files": [],
       "expectations": [
+        "Phase 0A: language detected as NodeJS",
         "Phase 0B: User is told the framework is not auto-detected",
         "Phase 0B: User is asked to confirm or provide the framework name",
         "Hosting layer (index.ts), agent class (agent.ts), token-cache.ts are still created",
         "client.ts is created with ObservabilityManager + McpToolRegistrationService + stub invokeInferenceScope",
         "User is clearly told where in client.ts to integrate their LLM calls",
         "Build is attempted — any LLM-specific errors are reported but do not block the skill"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Make this agent an AI Teammate",
+      "description": ".NET AgentFramework project — no existing A365 integration. Has Program.cs with basic ASP.NET Core setup and an agent class using Azure OpenAI IChatClient.",
+      "language": "dotnet",
+      "expected_output": "The skill detects a .NET project with AgentFramework. It adds Microsoft.Agents.A365.* NuGet packages, updates Program.cs with A365 service registrations (AddAgenticTracingExporter, AddA365Tracing, IMcpToolRegistrationService), adds /api/messages and /api/health endpoints, creates or updates the agent class with dual isAgenticOnly activity handlers, creates ToolingManifest.json, updates appsettings.json with A365 auth and connection config, and validates the build with dotnet build.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: language detected as DotNet from .csproj",
+        "Phase 0A: agentStack detected as AgentFramework",
+        "Phase 0B: Detection summary shown to user",
+        "Phase 1: dotnet add package runs for Microsoft.Agents.A365.Notifications, Microsoft.Agents.A365.Tooling.Extensions.AgentFramework, Microsoft.Agents.A365.Observability.Extensions.AgentFramework (all --prerelease)",
+        "Phase 4: Program.cs gains builder.Services.AddAgenticTracingExporter(clusterCategory: 'production')",
+        "Phase 4: Program.cs gains builder.AddA365Tracing(config => config.WithAgentFramework())",
+        "Phase 4: Program.cs gains AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>",
+        "Phase 4: Program.cs gains AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>",
+        "Phase 4: Program.cs has app.MapPost('/api/messages', ...) using adapter.ProcessAsync()",
+        "Phase 4: Program.cs has app.MapGet('/api/health', ...) with no auth",
+        "Phase 5: Agent class extends AgentApplication",
+        "Phase 5: Agent class has OnActivity(ActivityTypes.InstallationUpdate, ..., isAgenticOnly: true) and isAgenticOnly: false",
+        "Phase 5: Agent class has OnActivity(ActivityTypes.Message, ..., isAgenticOnly: true) and isAgenticOnly: false",
+        "Phase 5: Agent class has typing indicator loop (4 second interval) in OnMessageAsync",
+        "Phase 5: GetAgentInstructions() sanitizes Activity.From.Name (strips control chars, caps at 64 chars)",
+        "Phase 5: GetClientAgent() calls toolService.GetMcpToolsAsync()",
+        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 8: appsettings.json has AgentApplication.AgenticAuthHandlerName, TokenValidation, Connections, ConnectionsMap sections",
+        "Phase 9: dotnet build succeeds",
+        "Phase 10: .NET-specific next steps shown (set appsettings.json values, dotnet run)"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Transform agent to AI Teammate",
+      "description": ".NET AgentFramework — partial integration (Program.cs already has /api/messages but no A365 observability or tooling)",
+      "language": "dotnet",
+      "expected_output": "The skill detects that hosting is present (/api/messages found) but observability and WorkIQ tooling are missing. It skips Program.cs rewrite but adds the A365 service registrations. It adds the missing activity handlers to the agent class and validates the build.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: hasHosting detected as ✅ (/api/messages already in Program.cs)",
+        "Phase 0A: hasObservability detected as ❌ (AddAgenticTracingExporter not found)",
+        "Phase 0A: hasWorkIQ detected as ❌ (IMcpToolRegistrationService not found)",
+        "Phase 4: Program.cs is NOT rewritten — only A365 service registrations are added",
+        "Phase 4: Existing routes and middleware are preserved",
+        "Phase 5: Missing activity handlers added to existing agent class",
+        "Phase 9: dotnet build succeeds"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Python AgentFramework project — plain agent.py with AzureOpenAI, no hosting or A365 integration",
+      "language": "python",
+      "expected_output": "The skill detects a Python project with AgentFramework. It adds microsoft_agents_a365_* dependencies to pyproject.toml, creates token_cache.py and agent_interface.py, writes host_agent_server.py with CloudAdapterAiohttp server and all A365 handlers, updates agent.py to implement AgentInterface with MCP tooling and notification handling (preserving the existing LLM client setup), creates ToolingManifest.json, updates .env with A365 variables, and validates with uv sync.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: language detected as Python from pyproject.toml",
+        "Phase 0A: agentStack detected as AgentFramework",
+        "Phase 0B: Detection summary shown to user with all 5 'already present' flags as ❌",
+        "Phase 1: uv add runs with all microsoft_agents_a365_* packages",
+        "Phase 3: token_cache.py created with cache_agentic_token and get_cached_agentic_token",
+        "Phase 4: agent_interface.py created with AgentInterface ABC",
+        "Phase 4: host_agent_server.py created with CloudAdapterAiohttp, /api/messages, /api/health",
+        "Phase 4: host_agent_server.py has on_agent_notification handler",
+        "Phase 4: host_agent_server.py has typing indicator loop (4 second interval)",
+        "Phase 4: load_dotenv() is called at top of host_agent_server.py before other imports",
+        "Phase 5: agent.py implements AgentInterface (process_user_message, initialize, cleanup)",
+        "Phase 5: agent.py has _sanitize_display_name() to prevent prompt injection",
+        "Phase 5: agent.py has setup_mcp_servers() calling McpToolRegistrationService.add_tool_servers_to_agent()",
+        "Phase 5: agent.py has handle_agent_notification_activity() handling EMAIL_NOTIFICATION",
+        "Phase 5: agent.py has token_resolver() using get_cached_agentic_token()",
+        "Phase 5: Existing LLM client configuration (AZURE_OPENAI_* env vars) is preserved",
+        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 8: .env / .env.template gains AUTH_HANDLER_NAME, CONNECTIONS__* vars, USE_AGENTIC_AUTH, OBSERVABILITY_* vars",
+        "Phase 9: uv sync succeeds",
+        "Phase 10: Python-specific next steps shown (python host_agent_server.py)"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Add AI Teammate hosting",
+      "description": "Python — idempotency: agent.py already implements AgentInterface, host_agent_server.py exists, only ToolingManifest.json and env vars are missing",
+      "language": "python",
+      "expected_output": "The skill detects that hosting and agent class are already present, skips those phases, creates the missing ToolingManifest.json and adds missing env vars, and validates the setup.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: language detected as Python",
+        "Phase 0A: hasHosting detected as ✅ (CloudAdapterAiohttp found)",
+        "Phase 0A: hasAgentApp detected as ✅ (AgentInterface found)",
+        "Phase 0A: hasManifest detected as ❌",
+        "Phases 4 and 5 are skipped entirely",
+        "Phase 7: ToolingManifest.json is created",
+        "Phase 8: Missing env vars are appended to .env",
+        "Phase 9: uv sync succeeds"
       ]
     }
   ]
