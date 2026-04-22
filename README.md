@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills teach AI agents how to register Agent 365 blueprints, wire WorkIQ MCP tools, instrument observability, and add local CLI runners using natural language.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills teach AI agents how to register Agent 365 blueprints, wire WorkIQ MCP tools, and instrument observability using natural language.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -14,6 +14,13 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 - **Node.js 18+** and **.NET 8.0+**
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
+
+**Supported frameworks:**
+
+| Framework | Package | Language |
+|-----------|---------|---------|
+| .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
+| Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
 
 ---
 
@@ -38,12 +45,9 @@ copilot plugin install agent365@agent365-skills
 ## What's Included
 
 - **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and AgentsPlayground smoke testing
-- **Automatic agent detection** — skills detect agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status, then ask validation questions before any code runs
+- **Automatic agent detection** — skills detect your agent stack, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
-- **Validator scripts** that run as stop hooks to verify each skill completed correctly
-- **Reference patterns** for both .NET AgentFramework and Node.js LangChain agents
-- **Evals** for every skill covering happy path, idempotency, and error handling
 
 ---
 
@@ -83,7 +87,6 @@ Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop
 "Add work intelligence tools"        "Add MCP tools to this agent"
 ```
 
-
 ### `instrument-observability` — Add A365 Observability
 
 Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365 exporter with agentic token resolver into your agent entry point and message handler.
@@ -113,11 +116,11 @@ Tests your agent locally without deploying to Azure or Teams. Checks prerequisit
 **Register a new agent as an AI Teammate:**
 ```
 This agent has never been registered with Agent 365. Walk me through blueprint setup,
-adding WorkIQ SharePoint and Teams tools, instrumentation with observability,
-and a local CLI for testing. Register it as an AI Teammate.
+adding WorkIQ SharePoint and Teams tools, and instrumentation with observability.
+Register it as an AI Teammate.
 ```
 
-**Register for Discoverability only (no Azure deployment, self-hosted):**
+**Register for Discoverability only (self-hosted):**
 ```
 I want to register this agent so it shows up in the M365 catalog,
 but I'll handle hosting and deployment myself. Set up Discoverability.
@@ -170,8 +173,6 @@ git clone https://github.com/microsoft/agent365-skills.git
 
 ### Testing with Claude Code
 
-Test the plugin locally without installing from a marketplace:
-
 ```bash
 # 1. Open your agent project
 cd my-agent-project
@@ -187,8 +188,6 @@ The `--plugin-dir` path must be in double quotes if it contains spaces. Use the 
 
 ### Testing with GitHub Copilot
 
-Register the local plugin marketplace and install the plugin:
-
 ```bash
 copilot plugin marketplace add /path/to/agent365-skills
 copilot plugin install agent365@agent365-skills
@@ -199,12 +198,6 @@ To reinstall after pulling or making local changes:
 ```bash
 copilot plugin uninstall agent365@agent365-skills
 copilot plugin install agent365@agent365-skills
-```
-
-To install the local plugin directly without marketplace registration:
-
-```bash
-copilot plugin install /path/to/agent365-skills/plugins/agent365
 ```
 
 ---
@@ -222,30 +215,14 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 
 ---
 
-## Supported Frameworks
-
-| Framework | Package | Language |
-|-----------|---------|---------|
-| .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
-| Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
-
----
-
-## Reference Samples
-
-Skills are built to match the patterns in:
-
-- `.NET`: https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/agent-framework/sample-agent
-- `Node.js`: https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain
-
----
-
 ## Documentation
 
 - [Agent 365 Developer Docs](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/)
 - [A365 CLI Develop Commands](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/develop)
 - [A365 Observability](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
 - [AI-Guided Setup](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/ai-guided-setup)
+- [.NET Sample Agent](https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/agent-framework/sample-agent)
+- [Node.js Sample Agent](https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain)
 
 ---
 
