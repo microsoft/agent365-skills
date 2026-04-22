@@ -217,7 +217,14 @@ TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
 ```
 
-Always include install, env update, and build/sync tasks — they are safe to re-run.
+Always include install, env update, and build/sync tasks — they are safe to re-run. Always include the registration, optional capabilities, and testing tasks below — add them for every language:
+
+```
+TaskCreate: "Register agent with Agent 365 (a365 setup all)"
+TaskCreate: "Create agent instance (a365 create-instance)"
+TaskCreate: "Offer additional capabilities (WorkIQ tools / Observability)"
+TaskCreate: "Test agent locally with AgentsPlayground"
+```
 
 ---
 
@@ -660,15 +667,157 @@ Do NOT revert changes on build failure — fix forward.
 
 **Mark task complete.**
 
+> **Build passed — proceed immediately to Phase 10.**
+
 ---
 
-## Phase 10 — Final Summary
+## Phase 10 — Register with Agent 365
+
+**Mark task in progress: "Register agent with Agent 365 (a365 setup all)"**
+
+The code is ready. Now register the agent as an AI Teammate with Microsoft Agent 365.
+
+**Step 1 — Collect registration inputs.**
+
+Ask all three questions in a single message:
+
+```
+The agent code is ready. To register it with Agent 365 I need three things:
+
+  1. Agent Name — display name in Microsoft Teams (e.g. "Contoso HR Bot")
+  2. Manager Email — the account that will own the Blueprint in the A365 tenant
+  3. Messaging Endpoint — the HTTPS URL where Agent 365 will deliver messages
+       (devtunnel, e.g. https://abc123.devtunnels.ms, or your custom HTTPS hostname)
+```
+
+Wait for the user to supply all three values.
+
+**Step 2 — Create or update a365.config.json.**
+
+**Glob** `a365.config.json`. If it does not exist, **Write**:
+
+```json
+{
+  "agentName": "{AgentName}",
+  "managerEmail": "{ManagerEmail}",
+  "messagingEndpoint": "{MessagingEndpoint}/api/messages"
+}
+```
+
+If it already exists, **Read** it and **Edit** only the keys that are missing or empty.
+
+**Step 3 — Run a365 setup all.**
+
+```bash
+a365 setup all
+```
+
+This command:
+- Creates the Blueprint in your Agent 365 tenant
+- Grants the required Entra ID permissions
+- Registers the messaging endpoint
+
+If the command prompts for Azure login, guide the user:
+> Run `az login` first, then re-run `a365 setup all`.
+
+If `a365 setup all` succeeds, capture the **Blueprint ID** from the output (shown as `blueprintId`
+or similar) and note it for Phase 11.
+
+**Mark task complete.**
+
+---
+
+## Phase 11 — Create Agent Instance
+
+**Mark task in progress: "Create agent instance (a365 create-instance)"**
+
+With the Blueprint registered, create a deployable instance of the agent:
+
+```bash
+a365 create-instance --name "{AgentName}"
+```
+
+If the command accepts additional flags (e.g. `--blueprint-id`), include the Blueprint ID
+captured in Phase 10.
+
+On success, tell the user:
+> "Agent instance created. The instance is now visible in the Agent 365 management portal
+> and ready to receive messages once your server is running."
+
+If `a365 create-instance` is not found or fails with "unknown command", inform the user:
+> "The `create-instance` command may require a newer version of the a365 CLI.
+> Run `dotnet tool update -g Microsoft.Agents.A365.DevTools.Cli --prerelease` and retry."
+
+**Mark task complete.**
+
+---
+
+## Phase 12 — Offer Additional Capabilities
+
+Ask the user in a single message:
+
+```
+The agent is transformed and registered. Would you like to add any of these now?
+
+  1. WorkIQ tools — Mail, Calendar, Teams, SharePoint, OneDrive, and more
+     (runs the add-workiq-tools skill)
+  2. Additional observability — OTel tracing + Microsoft Defender integration
+     (runs the instrument-observability skill)
+  3. Both
+  4. Neither — skip to local testing
+```
+
+**If user selects WorkIQ tools (1 or 3):**
+
+Invoke the `add-workiq-tools` skill inline:
+1. Run `a365 develop list-available` to show available MCP server catalog.
+2. Ask which servers to add.
+3. Run `a365 develop add-mcp-servers --servers "<selected>"` to populate `ToolingManifest.json`.
+4. Wire `McpToolRegistrationService` in the agent code if not already done (it is already wired from
+   Phase 6 — just confirm `ToolingManifest.json` now has entries).
+5. Tell the user what permissions the Global Administrator must grant via `a365 setup permissions mcp`.
+
+**If user selects Observability (2 or 3):**
+
+Invoke the `instrument-observability` skill inline:
+1. **Read** the agent entry point (language-appropriate: `src/index.ts`, `Program.cs`, or `host_agent_server.py`).
+2. Verify `ObservabilityManager` / `AddAgenticTracingExporter` / `configure_observability` is present
+   (it was added in Phase 6). If already complete, tell the user observability is already instrumented.
+3. If anything is missing (e.g., `BaggageBuilder` context propagation, `InferenceScope` wrapping),
+   add it now following the patterns in `instrument-observability/references/`.
+
+**If user selects Neither (4):** proceed directly to Phase 13.
+
+---
+
+## Phase 13 — Offer Local Testing
+
+Ask the user in a single message:
+
+```
+Ready to test. Would you like to test this agent locally with AgentsPlayground now?
+
+  • yes — I'll start the agent and open AgentsPlayground pointed at your local endpoint
+  • no  — I'll show you the final summary and you can test when ready
+```
+
+**If yes:** invoke the `test-local` skill inline:
+- Check `agentsplayground` CLI is installed (`agentsplayground --version`).
+  If missing, tell the user: `dotnet tool install -g Microsoft.Agents.AgentsPlayground --prerelease`
+- Start the agent in the background on port 3978 (use the correct start command for the language).
+- Run `agentsplayground --endpoint http://localhost:3978/api/messages`.
+
+**If no:** proceed directly to Phase 14.
+
+---
+
+## Phase 14 — Final Summary
 
 **TaskList** — show all completed tasks.
 
 ### NodeJS summary:
 ```
-✅ AI Teammate transformation complete!
+✅ AI Teammate fully set up and registered!
 
 Your agent now has:
   • Hosting layer:     Express + CloudAdapter + JWT auth (/api/health, /api/messages)
@@ -677,17 +826,17 @@ Your agent now has:
   • Notifications:     Email notification handling + install/uninstall lifecycle
   • WorkIQ tools:      McpToolRegistrationService (add tools with add-workiq-tools skill)
   • Token cache:       Built-in AgenticTokenCacheInstance (or custom via Use_Custom_Resolver)
+  • A365 registered:   Blueprint created, permissions granted, messaging endpoint set
+  • Instance created:  Agent instance ready in the Agent 365 portal
 
 Next steps:
-  1. Run: a365 setup  — register a Blueprint and messaging endpoint with Agent 365
-  2. Test locally:    npm run dev  (starts on http://127.0.0.1:3978)
-  3. Health check:    curl http://localhost:3978/api/health
-  4. Add WorkIQ tools: run the add-workiq-tools skill
+  1. Health check:    curl http://localhost:3978/api/health
+  2. Add WorkIQ tools: run the add-workiq-tools skill
 ```
 
 ### .NET summary:
 ```
-✅ AI Teammate transformation complete!
+✅ AI Teammate fully set up and registered!
 
 Your agent now has:
   • Hosting layer:     ASP.NET Core + IAgentHttpAdapter + /api/health + /api/messages
@@ -695,18 +844,18 @@ Your agent now has:
   • Observability:     AddAgenticTracingExporter + AddA365Tracing + UseOpenTelemetry on IChatClient
   • WorkIQ tools:      IMcpToolRegistrationService + IMcpToolServerConfigurationService
   • Auth:              AgenticAuthHandlerName (production) + OboAuthHandlerName (Playground)
+  • A365 registered:   Blueprint created, permissions granted, messaging endpoint set
+  • Instance created:  Agent instance ready in the Agent 365 portal
 
 Next steps:
   1. Set appsettings.json ClientId, BOT_ID, BOT_TENANT_ID placeholders
-  2. Run: a365 setup  — register a Blueprint and messaging endpoint
-  3. Test locally:    dotnet run  (starts on http://localhost:3978)
-  4. Health check:    curl http://localhost:3978/api/health
-  5. Add WorkIQ tools: run the add-workiq-tools skill
+  2. Health check:    curl http://localhost:3978/api/health
+  3. Add WorkIQ tools: run the add-workiq-tools skill
 ```
 
 ### Python summary:
 ```
-✅ AI Teammate transformation complete!
+✅ AI Teammate fully set up and registered!
 
 Your agent now has:
   • Hosting layer:     aiohttp server + CloudAdapterAiohttp + /api/health + /api/messages
@@ -714,13 +863,13 @@ Your agent now has:
   • Observability:     configure_observability() with token resolver
   • WorkIQ tools:      McpToolRegistrationService.add_tool_servers_to_agent()
   • Token cache:       token_cache.py with cache_agentic_token / get_cached_agentic_token
+  • A365 registered:   Blueprint created, permissions granted, messaging endpoint set
+  • Instance created:  Agent instance ready in the Agent 365 portal
 
 Next steps:
   1. Fill .env with Azure OpenAI credentials and connection settings
-  2. Run: a365 setup  — register a Blueprint and messaging endpoint
-  3. Test locally:    python host_agent_server.py  (starts on port 3978)
-  4. Health check:    curl http://localhost:3978/api/health
-  5. Add WorkIQ tools: run the add-workiq-tools skill
+  2. Health check:    curl http://localhost:3978/api/health
+  3. Add WorkIQ tools: run the add-workiq-tools skill
 ```
 
 ---
@@ -766,4 +915,5 @@ Never overwrite a file that already has the required pattern — only add what i
 
 **Shared:**
 - `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md`
-- **Blueprint registration:** run the `a365-setup` skill after this skill completes
+- **Blueprint registration:** handled inline in Phase 10 (`a365 setup all`) and Phase 11 (`a365 create-instance`).
+  Run the standalone `a365-setup` skill only if you need to re-register or change the endpoint.
