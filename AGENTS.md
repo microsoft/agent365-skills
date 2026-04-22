@@ -42,7 +42,7 @@ plugins/agent365/
 │   │       ├── dotnet-workiq.md  # .NET MCP tool patterns
 │   │       └── nodejs-workiq.md  # Node.js MCP tool patterns
 │   └── test-local/
-│       └── SKILL.md              # AgentsPlayground local smoke testing
+│       └── SKILL.md              # AgentsPlayground local testing
 ├── shared/
 │   └── agent-detection.md        # Shared heuristics for detecting agent type
 ├── scripts/

@@ -6,7 +6,7 @@
       "id": 1,
       "prompt": "Test this agent locally",
       "description": "Happy path — .NET AgentFramework agent, agentsplayground already installed, user confirms launch",
-      "expected_output": "The skill detects .NET AgentFramework, confirms agentsplayground is installed, runs dotnet build successfully, asks the user whether to launch, starts dotnet run in the background, launches agentsplayground -e http://localhost:5000/api/messages -c emulator, and guides the smoke test.",
+      "expected_output": "The skill detects .NET AgentFramework, confirms agentsplayground is installed, runs dotnet build successfully, asks the user whether to launch, starts dotnet run in the background, launches agentsplayground -e http://localhost:5000/api/messages -c emulator, and guides the local test.",
       "files": [],
       "expectations": [
         "Phase 1: Agent type detected as .NET AgentFramework",
@@ -27,7 +27,7 @@
       "id": 2,
       "prompt": "Run agent locally",
       "description": "Happy path — Node.js LangChain agent, agentsplayground already installed, user confirms launch",
-      "expected_output": "The skill detects Node.js LangChain, confirms agentsplayground is installed, runs npm install successfully, asks the user whether to launch, starts npm start in the background, launches agentsplayground -e http://localhost:3978/api/messages -c emulator, and guides the smoke test.",
+      "expected_output": "The skill detects Node.js LangChain, confirms agentsplayground is installed, runs npm install successfully, asks the user whether to launch, starts npm start in the background, launches agentsplayground -e http://localhost:3978/api/messages -c emulator, and guides the local test.",
       "files": [],
       "expectations": [
         "Phase 1: Agent type detected as Node.js LangChain",
@@ -77,7 +77,7 @@
     },
     {
       "id": 5,
-      "prompt": "Smoke test this agent",
+      "prompt": "Local test this agent",
       "description": "Build fails — skill stops before attempting launch",
       "expected_output": "The skill detects the agent type, confirms agentsplayground is installed, attempts to build, encounters build errors, presents the error output to the user, and stops without launching anything.",
       "files": [],

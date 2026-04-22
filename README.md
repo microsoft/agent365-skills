@@ -44,7 +44,7 @@ copilot plugin install agent365@agent365-skills
 
 ## What's Included
 
-- **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and AgentsPlayground smoke testing
+- **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
 - **Automatic agent detection** — skills detect your agent stack, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
@@ -98,7 +98,7 @@ Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and
 "Instrument for Defender"      "Add telemetry"
 ```
 
-### `test-local` — Smoke Test with AgentsPlayground
+### `test-local` — Local Testing with AgentsPlayground
 
 Tests your agent locally without deploying to Azure or Teams. Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in the background, and opens AgentsPlayground pointed at your local endpoint — no Bot Framework auth required.
 
@@ -106,7 +106,7 @@ Tests your agent locally without deploying to Azure or Teams. Checks prerequisit
 ```
 "Test this agent locally"        "Run agent locally"
 "Open AgentsPlayground"          "Launch local test session"
-"Smoke test this agent"          "Test without deploying"
+"Local test this agent"          "Test without deploying"
 ```
 
 ---
@@ -151,7 +151,7 @@ Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — I'll need to know what to give our Global Administrator.
 ```
 
-**Smoke test without deploying (AgentsPlayground):**
+**Test locally with AgentsPlayground:**
 ```
 Test my agent locally without deploying to Teams.
 ```

@@ -1,7 +1,7 @@
 ---
 name: test-local
 description: >
-  Runs an Agent 365 agent locally and opens AgentsPlayground for interactive smoke testing.
+  Runs an Agent 365 agent locally and opens AgentsPlayground for interactive local testing.
   Checks prerequisites (agentsplayground CLI, build tools), builds the agent, starts it in
   the background, and launches the playground UI pointed at the local endpoint.
   Supports .NET AgentFramework and Node.js LangChain agents.
@@ -36,7 +36,7 @@ hooks:
 > - "run agent locally"
 > - "open agentsplayground"
 > - "launch local test session"
-> - "smoke test this agent"
+> - "local test this agent"
 > - "test without deploying"
 
 ---
@@ -52,7 +52,7 @@ simulates a Teams-like chat interface without requiring a deployment or Bot Fram
 3. Builds the agent to confirm there are no compile errors
 4. Starts the agent in the background
 5. Launches AgentsPlayground pointed at the local endpoint
-6. Guides a smoke test and confirms observability logs are flowing (if instrumented)
+6. Guides a local test and confirms observability logs are flowing (if instrumented)
 
 **Why AgentsPlayground over the CLI runner:**
 - Web UI that matches the Teams message format
@@ -71,7 +71,7 @@ TaskCreate: "Detect agent type"
 TaskCreate: "Check and install agentsplayground"
 TaskCreate: "Build agent"
 TaskCreate: "Launch agent and AgentsPlayground"
-TaskCreate: "Guide smoke test"
+TaskCreate: "Guide local test"
 ```
 
 ---
@@ -181,7 +181,7 @@ Do NOT attempt to launch a broken build.
 
 ```
 AskUserQuestion:
-  question: "Ready to start the agent and open AgentsPlayground for a local smoke test?"
+  question: "Ready to start the agent and open AgentsPlayground for a local test?"
   options:
     - "Yes — start agent and open playground"
     - "No — show me the commands and I'll run them manually"
@@ -243,9 +243,9 @@ Terminal 2 — open AgentsPlayground:
 
 ---
 
-## Phase 5 — Guide Smoke Test
+## Phase 5 — Guide Local Test
 
-**Mark task in progress: "Guide smoke test"**
+**Mark task in progress: "Guide local test"**
 
 Tell the user:
 
@@ -272,7 +272,7 @@ If the user reports the agent is not responding, suggest:
 - For .NET: check `MapAgentApplicationEndpoints` is called with the correct route
 - For Node.js: check the express listener port in `index.ts`
 
-**Mark task complete: "Guide smoke test"**
+**Mark task complete: "Guide local test"**
 
 ---
 

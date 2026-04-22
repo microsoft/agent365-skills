@@ -393,7 +393,7 @@ Ask the user:
 
 ```
 AskUserQuestion:
-  question: "Build succeeded. Want to start the agent and open AgentsPlayground for a quick smoke test?"
+  question: "Build succeeded. Want to start the agent and open AgentsPlayground for a quick local test?"
   options:
     - "Yes — start agent and open AgentsPlayground"
     - "No — I'll test later"
