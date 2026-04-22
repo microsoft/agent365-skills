@@ -11,7 +11,7 @@ compatibility:
 user-invocable: true
 argument-hint: "Optional: port number (default: 5000 for .NET, 3978 for Node.js)"
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
-model: sonnet
+model: haiku
 hooks:
   stop:
     - type: command
@@ -82,7 +82,9 @@ TaskCreate: "Guide smoke test"
 
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` for detection heuristics.
 
-2. Run detection:
+2. **Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack` and `programmingLanguage` — skip the globs below and go to step 3.
+
+   If cache is missing or stale, run detection globs **in parallel**:
    - **Glob** `**/*.csproj` + **Grep** `AgentApplication` in `**/*.cs` → .NET AgentFramework
    - **Glob** `**/package.json` + **Grep** `@langchain` or `langchain` → Node.js LangChain
 
@@ -198,9 +200,10 @@ Start the agent in the background:
 dotnet run
 ```
 
-Wait 4 seconds for the agent to initialize, then launch the playground:
+Poll until the agent responds (max ~15 s), then launch:
 
 ```bash
+for i in $(seq 1 15); do curl -s --max-time 1 "http://localhost:<port>/api/messages" > /dev/null 2>&1 && break; sleep 1; done
 agentsplayground -e "http://localhost:<port>/api/messages" -c "emulator"
 ```
 
@@ -216,9 +219,10 @@ Start the agent in the background:
 npm start
 ```
 
-Wait 3 seconds, then launch the playground:
+Poll until the agent responds (max ~15 s), then launch:
 
 ```bash
+for i in $(seq 1 15); do curl -s --max-time 1 "http://localhost:<port>/api/messages" > /dev/null 2>&1 && break; sleep 1; done
 agentsplayground -e "http://localhost:<port>/api/messages" -c "emulator"
 ```
 

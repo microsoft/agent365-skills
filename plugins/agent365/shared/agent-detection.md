@@ -286,6 +286,34 @@ Always **Read** entry points fully before editing them.
 
 ---
 
+## Detection Cache
+
+To avoid re-running globs and greps when multiple skills run in the same session, use a cache file.
+
+### Reading the cache (check before running globs/greps)
+
+Before any detection, check for `.a365-workspace-detection.json` in the working directory:
+
+- If the file exists and `detectedAt` is within the last **60 minutes**, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it — skip all detection globs and greps.
+- If the file is missing or older than 60 minutes, run full detection as normal.
+
+### Writing the cache (after detection + user confirmation)
+
+After detection completes and the user has confirmed the values, write `.a365-workspace-detection.json`:
+
+```json
+{
+  "agentStack": "<Agent Framework | LangChain | OpenAI>",
+  "programmingLanguage": "<DotNet | NodeJS | Python>",
+  "usesTeamsOrCopilot": 0,
+  "detectedAt": "<ISO 8601 timestamp>"
+}
+```
+
+Use the **Write** tool to create this file in the current working directory.
+
+---
+
 ## AGENTIC_APP_ID Requirement
 
 The A365 observability token resolver requires `AGENTIC_APP_ID` to authenticate.

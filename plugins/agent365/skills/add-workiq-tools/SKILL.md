@@ -76,7 +76,9 @@ All changes are **additive** and **idempotent** — rerunning is safe.
 
 ### Silent Detection
 
-First detect the agent characteristics silently by analyzing workspace files:
+**First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to User Validation.
+
+Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
 
 **Step 1: Detect Agent Stack** → Store as `agentStack`
 - Check for .csproj + Microsoft.Agents.* → `Agent Framework`
@@ -94,32 +96,23 @@ First detect the agent characteristics silently by analyzing workspace files:
 - M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
 - Otherwise → `0`
 
-### User Validation Questions
+### User Validation
 
-Ask the user to validate these detections (one question at a time, wait for each response):
+Present **all three detections in a single message** and wait for ONE response:
 
-**Question 1: Agent Stack Validation**
+```
+Here's what we detected about your agent:
+  • Stack:          {agentStack}
+  • Language:       {programmingLanguage}
+  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
 
-Say: `We detected your agent is an {agentStack} agent. Is that correct? (Y/N)`
+Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
+```
 
-- If user responds **Y** or **Yes**: proceed to Question 2
-- If user responds **anything else**: Ask which stack (Agent Framework, LangChain, OpenAI) and update `agentStack`
+- If the user replies **yes / y**: accept all three values.
+- If the user describes corrections: update the relevant variable(s).
 
-**Question 2: Programming Language Validation**
-
-Say: `We detected that you use {programmingLanguage}. Is that correct? (Y/N)`
-
-- If user responds **Y** or **Yes**: proceed to Question 3
-- If user responds **anything else**: Ask which language (DotNet, NodeJS, Python) and update `programmingLanguage`
-
-**Question 3: Custom Engine Agent Validation**
-
-If `usesTeamsOrCopilot == 1`, say: `We detected your agent is available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)`
-
-If `usesTeamsOrCopilot == 0`, say: `We detected your agent is NOT available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)`
-
-- If user responds **Y**: keep `usesTeamsOrCopilot` as is
-- If user responds **N**: Toggle the value (1→0 or 0→1)
+After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
 **TaskUpdate** — Mark complete: "Detect agent stack, programming language, and validate with user"
 
@@ -157,22 +150,16 @@ TaskCreate: "Validate build"
 
 ### 1.2 Check prerequisites
 
-Run each command separately:
+Run both checks in one step:
 
 ```bash
-a365 --version
+a365 --version; a365 develop list-configured 2>/dev/null || echo "a365 CLI not found — will install"
 ```
 
 If `a365` is missing:
 ```bash
 dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease
-a365 --version
-```
-
-Check existing configured MCP servers:
-
-```bash
-a365 develop list-configured
+a365 --version; a365 develop list-configured
 ```
 
 Report the current state to the user — which servers are already in `ToolingManifest.json`.

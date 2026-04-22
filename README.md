@@ -38,8 +38,9 @@ copilot plugin install agent365@agent365-skills
 ## What's Included
 
 - **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, AgentsPlayground smoke testing, and local CLI testing
-- **Automatic agent detection** — skills classify your agent by framework (.NET AgentFramework, Node.js LangChain) and registration type (M365 custom engine Entra app ID / Blueprint / all other) before any code runs; no manual selection required
-- **MCP configuration** for WorkIQ tool servers (Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse)
+- **Automatic agent detection** — skills detect agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status, then ask validation questions before any code runs
+- **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or full AI Teammate deployment
+- **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
 - **Validator scripts** that run as stop hooks to verify each skill completed correctly
 - **Reference patterns** for both .NET AgentFramework and Node.js LangChain agents
 - **Evals** for every skill covering happy path, idempotency, and error handling
@@ -50,24 +51,18 @@ copilot plugin install agent365@agent365-skills
 
 ### `a365-setup` — Register, Configure & Deploy
 
-Full A365 CLI lifecycle. Asks two questions up front — your agent registration type and the
-capabilities you want — then follows the right path automatically:
+Full A365 CLI lifecycle. Detects your agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status automatically. Asks validation questions, then guides you through capability selection and follows the right path:
 
-| Registration type | Available capabilities |
-|------------------|----------------------|
-| M365 custom engine — Entra app ID | Observability, Observability + WorkIQ |
-| M365 custom engine — Blueprint | AI Teammate |
-| All other agents | Discoverability, Discoverability + Observability, AI Teammate |
+| Agent Type | Available Capabilities |
+|------------|----------------------|
+| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration (self-hosted)<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint (self-hosted)<br>• **AI Teammate** — Full Azure deployment with all capabilities |
+| **Standard Agent** | • **Discoverability** — M365 catalog registration (self-hosted)<br>• **Discoverability + Observability** — Registration + telemetry (self-hosted)<br>• **AI Teammate** — Full Azure deployment with auto-provisioned infrastructure |
 
-**AI Teammate path** — validates prerequisites, creates `a365.config.json` (with your
-messaging endpoint), runs `a365 setup all` (Blueprint, permissions, endpoint registration),
-reviews and publishes the manifest. Agent code deployment is done through your own hosting pipeline.
+**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs `a365 setup all` (provisions Azure Container Apps, Application Insights, Blueprint, permissions), reviews and publishes the manifest, and deploys your agent code.
 
-**Discoverability path** — registers the Blueprint and configures permissions. No Azure
-infrastructure or messaging endpoint is created; the agent appears in the M365 catalog.
+**Discoverability path** — registers the Blueprint and configures permissions. No Azure infrastructure or messaging endpoint is created; the agent appears in the M365 catalog but requires self-hosting.
 
-**Entra app ID path** — validates prerequisites and runs `a365 setup all` to add
-Observability or WorkIQ permissions to an existing M365 custom engine app.
+**Observability path** — instruments OpenTelemetry tracing, BaggageBuilder context, and A365 exporter with agentic token resolver for Microsoft Defender integration.
 
 **Trigger phrases:**
 ```
@@ -78,9 +73,9 @@ Observability or WorkIQ permissions to an existing M365 custom engine app.
 
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
 
-Runs `a365 develop list-available` to show the MCP server catalog, adds selected servers
-via `a365 develop add-mcp-servers`, wires `GetMcpToolsAsync` in the agent code, and guides
-the permissions handoff.
+Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available` to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`, wires `GetMcpToolsAsync` in the agent code, and guides the permissions handoff.
+
+**What WorkIQ provides:** Instead of writing custom Microsoft Graph API integrations, you get ready-to-use MCP tool servers maintained by Microsoft that handle authentication, permissions, and API calls automatically.
 
 **Trigger phrases:**
 ```
@@ -88,36 +83,47 @@ the permissions handoff.
 "Add work intelligence tools"        "Add MCP tools to this agent"
 ```
 
-**Available WorkIQ servers:**
+**Available WorkIQ MCP Servers:**
 
-| Server | Capabilities |
-|--------|-------------|
-| Work IQ Mail | Read, send, manage email |
-| Work IQ Calendar | Events, availability, meeting finder |
-| Work IQ Teams | Channel messages, team list |
-| Work IQ SharePoint | Document search, file read |
-| Work IQ OneDrive | File management |
-| Work IQ Word | Read and write documents |
-| Work IQ User | Profile and presence |
-| Work IQ Copilot | Chat with Microsoft 365 Copilot |
-| Dataverse and Dynamics 365 | Business data CRUD |
+| Server | Capabilities | Example Use Cases |
+|--------|-------------|-------------------|
+| Work IQ Mail | Read, send, manage email | "Send a summary of today's meetings", "Check for unread emails from my manager" |
+| Work IQ Calendar | Events, availability, meeting finder | "Find a 30-minute slot for our team next week", "What's on my calendar tomorrow?" |
+| Work IQ Teams | Channel messages, team list | "Summarize recent messages in the Engineering channel", "List all my teams" |
+| Work IQ SharePoint | Document search, file read | "Find the Q4 planning doc", "Summarize the latest sales deck" |
+| Work IQ OneDrive | File management | "Upload this report to my OneDrive", "List recent files" |
+| Work IQ Word | Read and write documents | "Create a meeting agenda document", "Read the project proposal" |
+| Work IQ User | Profile and presence | "Is Sarah available?", "Get contact info for the product team" |
+| Work IQ Copilot | Chat with Microsoft 365 Copilot | "Ask Copilot about our company benefits", "Get insights from Copilot" |
+| Dataverse & Dynamics 365 | Business data CRUD | "Get customer details", "Update opportunity status" |
 
 ### `instrument-observability` — Add A365 Observability
 
-Instruments OTel-based tracing, BaggageBuilder context propagation, and the A365 exporter
-token resolver into your agent entry point and message handler.
+Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365 exporter with agentic token resolver into your agent entry point and message handler.
+
+**What Observability provides:**
+- ✅ **Microsoft Defender for Cloud integration** — Your agent's traces are exported to Microsoft's security stack for threat detection
+- ✅ **OpenTelemetry instrumentation** — Industry-standard distributed tracing for monitoring and debugging
+- ✅ **Context propagation** — BaggageBuilder tracks tenant ID, agent ID, and correlation IDs across service boundaries
+- ✅ **Agentic token resolver** — Automatic authentication for trace export with 5-minute caching
+- ✅ **Security compliance** — Required for production A365 agents to meet Microsoft security standards
 
 **Trigger phrases:**
 ```
 "Instrument observability"     "Add A365 observability"
 "Enable tracing"               "Add OTel"
+"Instrument for Defender"      "Add telemetry"
 ```
 
 ### `test-local` — Smoke Test with AgentsPlayground
 
-Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in
-the background, and opens AgentsPlayground pointed at your local endpoint — no deployment
-or Bot Framework auth required.
+Tests your agent locally without deploying to Azure or Teams. Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in the background, and opens AgentsPlayground pointed at your local endpoint — no Bot Framework auth required.
+
+**What this provides:**
+- ✅ **Quick iteration** — Test changes immediately without deploying
+- ✅ **No cloud dependencies** — Runs entirely on localhost
+- ✅ **Visual chat interface** — AgentsPlayground provides a user-friendly chat UI
+- ✅ **Debug-friendly** — Easy to attach debuggers and inspect logs
 
 **Trigger phrases:**
 ```
@@ -128,41 +134,54 @@ or Bot Framework auth required.
 
 ### `add-cli` — Add Local CLI Runner
 
-Scaffolds an interactive terminal REPL for testing your agent locally without deploying to
-Teams or a messaging endpoint. Uses no extra runtime dependencies.
+Scaffolds an interactive terminal REPL for testing your agent directly from the command line. Perfect for quick smoke tests, CI/CD pipelines, or developers who prefer terminal-based workflows. Uses no extra runtime dependencies.
+
+**What this provides:**
+- ✅ **Terminal-based testing** — Chat with your agent from the command line
+- ✅ **No UI dependencies** — Works in headless environments and CI/CD pipelines
+- ✅ **Zero external dependencies** — Uses only the agent's existing dependencies
+- ✅ **Same configuration** — Reads from the same `.env` / `appsettings.json` as production
 
 **Trigger phrases:**
 ```
 "Add CLI to this agent"          "Add a console runner"
 "Run agent from command line"    "Add local chat CLI"
+"Add REPL to agent"              "Add terminal interface"
 ```
 
 ---
 
 ## Starter Prompts
 
-**Register a new agent as an AI Teammate (full deployment):**
+**Register a new agent as an AI Teammate (full deployment to Azure):**
 ```
 This agent has never been deployed to Agent 365. Walk me through blueprint setup,
 adding WorkIQ SharePoint and Teams tools, instrumentation with observability,
-and a local CLI for testing.
+and a local CLI for testing. Deploy it as an AI Teammate.
 ```
 
-**Register for Discoverability only (no messaging endpoint):**
+**Register for Discoverability only (no Azure deployment, self-hosted):**
 ```
 I want to register this agent so it shows up in the M365 catalog,
-but I'm not ready to deploy it as an AI Teammate yet. Set up Discoverability.
+but I'll handle hosting and deployment myself. Set up Discoverability.
 ```
 
-**M365 custom engine agent — add observability:**
+**Add Discoverability + Observability (self-hosted with telemetry):**
 ```
-This is an M365 custom engine agent with an existing Entra app ID.
-Add A365 observability and WorkIQ tools to it.
+Register this agent in the M365 catalog and add observability instrumentation
+for Microsoft Defender integration. I'll host it on my own infrastructure.
 ```
 
-**Register a new agent and add WorkIQ tools:**
+**Custom Engine Agent — add observability and WorkIQ:**
 ```
-I have a new .NET AgentFramework agent. Register it with Agent 365 and add Work IQ Mail and Calendar.
+This is a Custom Engine Agent available in Microsoft Teams and Copilot.
+Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
+```
+
+**Register a new agent with specific WorkIQ tools:**
+```
+I have a new .NET AgentFramework agent. Register it with Agent 365 as an AI Teammate
+and add Work IQ Mail, Calendar, and SharePoint tools.
 ```
 
 **Add specific WorkIQ tools to an existing agent:**
@@ -259,16 +278,25 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 | .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
 | Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
 
-### By registration type
+### By agent type and capabilities
 
-| Type | Description | Supported capabilities |
-|------|-------------|----------------------|
-| M365 custom engine — Entra app ID | Existing M365 app; no Blueprint yet | Observability, WorkIQ |
-| M365 custom engine — Blueprint | Existing Blueprint; deploying as AI Teammate | AI Teammate |
-| All other agents | Standard A365 agent; fresh setup | Discoverability, AI Teammate |
+| Agent Type | Detection Signals | Available Capabilities |
+|------------|------------------|----------------------|
+| **Custom Engine Agent** | M365/Teams/Copilot signals + `a365.config.json` | • **Observability** — OTel tracing, Defender integration, self-hosted<br>• **Observability + WorkIQ** — Adds pre-built M365 tools (Mail, Calendar, Teams, SharePoint, OneDrive, User), self-hosted<br>• **AI Teammate** — Full deployment to Azure Container Apps with all capabilities |
+| **Standard Agent** | No M365 signals, standard agent framework | • **Discoverability** — Blueprint registration only, self-hosted<br>• **Discoverability + Observability** — Registration + telemetry/security, self-hosted<br>• **AI Teammate** — Full Azure deployment with auto-provisioned infrastructure |
 
-Skills auto-detect the registration type from `a365.config.json` and M365 signals and
-pre-fill the selection before asking the user to confirm.
+**WorkIQ Tools Available:**
+- **Work IQ Mail** — Read, send, manage email messages
+- **Work IQ Calendar** — Events, availability, meeting scheduling
+- **Work IQ Teams** — Channel messages, team lists
+- **Work IQ SharePoint** — Document search, file operations
+- **Work IQ OneDrive** — File and folder management
+- **Work IQ Word** — Read and write Word documents
+- **Work IQ User** — User profiles and presence status
+- **Work IQ Copilot** — Chat with Microsoft 365 Copilot
+- **Dataverse & Dynamics 365** — Business data CRUD operations
+
+Skills auto-detect the agent type from codebase analysis and M365 signals, then ask validation questions before presenting capability options.
 
 ---
 

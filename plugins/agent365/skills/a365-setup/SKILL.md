@@ -44,7 +44,9 @@ hooks:
 
 ### Phase 1A: Silent Detection
 
-First detect the agent stack. Open the workspace and analyze files:
+**First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 1B.
+
+Run all three detection globs **in parallel** (single tool call with multiple Glob/Grep):
 
 **Step 1: Detect Agent Stack** → Store as `agentStack`
 - Check for .csproj + Microsoft.Agents.* → `Agent Framework`
@@ -64,56 +66,21 @@ First detect the agent stack. Open the workspace and analyze files:
 
 ### Phase 1B: User Validation Questions
 
-Before creating any todos or running any commands, ask the user to validate these detections (one question at a time, wait for each response):
+Present **all three detections in a single message** and wait for ONE response:
 
-**Question 1: Agent Stack Validation**
-
-Say to the user:
 ```
-We detected your agent is an {agentStack} agent. Is that correct? (Y/N)
-```
+Here's what we detected about your agent:
+  • Stack:          {agentStack}
+  • Language:       {programmingLanguage}
+  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
 
-- If user responds **Y** or **Yes**: proceed to Question 2
-- If user responds **anything else**: Ask:
-  ```
-  Which agent stack are you using?
-  1. Agent Framework
-  2. LangChain
-  3. OpenAI
-  ```
-  Store the response in `agentStack`.
-
-**Question 2: Programming Language Validation**
-
-Say to the user:
-```
-We detected that you use {programmingLanguage}. Is that correct? (Y/N)
+Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
 ```
 
-- If user responds **Y** or **Yes**: proceed to Question 3
-- If user responds **anything else**: Ask:
-  ```
-  Which programming language are you using?
-  1. DotNet
-  2. NodeJS
-  3. Python
-  ```
-  Store the response in `programmingLanguage`.
+- If the user replies **yes / y**: accept all three values and proceed to Question 4.
+- If the user describes corrections: update the relevant variable(s) and proceed to Question 4.
 
-**Question 3: Custom Engine Agent Validation**
-
-If `usesTeamsOrCopilot == 1`, say to the user:
-```
-We detected your agent is available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)
-```
-
-If `usesTeamsOrCopilot == 0`, say to the user:
-```
-We detected your agent is NOT available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)
-```
-
-- If user responds **Y**: keep `usesTeamsOrCopilot` as is and proceed to Question 4
-- If user responds **N**: Toggle the value (1→0 or 0→1) and proceed to Question 4
+After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
 **Question 4: What capabilities do you want to enable?**
 
@@ -184,26 +151,17 @@ Check if the Agent 365 CLI is installed and up-to-date:
 - Run a version check (e.g. `a365 --version` or `a365 -h`).
 - If the CLI is not installed or the command is not found, install it. If installed but outdated, update to the latest preview version.
 
-### Ensure .NET is installed
-
-The Agent 365 CLI is a .NET global tool. Verify .NET 8.0 (or compatible) is available:
+### Check .NET and CLI in one step
 
 ```bash
-dotnet --version
+dotnet --version; a365 --version 2>/dev/null || echo "a365 CLI not found"
 ```
 
-If not installed, instruct the user to install .NET 8.0 from https://dotnet.microsoft.com/download.
-
-### Install or update the Agent 365 CLI
-
-Use the [official documentation](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/agent-365-cli#install-the-agent-365-cli). Always include `--prerelease`:
+- If `dotnet` is missing: instruct the user to install .NET 8.0 from https://dotnet.microsoft.com/download.
+- If `a365` is not found: install or update in one command:
 
 ```bash
-# If not installed:
-dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease
-
-# If an older version is installed:
-dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease || dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
 
 On Windows, if the above fails, use `scripts/cli/install-cli.ps1` from the devTools repository (after `dotnet tool uninstall -g Microsoft.Agents.A365.DevTools.Cli`).
@@ -263,14 +221,9 @@ The CLI will validate permissions and prompt for consent at runtime. If the CLI 
 #### Detect project type
 
 ```bash
-# Check for .NET project
-find . -name "*.csproj" -print -quit
-
-# Check for Node.js project
-test -f "package.json" && echo "Node.js project detected"
-
-# Check for Python project
-{ test -f "requirements.txt" || test -f "pyproject.toml"; } && echo "Python project detected"
+find . -name "*.csproj" -print -quit 2>/dev/null; \
+  test -f "package.json" && echo "Node.js project detected"; \
+  { test -f "requirements.txt" || test -f "pyproject.toml"; } && echo "Python project detected"
 ```
 
 #### Validate required tools based on project type
