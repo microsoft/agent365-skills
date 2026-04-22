@@ -7,10 +7,11 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains four skills:
+This plugin instruments and configures A365 agents. It contains five skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
+| `make-ai-teammate` | `/agent365:make-ai-teammate` | "make this agent an AI Teammate", "add AI Teammate hosting", "transform agent to Teams agent" |
 | `a365-setup` | `/agent365:a365-setup` | "run a365 setup", "create blueprint", "register agent" |
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
@@ -29,6 +30,11 @@ plugins/agent365/
 ├── .claude-plugin/
 │   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
+│   ├── make-ai-teammate/
+│   │   ├── SKILL.md              # Full AI Teammate transformation (hosting, observability, notifications, WorkIQ)
+│   │   └── references/
+│   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (all 3 frameworks)
+│   │       └── nodejs-notifications.md  # Notification + lifecycle event patterns
 │   ├── a365-setup/
 │   │   └── SKILL.md              # Full A365 CLI lifecycle
 │   ├── instrument-observability/
@@ -46,8 +52,9 @@ plugins/agent365/
 ├── shared/
 │   └── agent-detection.md        # Shared heuristics for detecting agent type
 ├── scripts/
-│   ├── validate-setup.js         # Stop hook validator for a365-setup
-│   ├── validate-observability.js # Stop hook validator for instrument-observability
+│   ├── validate-make-ai-teammate.js  # Stop hook validator for make-ai-teammate
+│   ├── validate-setup.js             # Stop hook validator for a365-setup
+│   ├── validate-observability.js     # Stop hook validator for instrument-observability
 │   ├── validate-add-workiq-tools.js
 │   └── validate-test-local.js
 └── AGENTS.md                     # This file
@@ -57,6 +64,8 @@ plugins/agent365/
 ```
 evals/
 └── agent365/
+    ├── make-ai-teammate/
+    │   └── evals.json
     ├── a365-setup/
     │   └── evals.json
     ├── instrument-observability/
@@ -163,6 +172,11 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 ## Testing Skills
 
 ```bash
+# Transform a plain Node.js LangChain agent into an AI Teammate
+cd /path/to/nodejs-langchain-project
+claude --plugin-dir /path/to/agent365-skills/plugins/agent365
+# Then: "make this agent an AI Teammate"
+
 # Test instrument-observability in a .NET project
 cd /path/to/dotnet-agent-project
 claude --plugin-dir /path/to/agent365-skills/plugins/agent365
@@ -177,6 +191,10 @@ claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 cd /path/to/agent-project
 claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 # Then: "run a365 setup"
+
+# Run the make-ai-teammate validator directly
+cd /path/to/your-agent-project
+node /path/to/agent365-skills/plugins/agent365/scripts/validate-make-ai-teammate.js
 ```
 
 ---

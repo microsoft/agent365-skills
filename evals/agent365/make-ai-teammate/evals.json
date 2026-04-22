@@ -1,0 +1,122 @@
+{
+  "skill_name": "make-ai-teammate",
+  "eval_instructions": "Test against Node.js agents that are NOT yet M365-integrated — plain LangChain scripts, standalone OpenAI apps, Claude SDK demos. The skill must WRAP existing LLM code, not replace it. Verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has ObservabilityManager.configure().start() and McpToolRegistrationService at module level, (4) token-cache.ts exists, (5) ToolingManifest.json exists, (6) all @microsoft/agents-* packages in package.json, (7) tsconfig has module: node16. The skill must be idempotent — re-running on a partially-configured agent should only add what is missing.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Full transformation of a plain Node.js LangChain script with no M365 integration",
+      "expected_output": "The skill detects LangChain, confirms with the user, installs all required @microsoft/agents-* packages, writes src/index.ts with Express + CloudAdapter + JWT auth + health + messages endpoints, writes src/agent.ts with AgentApplication subclass and all handlers, writes src/client.ts wrapping existing LangChain invocation with ObservabilityManager and McpToolRegistrationService, writes src/token-cache.ts, creates ToolingManifest.json with empty mcpServers array, updates .env.example with A365 variables, updates tsconfig.json to node16, validates the build, and tells the user to run a365 setup next.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: LangChain is detected from package.json",
+        "Phase 0B: Detection summary shown to user with all 5 'already present' flags as ❌",
+        "Phase 0B: User is asked to confirm before any files are written",
+        "Phase 1: npm install runs with all @microsoft/agents-* packages in one command",
+        "Phase 2: tsconfig.json has module: node16 and moduleResolution: node16",
+        "Phase 3: src/token-cache.ts is created with createAgenticTokenCacheKey, tokenResolver, and default export",
+        "Phase 4: src/index.ts has configDotenv() as first line before other imports",
+        "Phase 4: src/index.ts has /api/health BEFORE authorizeJWT middleware",
+        "Phase 4: src/index.ts has /api/messages using adapter.process()",
+        "Phase 4: src/index.ts detects production via WEBSITE_SITE_NAME or NODE_ENV=production",
+        "Phase 5: src/agent.ts exports agentApplication as a named const",
+        "Phase 5: src/agent.ts has onAgentNotification('agents:*') with priority 1 and [authHandlerName]",
+        "Phase 5: src/agent.ts has onActivity(ActivityTypes.Message) with [authHandlerName]",
+        "Phase 5: src/agent.ts has onActivity(ActivityTypes.InstallationUpdate)",
+        "Phase 5: src/agent.ts has typing indicator loop (setInterval every 4000ms)",
+        "Phase 5: src/agent.ts has preloadObservabilityToken() calling RefreshObservabilityToken",
+        "Phase 5: src/agent.ts imports '@microsoft/agents-a365-notifications' as side-effect",
+        "Phase 5: src/agent.ts uses createEmailResponseActivity for email replies",
+        "Phase 6: src/client.ts has ObservabilityManager.configure().start() before other logic",
+        "Phase 6: src/client.ts has McpToolRegistrationService as module-level singleton",
+        "Phase 6: src/client.ts wraps existing LangChain invocation inside invokeInferenceScope",
+        "Phase 6: src/client.ts uses InferenceScope with dispose() in finally block",
+        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 7: User is told to run add-workiq-tools skill to add MCP servers",
+        "Phase 8: .env.example gains ENABLE_A365_OBSERVABILITY_EXPORTER, agentic_* vars, and connection vars",
+        "Phase 9: npm run build (or tsc --noEmit) succeeds",
+        "Phase 10: Final summary tells user to run a365 setup as the next step"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Transform agent to AI Teammate",
+      "description": "OpenAI Agents SDK project — partial integration (hosting already present, no observability or notifications)",
+      "expected_output": "The skill detects OpenAI Agents SDK and that hosting is already present (CloudAdapter found). It skips Phase 4 (index.ts), adds the AgentApplication class, wires observability and McpToolRegistrationService into client.ts, adds notification handlers to agent.ts, and validates the build. Existing routes and middleware are preserved.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: OpenAI Agents SDK detected from package.json (@openai/agents)",
+        "Phase 0A: hasHosting is detected as ✅ (CloudAdapter already present)",
+        "Phase 0A: hasObservability is detected as ❌, hasNotifications as ❌",
+        "Phase 0B: User shown partial configuration — hosting ✅, rest ❌",
+        "Phase 4: src/index.ts is NOT rewritten — hosting phase is skipped",
+        "Phase 5: AgentApplication class is added to agent.ts",
+        "Phase 5: Notification handler and InstallationUpdate handler are added",
+        "Phase 6: ObservabilityManager.configure().start() added to top of client.ts",
+        "Phase 6: McpToolRegistrationService singleton added to client.ts",
+        "Phase 6: Existing OpenAI invocation is wrapped in invokeInferenceScope",
+        "Phase 6: @microsoft/agents-a365-tooling-extensions-openai is used (not langchain variant)",
+        "Phase 9: Build succeeds with no regressions to existing code"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add AI Teammate hosting to this Claude agent",
+      "description": "Claude SDK project — no existing M365 integration",
+      "expected_output": "The skill detects Claude SDK (@anthropic-ai/sdk), installs Claude-specific packages (@microsoft/agents-a365-tooling-extensions-claude, @microsoft/agents-a365-observability-extensions-claude), and follows the same full transformation using Claude variants. The Anthropic API key env var is preserved.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: Claude SDK detected from @anthropic-ai/sdk in package.json",
+        "Phase 1: npm install uses @microsoft/agents-a365-tooling-extensions-claude and @microsoft/agents-a365-observability-extensions-claude",
+        "Phase 6: client.ts uses Claude-specific MCP service (agents-a365-tooling-extensions-claude)",
+        "Phase 8: ANTHROPIC_API_KEY is preserved in .env — not overwritten",
+        "All core patterns (hosting, agent class, observability, notifications) are identical to LangChain/OpenAI"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Idempotency — fully configured agent, all components already present",
+      "expected_output": "The skill detects all components are already present, skips all creation phases, runs the build, and reports that the agent is already a complete AI Teammate.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: All 5 'already present' flags detected as ✅",
+        "Phase 0B: User is shown all-green detection summary",
+        "All creation phases (3–8) are skipped",
+        "Phase 9: Build is still run to validate",
+        "Phase 10: Summary states agent is already fully configured"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Wire up M365 hosting",
+      "description": "Agent with existing Express server (non-CloudAdapter) — migration path",
+      "expected_output": "The skill finds the existing Express server in index.ts. Instead of overwriting, it migrates it: adds configDotenv() as first line, adds CloudAdapter and authorizeJWT, adds /api/health before auth, adds /api/messages, and preserves any existing routes.",
+      "files": [],
+      "expectations": [
+        "Phase 0A: hasHosting detected as ❌ (Express present but no CloudAdapter)",
+        "Phase 4: Existing index.ts is migrated — not overwritten from scratch",
+        "Phase 4: configDotenv() is added as first line if missing",
+        "Phase 4: /api/health is added BEFORE authorizeJWT",
+        "Phase 4: /api/messages endpoint added using adapter.process()",
+        "Phase 4: Existing routes and middleware in index.ts are preserved",
+        "No existing business logic is deleted"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Convert this agent to a Teams agent",
+      "description": "Unknown/unsupported LLM framework (not LangChain, OpenAI, or Claude)",
+      "expected_output": "The skill detects an unrecognized LLM framework and tells the user. It still adds the hosting layer, agent class, token cache, ToolingManifest.json, and observability init. It stubs out the client factory with a placeholder and tells the user exactly where to integrate their LLM calls.",
+      "files": [],
+      "expectations": [
+        "Phase 0B: User is told the framework is not auto-detected",
+        "Phase 0B: User is asked to confirm or provide the framework name",
+        "Hosting layer (index.ts), agent class (agent.ts), token-cache.ts are still created",
+        "client.ts is created with ObservabilityManager + McpToolRegistrationService + stub invokeInferenceScope",
+        "User is clearly told where in client.ts to integrate their LLM calls",
+        "Build is attempted — any LLM-specific errors are reported but do not block the skill"
+      ]
+    }
+  ]
+}

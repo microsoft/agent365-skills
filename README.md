@@ -44,7 +44,7 @@ copilot plugin install agent365@agent365-skills
 
 ## What's Included
 
-- **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, Agent 365 notifications for AI Teammates, and local testing with AgentsPlayground
+- **5 skills** covering full AI Teammate transformation, blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
 - **Automatic agent detection** — skills detect your agent stack, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
@@ -98,21 +98,28 @@ Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and
 "Instrument for Defender"      "Add telemetry"
 ```
 
-### `add-notifications` — Add Agent 365 Notifications (AI Teammate)
+### `make-ai-teammate` — Transform Any Node.js Agent into an AI Teammate
 
-Wires Agent 365 notification handling into an AI Teammate Node.js LangChain agent.
-Installs `@microsoft/agents-a365-notifications`, registers `onAgentNotification('agents:*')`
-to handle incoming email notifications (reads the email via Work IQ Mail, processes it,
-replies via `createEmailResponseActivity`), and registers `onActivity(InstallationUpdate)`
-for agent install and uninstall lifecycle events.
+The full-stack transformation skill. Takes any Node.js agent using LangChain, OpenAI Agents SDK,
+or Claude SDK and makes it a production-ready Microsoft Agent 365 AI Teammate — wrapping your
+existing LLM code without replacing it.
 
-**Only applies to AI Teammate agents** — requires a registered messaging endpoint.
+**What it adds:**
+- **Hosting layer** — Express server with `CloudAdapter`, JWT auth, `/api/health`, `/api/messages`
+- **Agent routing** — `AgentApplication` subclass with message handling and typing indicator loop
+- **Observability** — `ObservabilityManager`, `BaggageBuilder`, `InferenceScope`, token cache
+- **Notifications** — email notification handler using `createEmailResponseActivity`, install/uninstall lifecycle events
+- **WorkIQ tools** — `McpToolRegistrationService` wired into the client factory, `ToolingManifest.json`
+- **All packages and env vars** — installs every required `@microsoft/agents-*` package
+
+Supports **LangChain**, **OpenAI Agents SDK**, and **Claude SDK**. Idempotent — re-runnable on
+agents that are partially configured.
 
 **Trigger phrases:**
 ```
-"Add notifications to this agent"     "Handle agent notifications"
-"Add email notifications"             "Wire notification handler"
-"Handle install uninstall events"     "Add ai teammate notifications"
+"Make this agent an AI Teammate"      "Transform agent to AI Teammate"
+"Add AI Teammate hosting"             "Wire up M365 hosting"
+"Convert agent to Teams agent"        "Add CloudAdapter to this agent"
 ```
 
 ### `test-local` — Local Testing with AgentsPlayground
@@ -129,6 +136,13 @@ Tests your agent locally without deploying to Azure or Teams. Checks prerequisit
 ---
 
 ## Starter Prompts
+
+**Transform an existing Node.js agent into a full AI Teammate:**
+```
+I have a Node.js LangChain agent that runs as a plain script. Transform it into
+a Microsoft Agent 365 AI Teammate with hosting, observability, email notifications,
+and WorkIQ tools.
+```
 
 **Register a new agent as an AI Teammate:**
 ```
