@@ -1,7 +1,7 @@
 {
   "name": "agent365",
-  "version": "1.1.0",
-  "description": "Skills for Microsoft Agent 365 — register blueprints, add WorkIQ MCP tools, instrument observability, and add local CLI runners. Supports .NET AgentFramework and Node.js LangChain.",
+  "version": "1.2.0",
+  "description": "Skills for Microsoft Agent 365 — register blueprints, add WorkIQ MCP tools, instrument observability, add notifications for AI Teammates, and add local CLI runners. Supports .NET AgentFramework and Node.js LangChain.",
   "author": {
     "name": "Microsoft",
     "url": "https://github.com/microsoft"

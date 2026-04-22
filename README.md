@@ -44,7 +44,7 @@ copilot plugin install agent365@agent365-skills
 
 ## What's Included
 
-- **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
+- **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, Agent 365 notifications for AI Teammates, and local testing with AgentsPlayground
 - **Automatic agent detection** — skills detect your agent stack, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
@@ -96,6 +96,23 @@ Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and
 "Instrument observability"     "Add A365 observability"
 "Enable tracing"               "Add OTel"
 "Instrument for Defender"      "Add telemetry"
+```
+
+### `add-notifications` — Add Agent 365 Notifications (AI Teammate)
+
+Wires Agent 365 notification handling into an AI Teammate Node.js LangChain agent.
+Installs `@microsoft/agents-a365-notifications`, registers `onAgentNotification('agents:*')`
+to handle incoming email notifications (reads the email via Work IQ Mail, processes it,
+replies via `createEmailResponseActivity`), and registers `onActivity(InstallationUpdate)`
+for agent install and uninstall lifecycle events.
+
+**Only applies to AI Teammate agents** — requires a registered messaging endpoint.
+
+**Trigger phrases:**
+```
+"Add notifications to this agent"     "Handle agent notifications"
+"Add email notifications"             "Wire notification handler"
+"Handle install uninstall events"     "Add ai teammate notifications"
 ```
 
 ### `test-local` — Local Testing with AgentsPlayground

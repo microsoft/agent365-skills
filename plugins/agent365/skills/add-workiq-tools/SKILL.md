@@ -301,29 +301,44 @@ Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
 
 ### For Node.js LangChain
 
-#### 4A — Install tooling package (if not present)
+#### 4A — Install tooling packages (if not present)
 
-**Grep** `agents-a365-tooling` in `**/package.json`. If missing:
+**Grep** `agents-a365-tooling-extensions-langchain` in `**/package.json`. If missing:
 ```bash
-npm install @microsoft/agents-a365-tooling
+npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-langchain
 ```
 
-#### 4B — Wire MCP client in agent entry point
+#### 4B — Wire McpToolRegistrationService in client.ts
 
-**Read** the agent entry point (`src/index.ts` or detected file).
-**Grep** `A365McpToolClient` — if already present, skip.
+**Read** `src/client.ts` (or the file containing the LangChain `getClient` factory).
+**Grep** `McpToolRegistrationService` — if already present, skip.
 
-If missing, **Edit** to add:
+If missing, **Edit** the client file to add:
+
+1. Module-level singleton (outside any function, at the top of the file):
 ```typescript
 // A365 WorkIQ — added by add-workiq-tools skill
-import { A365McpToolClient } from '@microsoft/agents-a365-tooling';
-const mcpClient = new A365McpToolClient({
-  agentId: process.env.AGENTIC_APP_ID!,
-  mcpServersConfig: './ToolingManifest.json',
-});
-// Inside request handler:
-const workIQTools = await mcpClient.getToolsAsync({ userToken, mcpServerName: 'mcp_WorkIQTools' });
-// Spread into tools: [...existingTools, ...workIQTools]
+import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';
+const toolService = new McpToolRegistrationService();
+```
+
+2. Inside the per-turn `getClient()` factory, after creating the base agent and before
+   returning the client:
+```typescript
+// A365 WorkIQ — added by add-workiq-tools skill
+let agentWithTools = personalizedAgent;
+try {
+  agentWithTools = await toolService.addToolServersToAgent(
+    personalizedAgent,
+    authorization,
+    authHandlerName,
+    turnContext,
+    process.env.BEARER_TOKEN ?? '',
+  );
+} catch (error) {
+  console.error('Error adding MCP tool servers:', error);
+  // falls back to agent without tools
+}
 ```
 
 Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
