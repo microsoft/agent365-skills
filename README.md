@@ -53,11 +53,11 @@ An **AI Teammate** is an agent registered with Microsoft Agent 365 that can rece
 
 **Before this skill:** Your agent is a standalone script or HTTP server. It has no Teams presence, no M365 data access, and no observability.
 
-**After this skill:** Your agent is a live AI Teammate in Microsoft Teams — users can chat with it directly, it can read and respond to emails, and every LLM call is traced in Microsoft Defender.
+**After this skill:** Your agent is a live AI Teammate in Microsoft Teams — registered with Agent 365, users can chat with it directly, it can read and respond to emails, and every LLM call is traced in Microsoft Defender.
 
 The full-stack transformation skill. Takes any agent using LangChain, OpenAI Agents SDK, Claude SDK (.NET, Node.js, or Python), or .NET/.Python AgentFramework and makes it a production-ready Microsoft Agent 365 AI Teammate — wrapping your existing LLM code without replacing it.
 
-Adds the complete hosting and integration layer in one pass:
+Adds the complete hosting, integration, and registration layer in one guided flow:
 
 - **Hosting layer** — Express/CloudAdapter (Node.js) · ASP.NET Core/IAgentHttpAdapter (.NET) · aiohttp/CloudAdapterAiohttp (Python) — with `/api/health` and `/api/messages`
 - **`AgentApplication` subclass** — message routing, typing indicator loop, observability token preloading, email notification dispatch, install/uninstall lifecycle events
@@ -65,6 +65,10 @@ Adds the complete hosting and integration layer in one pass:
 - **`McpToolRegistrationService`** — module-level singleton (Node.js), DI-injected singleton (.NET), or per-turn (Python) wired into the per-turn client factory
 - **Token cache** — per-language token caching with agentic resolver support
 - **`ToolingManifest.json`**, all A365 packages, env vars, and tsconfig/pyproject settings
+- **Blueprint registration** — runs `a365 setup all` after the build passes to register the agent with your Agent 365 tenant
+- **Agent instance creation** — runs `a365 create-instance` to create a deployable instance in the portal
+- **Optional WorkIQ tools and observability** — offers to invoke `add-workiq-tools` and `instrument-observability` inline
+- **Local testing** — offers to launch AgentsPlayground against the local endpoint before you finish
 
 Supports **LangChain**, **OpenAI Agents SDK**, and **Claude SDK** (Node.js), **AgentFramework** (.NET and Python). Idempotent — re-running on a partially-configured agent only adds what is missing.
 

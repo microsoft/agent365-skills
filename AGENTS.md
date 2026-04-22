@@ -19,6 +19,8 @@ This plugin instruments and configures A365 agents. It contains five skills:
 
 **Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
 
+**Skill overlap note:** `make-ai-teammate` now runs `a365 setup all` and `a365 create-instance` inline after the build passes (Phases 10–11), then offers WorkIQ tools, observability, and local testing (Phases 12–13). Use the standalone `a365-setup` skill when you need to re-register, change the endpoint, or set up a Custom Engine Agent or Standard Agent that was not transformed by `make-ai-teammate`.
+
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
 in a better state than they found it.
