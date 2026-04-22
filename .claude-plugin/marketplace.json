@@ -6,7 +6,7 @@
     "name": "Microsoft",
     "url": "https://github.com/microsoft"
   },
-  "repository": "https://github.com/microsoft/agent365-skills",
+  "repository": "https://github.com/microsoft/agent365-skills.git",
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
   "plugins": [
