@@ -99,12 +99,6 @@ Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and
 
 Tests your agent locally without deploying to Azure or Teams. Checks prerequisites (`agentsplayground` CLI, build tools), builds the agent, starts it in the background, and opens AgentsPlayground pointed at your local endpoint — no Bot Framework auth required.
 
-**What this provides:**
-- ✅ **Quick iteration** — Test changes immediately without deploying
-- ✅ **No cloud dependencies** — Runs entirely on localhost
-- ✅ **Visual chat interface** — AgentsPlayground provides a user-friendly chat UI
-- ✅ **Debug-friendly** — Easy to attach debuggers and inspect logs
-
 **Trigger phrases:**
 ```
 "Test this agent locally"        "Run agent locally"
