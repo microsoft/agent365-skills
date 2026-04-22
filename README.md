@@ -97,20 +97,6 @@ to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-
 (which writes `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
 and guides the permissions handoff to your Global Administrator.
 
-**What WorkIQ provides:** Ready-to-use MCP tool servers maintained by Microsoft — no custom Graph API integrations needed. Authentication, permissions, and API calls are handled automatically.
-
-| Tool | What it does |
-|------|-------------|
-| Work IQ Mail | Read, send, and manage email |
-| Work IQ Calendar | Read/create events, check availability |
-| Work IQ Teams | Read channel messages, list teams and members |
-| Work IQ SharePoint | Search documents, read files, list sites |
-| Work IQ OneDrive | Manage OneDrive files |
-| Work IQ Word | Read and write Word documents |
-| Work IQ User | Get user profile and presence |
-| Work IQ Copilot | Chat with Microsoft 365 Copilot |
-| Dataverse & Dynamics 365 | CRUD and domain actions |
-
 **Trigger phrases:**
 ```
 "Add workiq tools"                   "Add Work IQ Mail"
