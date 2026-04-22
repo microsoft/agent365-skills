@@ -37,7 +37,7 @@ copilot plugin install agent365@agent365-skills
 
 ## What's Included
 
-- **5 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, AgentsPlayground smoke testing, and local CLI testing
+- **4 skills** covering blueprint setup, WorkIQ MCP tools, observability instrumentation, and AgentsPlayground smoke testing
 - **Automatic agent detection** — skills detect agent stack (Agent Framework, LangChain, OpenAI), programming language (DotNet, NodeJS, Python), and Custom Engine Agent status, then ask validation questions before any code runs
 - **Smart capability selection** — based on your agent type, you get tailored options: Discoverability, Observability, WorkIQ tools, or AI Teammate registration
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
@@ -119,23 +119,6 @@ Tests your agent locally without deploying to Azure or Teams. Checks prerequisit
 "Smoke test this agent"          "Test without deploying"
 ```
 
-### `add-cli` — Add Local CLI Runner
-
-Scaffolds an interactive terminal REPL for testing your agent directly from the command line. Perfect for quick smoke tests, CI/CD pipelines, or developers who prefer terminal-based workflows. Uses no extra runtime dependencies.
-
-**What this provides:**
-- ✅ **Terminal-based testing** — Chat with your agent from the command line
-- ✅ **No UI dependencies** — Works in headless environments and CI/CD pipelines
-- ✅ **Zero external dependencies** — Uses only the agent's existing dependencies
-- ✅ **Same configuration** — Reads from the same `.env` / `appsettings.json` as production
-
-**Trigger phrases:**
-```
-"Add CLI to this agent"          "Add a console runner"
-"Run agent from command line"    "Add local chat CLI"
-"Add REPL to agent"              "Add terminal interface"
-```
-
 ---
 
 ## Starter Prompts
@@ -181,11 +164,6 @@ Our blueprint already exists — I'll need to know what to give our Global Admin
 **Smoke test without deploying (AgentsPlayground):**
 ```
 Test my agent locally without deploying to Teams.
-```
-
-**Set up local testing:**
-```
-Add a CLI runner so I can chat with this agent from the terminal without deploying.
 ```
 
 **Check what's already configured:**

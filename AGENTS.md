@@ -7,7 +7,7 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains five skills:
+This plugin instruments and configures A365 agents. It contains four skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
@@ -15,7 +15,6 @@ This plugin instruments and configures A365 agents. It contains five skills:
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
-| `add-cli` | `/agent365:add-cli` | "add cli to this agent", "add a console runner" |
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -42,19 +41,15 @@ plugins/agent365/
 │   │   └── references/
 │   │       ├── dotnet-workiq.md  # .NET MCP tool patterns
 │   │       └── nodejs-workiq.md  # Node.js MCP tool patterns
-│   ├── test-local/
-│   │   └── SKILL.md              # AgentsPlayground local smoke testing
-│   └── add-cli/
-│       ├── SKILL.md              # Local terminal REPL scaffold
-│       └── references/
+│   └── test-local/
+│       └── SKILL.md              # AgentsPlayground local smoke testing
 ├── shared/
 │   └── agent-detection.md        # Shared heuristics for detecting agent type
 ├── scripts/
 │   ├── validate-setup.js         # Stop hook validator for a365-setup
 │   ├── validate-observability.js # Stop hook validator for instrument-observability
 │   ├── validate-add-workiq-tools.js
-│   ├── validate-test-local.js
-│   └── validate-add-cli.js
+│   └── validate-test-local.js
 └── AGENTS.md                     # This file
 ```
 
@@ -68,9 +63,7 @@ evals/
     │   └── evals.json
     ├── add-workiq-tools/
     │   └── evals.json
-    ├── test-local/
-    │   └── evals.json
-    └── add-cli/
+    └── test-local/
         └── evals.json
 ```
 
