@@ -144,7 +144,7 @@ Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_NAME_NO_SPACES>`
 | Blueprint already exists | `a365 setup permissions mcp` | **Global Administrator** |
 | Custom client app | `a365 develop add-permissions` | Developer (needs `Application.ReadWrite.All`) |
 
-The GA must verify `deploymentProjectPath` in `a365.config.json` before running `a365 setup permissions mcp`.
+The GA must run `a365 setup permissions mcp` from the project directory (where `a365.config.json` lives).
 
 ---
 

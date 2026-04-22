@@ -59,9 +59,9 @@ capabilities you want — then follows the right path automatically:
 | M365 custom engine — Blueprint | AI Teammate |
 | All other agents | Discoverability, Discoverability + Observability, AI Teammate |
 
-**AI Teammate path** — validates prerequisites, creates `a365.config.json`, runs
-`a365 setup all` (provisions Azure infra, Blueprint, messaging endpoint), reviews and
-publishes the manifest, and deploys the agent code.
+**AI Teammate path** — validates prerequisites, creates `a365.config.json` (with your
+messaging endpoint), runs `a365 setup all` (Blueprint, permissions, endpoint registration),
+reviews and publishes the manifest. Agent code deployment is done through your own hosting pipeline.
 
 **Discoverability path** — registers the Blueprint and configures permissions. No Azure
 infrastructure or messaging endpoint is created; the agent appears in the M365 catalog.

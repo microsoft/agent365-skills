@@ -117,9 +117,8 @@ Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_NAME_NO_SPACES>`
 | Blueprint not yet created | `a365 setup all` (reads manifest automatically) | Developer |
 | Blueprint already exists | `a365 setup permissions mcp` | **Global Administrator** |
 
-The GA must verify `deploymentProjectPath` in `a365.config.json` first:
+The GA must run these commands from the project directory (where `a365.config.json` lives):
 ```bash
-a365 config display  # confirm deploymentProjectPath is correct
 a365 setup permissions mcp
 ```
 
