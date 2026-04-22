@@ -5,6 +5,50 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 
 ---
 
+## Initial Detection Variables
+
+The skill MUST detect and store these three variables before asking ANY questions:
+
+1. **`agentType`** — Agent stack/framework
+   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`
+   - Detection: See detection logic below
+
+2. **`programmingLanguage`** — Programming language
+   - Possible values: `DotNet`, `Python`, `NodeJS`
+   - Detection: File extension analysis
+
+3. **`usesTeamsOrCopilot`** — Is this a Custom Engine Agent?
+   - Possible values: `1` (true) or `0` (false)
+   - Detection: Check for M365/Teams/Copilot signals AND a365.config.json markers
+
+### Agent Stack Detection Logic
+
+```
+Agent Framework → .csproj + (Microsoft.Agents.* OR AgentApplication)
+LangChain       → package.json + @langchain/* OR requirements.txt + langchain
+OpenAI          → package.json + "openai" (no LangChain) OR requirements.txt + openai (no langchain)
+```
+
+### Programming Language Detection
+
+```
+DotNet → .csproj exists
+NodeJS → package.json exists + (.ts OR .js files)
+Python → requirements.txt OR .py files
+```
+
+### Custom Engine Agent Detection (usesTeamsOrCopilot)
+
+```
+Set usesTeamsOrCopilot = 1 if ALL of these are true:
+  - M365 signals found (channelId.*msteams, TeamsChannel, etc.)
+  - a365.config.json exists OR a365.generated.config.json exists
+  
+Set usesTeamsOrCopilot = 0 otherwise
+```
+
+---
+
 ## Classification Order (always follow this sequence)
 
 ```

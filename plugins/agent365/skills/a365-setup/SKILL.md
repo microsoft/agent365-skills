@@ -4,8 +4,8 @@ description: >
   Full Agent 365 CLI setup lifecycle for AI agents. Asks two path-determination questions
   (agent type and desired capabilities), then follows the correct path: verifies and installs
   the CLI, validates Azure prerequisites, configures the agent blueprint (AI Teammate path),
-  runs a365 setup all to provision all prerequisites, and publishes and deploys the agent
-  application (AI Teammate path). Supports .NET AgentFramework, Node.js LangChain, and Python agents.
+  runs a365 setup all to provision Blueprint, permissions, and endpoint registration, and
+  publishes the agent manifest (AI Teammate path). Supports .NET AgentFramework, Node.js LangChain, and Python agents.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -38,30 +38,92 @@ hooks:
 
 ---
 
-> **YOUR FIRST AND ONLY ACTION RIGHT NOW:** Ask the user the two path-determination questions below. Do NOT create todos, run commands, or read further until the user has answered both questions. After both answers are received, create all todos for the determined path and mark Todo 1 in-progress.
+> **YOUR FIRST AND ONLY ACTION RIGHT NOW:** Detect the agent stack and code, then ask validation questions. Do NOT create todos, run commands, or read further until all validations are complete. After all answers are received, create all todos for the determined path and mark Todo 1 in-progress.
 
-**RULE 1 — ASK TWO QUESTIONS FIRST, THEN CREATE ALL TODOS.**
+**RULE 1 — DETECT AGENT STACK AND CODE, ASK VALIDATION QUESTIONS, THEN CREATE ALL TODOS.**
 
-Before creating any todos or running any commands, ask the user these two questions (one at a time, wait for each response):
+### Phase 1A: Silent Detection
 
-**Question 1: Which of the following best describes your agent?**
+First detect the agent stack. Open the workspace and analyze files:
 
-1. M365 custom engine agent — Entra app ID
-2. M365 custom engine agent — Blueprint
-3. All other agents
+**Step 1: Detect Agent Stack** → Store as `agentStack`
+- Check for .csproj + Microsoft.Agents.* → `Agent Framework`
+- Check for package.json + @langchain → `LangChain`  
+- Check for package.json + "openai" (no LangChain) → `OpenAI`
+- Check for requirements.txt + langchain → `LangChain`
+- Check for requirements.txt + openai → `OpenAI`
 
-Wait for the answer. Store as `agentType` (1, 2, or 3).
+**Step 2: Detect Programming Language** → Store as `programmingLanguage`
+- .csproj exists → `DotNet`
+- package.json exists → `NodeJS`
+- requirements.txt OR .py files → `Python`
 
-**Question 2: What capabilities do you want to enable?**
+**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
+- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
+- Otherwise → `0`
 
-Present only the options that apply to the user's `agentType`:
+### Phase 1B: User Validation Questions
 
-- **If `agentType = 1`** (M365 custom engine — Entra app ID):
+Before creating any todos or running any commands, ask the user to validate these detections (one question at a time, wait for each response):
+
+**Question 1: Agent Stack Validation**
+
+Say to the user:
+```
+We detected your agent is an {agentStack} agent. Is that correct? (Y/N)
+```
+
+- If user responds **Y** or **Yes**: proceed to Question 2
+- If user responds **anything else**: Ask:
+  ```
+  Which agent stack are you using?
+  1. Agent Framework
+  2. LangChain
+  3. OpenAI
+  ```
+  Store the response in `agentStack`.
+
+**Question 2: Programming Language Validation**
+
+Say to the user:
+```
+We detected that you use {programmingLanguage}. Is that correct? (Y/N)
+```
+
+- If user responds **Y** or **Yes**: proceed to Question 3
+- If user responds **anything else**: Ask:
+  ```
+  Which programming language are you using?
+  1. DotNet
+  2. NodeJS
+  3. Python
+  ```
+  Store the response in `programmingLanguage`.
+
+**Question 3: Custom Engine Agent Validation**
+
+If `usesTeamsOrCopilot == 1`, say to the user:
+```
+We detected your agent is available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)
+```
+
+If `usesTeamsOrCopilot == 0`, say to the user:
+```
+We detected your agent is NOT available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)
+```
+
+- If user responds **Y**: keep `usesTeamsOrCopilot` as is and proceed to Question 4
+- If user responds **N**: Toggle the value (1→0 or 0→1) and proceed to Question 4
+
+**Question 4: What capabilities do you want to enable?**
+
+Present only the options that apply based on `usesTeamsOrCopilot`:
+
+- **If `usesTeamsOrCopilot = 1`** (Custom Engine Agent):
   1. Observability
   2. Observability and Work IQ
-- **If `agentType = 2`** (M365 custom engine — Blueprint):
-  1. AI Teammate
-- **If `agentType = 3`** (All other agents — Blueprint):
+  3. AI Teammate
+- **If `usesTeamsOrCopilot = 0`** (Standard Agent):
   1. Discoverability
   2. Discoverability and Observability
   3. AI Teammate
@@ -70,14 +132,16 @@ Wait for the answer. Store as `capabilities`.
 
 > **Note:** The setup automatically includes all prerequisite capabilities for your selection.
 
-After both questions are answered, set `isAITeammate = true` if `capabilities = AI Teammate`, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
+### Phase 1C: Determine Path and Create Todos
+
+After all four questions are answered, set `isAITeammate = true` if `capabilities = AI Teammate`, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (5 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Configure the Agent 365 CLI (Initialize Configuration)`
 - Todo 4: `Step 4: Run Agent 365 Setup to Provision Prerequisites`
-- Todo 5: `Step 5: Publish and Deploy the Agent Application`
+- Todo 5: `Step 5: Review, Publish, and Register Endpoint`
 
 **Standard path** — `agentType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
@@ -95,11 +159,11 @@ After both questions are answered, set `isAITeammate = true` if `capabilities = 
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
-**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. Do NOT run `az account show`, ask about deployment type, or gather Azure values — those belong to Steps 3 and 2 respectively. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
+**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. Do NOT run `az account show` or gather Azure values outside of Step 3. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
 
 **RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 
-**RULE 6 — INPUT FIELDS.** In Step 3 (AI Teammate path only), present exactly 5 fields (Azure-hosted) or 4 fields (self-hosted). Do NOT ask the user for a client app ID — the CLI resolves it automatically by the well-known app name "Agent 365 CLI".
+**RULE 6 — INPUT FIELDS.** In Step 3 (AI Teammate path only), present exactly 3 fields: Agent Name, Manager Email, and Messaging Endpoint. Do NOT ask the user for a client app ID — the CLI resolves it automatically by the well-known app name "Agent 365 CLI".
 
 ---
 
@@ -257,80 +321,33 @@ Confirm Python 3.10 or later and pip are available.
 ### Gather auto-detected values
 
 ```bash
-az account show --query "{tenantId:tenantId, subscriptionId:id}" -o json
+az account show --query "{tenantId:tenantId}" -o json
+az ad signed-in-user show --query userPrincipalName -o tsv
 ```
 
-Set `deploymentProjectPath` to the current working directory (absolute path).
-
-### Ask deployment type
-
-Send the user **only** the following message and STOP:
-
----
-
-**Do you want to create a web app in Azure for this agent? (yes/no)**
-
-- **Yes** = Azure-hosted (recommended for production)
-- **No** = Self-hosted (e.g., local development with dev tunnel)
-
----
-
-> ⛔ **STOP. OUTPUT ONLY THE QUESTION ABOVE. WAIT for the user's reply before continuing.**
-
-After the user responds:
-- **yes** → `needDeployment: true`
-- **no** → `needDeployment: false`
+Extract: `{tenantId}`, `{loggedInUser}`.
 
 ### Collect configuration inputs
 
-> ⛔ DO NOT execute this section until the user has answered the deployment type question above.
-
-#### First: Query the subscription for real example values
-
-Run this as **ONE command**:
-
-```bash
-az ad signed-in-user show --query userPrincipalName -o tsv; az group list --query "[].{Name:name, Location:location}" -o table; az appservice plan list --query "[].{Name:name, ResourceGroup:resourceGroup, Location:location}" -o table
-```
-
-Extract: `{loggedInUser}`, `{existingResourceGroup}`, `{existingLocations}`, `{existingAppServicePlan}`.
-Use descriptive fallbacks (`my-agent-rg`, `my-agent-plan`) if queries return no results.
-
-#### If Azure-hosted (`needDeployment: true`)
-
-**"Please provide the following values to configure your Azure-hosted agent:"**
+**"Please provide the following values to configure your agent:"**
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| **Resource Group** | Azure Resource Group (new or existing) | `{existingResourceGroup}` |
-| **Location** | Azure region for deployment | `{existingLocations}` |
 | **Agent Name** | Unique name for your agent (see rules below) | `contoso-support-agent` |
 | **Manager Email** | M365 manager email (must be from your tenant) | `{loggedInUser}` |
-| **App Service Plan** | Azure App Service Plan name | `{existingAppServicePlan}` |
 
-> **Agent Name rules:** Globally unique across Azure. Derives web app URL (`{name}-webapp.azurewebsites.net`), Agent Identity, Blueprint, and UPN. Lowercase letters, numbers, hyphens only. Start with a letter. 3-20 chars recommended. Include your org name.
+> **Agent Name rules:** Unique within your tenant. Derives Agent Identity, Blueprint, and UPN. Lowercase letters, numbers, hyphens only. Start with a letter. 3–20 chars recommended. Include your org name.
 >
-> Do NOT ask for `clientAppId` — it was collected in Step 2. Present ONLY the 5 fields above.
+> Do NOT ask for `clientAppId` — the CLI resolves it automatically. Do NOT ask for subscription, resource group, location, or Azure infra fields — the CLI no longer manages Azure hosting.
 
-#### If self-hosted (`needDeployment: false`)
+#### Determine messaging endpoint
 
-**"Please provide the following values to configure your self-hosted agent:"**
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| **Resource Group** | Azure Resource Group (new or existing) | `{existingResourceGroup}` |
-| **Location** | Azure region for deployment | `{existingLocations}` |
-| **Agent Name** | Unique name for your agent | `contoso-support-agent` |
-| **Manager Email** | M365 manager email (must be from your tenant) | `{loggedInUser}` |
-
-#### Determine messaging endpoint (self-hosted only)
-
-Ask: **"Would you like to use a dev tunnel for local development, or provide a custom messaging endpoint? (devtunnel/custom)"**
+Ask: **"How is your agent hosted? Choose devtunnel for local development, or provide a custom HTTPS endpoint for production/staging. (devtunnel/custom)"**
 
 - **devtunnel**: Creates a secure tunnel from the internet to your local machine. Tunnel URL becomes `messagingEndpoint`.
-- **custom**: Ask the user to provide their `messagingEndpoint` URL (e.g., `https://myagent.example.com/api/messages`).
+- **custom**: Ask the user to provide their `messagingEndpoint` URL (e.g., `https://myagent.example.com/api/messages`). This can be any hosting provider — Azure App Service, Azure Container Apps, AWS, GCP, on-premises, etc.
 
-#### Set up a dev tunnel (devtunnel path only)
+#### Set up a dev tunnel
 
 > ⛔ **Run this only if the user chose devtunnel.**
 
@@ -389,7 +406,6 @@ Using `agentBaseName` and domain from `managerEmail`:
 | `agentUserPrincipalName` | `UPN.{baseName}@{domain}` | `UPN.mya365agent@contoso.onmicrosoft.com` |
 | `agentUserDisplayName` | `{baseName} Agent User` | `mya365agent Agent User` |
 | `agentDescription` | `{baseName} - Agent 365 Agent` | `mya365agent - Agent 365 Agent` |
-| `webAppName` (Azure-hosted only) | `{baseName}-webapp` | `mya365agent-webapp` |
 
 ### Confirm derived values with user
 
@@ -399,52 +415,22 @@ Present the derived values and ask:
 
 ### Create the a365.config.json file
 
-**Template for Azure-hosted deployment** (`needDeployment: true`):
-
 ```json
 {
   "tenantId": "<from az account show>",
-  "subscriptionId": "<from az account show>",
-  "resourceGroup": "<user provided>",
-  "location": "<user provided>",
   "environment": "prod",
-  "needDeployment": true,
-  "clientAppId": "<from Step 2 validation>",
-  "appServicePlanName": "<user provided>",
-  "webAppName": "<derived from baseName>",
+  "messagingEndpoint": "<devtunnel URL or custom HTTPS endpoint>/api/messages",
   "agentIdentityDisplayName": "<derived from baseName>",
   "agentBlueprintDisplayName": "<derived from baseName>",
   "agentUserPrincipalName": "<derived from baseName and domain>",
   "agentUserDisplayName": "<derived from baseName>",
   "managerEmail": "<user provided>",
   "agentUserUsageLocation": "US",
-  "deploymentProjectPath": "<current working directory>",
   "agentDescription": "<derived from baseName>"
 }
 ```
 
-**Template for self-hosted deployment** (`needDeployment: false`):
-
-```json
-{
-  "tenantId": "<from az account show>",
-  "subscriptionId": "<from az account show>",
-  "resourceGroup": "<user provided>",
-  "location": "<user provided>",
-  "environment": "prod",
-  "messagingEndpoint": "<user provided>",
-  "needDeployment": false,
-  "clientAppId": "<from Step 2 validation>",
-  "agentIdentityDisplayName": "<derived from baseName>",
-  "agentBlueprintDisplayName": "<derived from baseName>",
-  "agentUserPrincipalName": "<derived from baseName and domain>",
-  "agentUserDisplayName": "<derived from baseName>",
-  "managerEmail": "<user provided>",
-  "agentUserUsageLocation": "US",
-  "deploymentProjectPath": "<current working directory>",
-  "agentDescription": "<derived from baseName>"
-}
-```
+> The CLI no longer manages Azure infrastructure. `subscriptionId`, `resourceGroup`, `location`, `appServicePlanName`, `webAppName`, `deploymentProjectPath`, and `needDeployment` are removed fields — do not include them.
 
 ### Import the configuration
 
@@ -474,7 +460,7 @@ If validation fails (app not found, missing permissions, unrecognized project pl
 
 **For the AI Teammate path (`isAITeammate = true`):**
 - `agent_name` is derived from `agentBaseName` (Step 3). Do NOT ask again.
-- `project_dir` is `deploymentProjectPath` from config. Do NOT ask again.
+- Run `a365 setup all` from the current working directory (where `a365.config.json` lives).
 
 ### 4.2 — Dry-run preview (REQUIRED)
 
@@ -513,11 +499,10 @@ What `a365 setup all` provisions depends on your path:
 - Agent will appear in the M365 catalog but will not receive messages until a messaging endpoint is configured separately
 
 **AI Teammate path** (`isAITeammate = true`):
-- Creates/validates Azure infrastructure (Resource Group, App Service Plan, Web App, Managed Identity)
 - Creates the Agent 365 Blueprint in Entra ID
 - Configures blueprint permissions
-- Registers the messaging endpoint
-- Agent is fully deployed and can receive messages from Teams
+- Registers the messaging endpoint from `a365.config.json`
+- Agent identity and blueprint are ready; deploy your agent code to your hosting provider separately
 
 Monitor output carefully:
 - The CLI logs progress in numbered steps (e.g., `[1/5]`). Watch for errors or warnings.
@@ -528,8 +513,6 @@ Monitor output carefully:
 
 | Condition | Action |
 |-----------|--------|
-| Quota limit error | Report to user, halt. Update `location` in config and retry. |
-| Region not supported | Update location and retry. |
 | Graph API Forbidden / Authorization_RequestDenied | Stop. Resolve permission issue (Step 2). Then re-run `a365 setup all`. |
 | Interactive browser auth required | If headless, see Troubleshooting section. |
 
@@ -551,15 +534,15 @@ After `a365 setup all` completes, show the user:
 
 ---
 
-## Step 5: Publish and Deploy the Agent Application
+## Step 5: Review, Publish, and Register Endpoint
 
 > **AI TEAMMATE PATH ONLY.** If `isAITeammate = false`, do not proceed here.
 
-Your agent is now set up. You can see it in Microsoft Admin Center Agent Registry. Proceed with manifest review, publish, and deploy.
+Your agent blueprint and permissions are now configured. Proceed with manifest review and publishing to the M365 admin center. Your agent code is hosted externally — deploy it to your own hosting provider using your standard pipeline.
 
 ### Review and Update the Manifest File (REQUIRED)
 
-Before publishing, you **MUST** review and customize `<deploymentProjectPath>/manifest/manifest.json`.
+Before publishing, you **MUST** review and customize `manifest/manifest.json` in the project root.
 
 #### Manifest fields to update
 
@@ -621,19 +604,13 @@ a365 publish
 
 This updates manifest identifiers and publishes the agent package to the tenant's Microsoft 365 admin center catalog. Watch for errors — if the CLI cannot reach the admin center, verify your account has `Application.ReadWrite.All` and that connectivity is good.
 
-### Deploy the agent code to Azure
+### Deploy your agent code
 
-```bash
-a365 deploy
-```
+The A365 CLI no longer manages Azure hosting. Deploy your agent code to your chosen provider (Azure App Service, Azure Container Apps, AWS, GCP, on-premises, etc.) using your standard deployment pipeline.
 
-This builds and deploys your agent code to the Azure Web App. It also finalizes any remaining permission setups. For subsequent iterations, you can use:
-- `a365 deploy app` — redeploy code only
-- `a365 deploy mcp` — update tool permissions only
+Your `messagingEndpoint` was already registered with the Blueprint in Step 4. Once your agent is live at that endpoint, it can receive messages from Teams.
 
-Monitor output. If the build fails, address the build error. If deployment fails (network, Azure App Service issues), note the error and retry.
-
-### Post-deployment (User action required)
+### Post-registration (User action required)
 
 > The following steps require browser-based interactions that cannot be automated. Provide these instructions so the user can complete them.
 
@@ -667,16 +644,13 @@ Admins approve from [Microsoft admin center - Requested Agents](https://admin.cl
 
 > The user needs to be part of the [Frontier preview program](https://adoption.microsoft.com/copilot/frontier-program/) to create agent instances while Agent 365 is in preview.
 
-#### Test your deployed agent
+#### Test your agent
 
 1. Search for the new agent user in Teams
    > Agent user creation is asynchronous — can take minutes to hours to become searchable.
 2. Start a new chat with the agent instance
 3. Send test messages to verify functionality (e.g., "Hello!")
-4. Check application logs:
-   ```bash
-   az webapp log tail --name <your-web-app> --resource-group <your-resource-group>
-   ```
+4. Check application logs in your hosting provider's dashboard or log stream.
 
 View your agent in the [Microsoft 365 admin center - Agents](https://admin.cloud.microsoft/#/agents/all).
 

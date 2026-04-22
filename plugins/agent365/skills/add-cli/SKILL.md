@@ -58,7 +58,62 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 ---
 
-## Phase 0 — Create Task List
+## Phase 0A — Initial Detection and User Validation
+
+**TaskCreate** — "Detect agent stack, programming language, and validate with user"
+
+### Silent Detection
+
+First detect the agent characteristics silently by analyzing workspace files:
+
+**Step 1: Detect Agent Stack** → Store as `agentStack`
+- Check for .csproj + Microsoft.Agents.* → `Agent Framework`
+- Check for package.json + @langchain → `LangChain`  
+- Check for package.json + "openai" (no LangChain) → `OpenAI`
+- Check for requirements.txt + langchain → `LangChain`
+- Check for requirements.txt + openai → `OpenAI`
+
+**Step 2: Detect Programming Language** → Store as `programmingLanguage`
+- .csproj exists → `DotNet`
+- package.json exists → `NodeJS`
+- requirements.txt OR .py files → `Python`
+
+**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
+- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
+- Otherwise → `0`
+
+### User Validation Questions
+
+Ask the user to validate these detections (one question at a time, wait for each response):
+
+**Question 1: Agent Stack Validation**
+
+Say: `We detected your agent is an {agentStack} agent. Is that correct? (Y/N)`
+
+- If user responds **Y** or **Yes**: proceed to Question 2
+- If user responds **anything else**: Ask which stack (Agent Framework, LangChain, OpenAI) and update `agentStack`
+
+**Question 2: Programming Language Validation**
+
+Say: `We detected that you use {programmingLanguage}. Is that correct? (Y/N)`
+
+- If user responds **Y** or **Yes**: proceed to Question 3
+- If user responds **anything else**: Ask which language (DotNet, NodeJS, Python) and update `programmingLanguage`
+
+**Question 3: Custom Engine Agent Validation**
+
+If `usesTeamsOrCopilot == 1`, say: `We detected your agent is available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)`
+
+If `usesTeamsOrCopilot == 0`, say: `We detected your agent is NOT available in Microsoft Teams and/or Microsoft Copilot. Is that correct? (Y/N)`
+
+- If user responds **Y**: keep `usesTeamsOrCopilot` as is
+- If user responds **N**: Toggle the value (1→0 or 0→1)
+
+**TaskUpdate** — Mark complete: "Detect agent stack, programming language, and validate with user"
+
+---
+
+## Phase 0B — Create Task List
 
 ```
 TaskCreate: "Detect agent type"
