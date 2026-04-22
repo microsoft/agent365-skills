@@ -49,6 +49,12 @@ copilot plugin install agent365@agent365-skills
 
 ### `make-ai-teammate` — Transform Any Agent into an AI Teammate
 
+An **AI Teammate** is an agent registered with Microsoft Agent 365 that can receive direct messages in Microsoft Teams, respond to email notifications, and access Microsoft 365 data (mail, calendar, Teams, SharePoint) through WorkIQ tools — all authenticated through your tenant's Entra ID.
+
+**Before this skill:** Your agent is a standalone script or HTTP server. It has no Teams presence, no M365 data access, and no observability.
+
+**After this skill:** Your agent is a live AI Teammate in Microsoft Teams — users can chat with it directly, it can read and respond to emails, and every LLM call is traced in Microsoft Defender.
+
 The full-stack transformation skill. Takes any agent using LangChain, OpenAI Agents SDK, Claude SDK (.NET, Node.js, or Python), or .NET/.Python AgentFramework and makes it a production-ready Microsoft Agent 365 AI Teammate — wrapping your existing LLM code without replacing it.
 
 Adds the complete hosting and integration layer in one pass:
