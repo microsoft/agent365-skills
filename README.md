@@ -15,16 +15,6 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
-**Supported frameworks:**
-
-| Framework | Packages | Language |
-|-----------|---------|---------|
-| .NET AgentFramework | `Microsoft.Agents.A365.*` / `AgentApplication` | C# |
-| Python AgentFramework | `agent-framework-azure-ai` + `microsoft_agents_a365_*` | Python |
-| Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
-| Node.js OpenAI Agents SDK | `@openai/agents` + `@microsoft/agents-hosting` | TypeScript |
-| Node.js Claude SDK | `@anthropic-ai/sdk` + `@microsoft/agents-hosting` | TypeScript |
-
 ---
 
 ## Getting Started
