@@ -34,7 +34,10 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill automatically:
 > "run a365 setup", "create blueprint", "register agent", "setup agent blueprint",
-> "onboard agent", "provision agent", "deploy agent", "publish agent", "a365 full setup"
+> "onboard agent", "provision agent", "deploy agent", "publish agent", "a365 full setup",
+> "make this an a365 agent", "make this agent an a365 agent", "set up a365",
+> "add a365", "configure a365", "a365 setup", "connect to a365", "integrate with a365",
+> "make this agent work with a365", "set up agent 365", "agent 365 setup"
 
 ---
 
