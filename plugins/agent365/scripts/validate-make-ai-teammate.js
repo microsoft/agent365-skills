@@ -308,7 +308,7 @@ if (language === 'python') {
   }
 
   // Check 5: Required packages in pyproject.toml
-  if (fs.existsSync(hasPyproject)) {
+  if (hasPyproject) {
     const required = [
       'microsoft_agents_a365_tooling',
       'microsoft_agents_a365_notifications',
