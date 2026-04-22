@@ -222,23 +222,12 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 
 ---
 
-## Supported Agent Types
-
-### By framework
+## Supported Frameworks
 
 | Framework | Package | Language |
 |-----------|---------|---------|
 | .NET AgentFramework | `Microsoft.Agents.A365` / `AgentApplication` | C# |
 | Node.js LangChain | `@langchain/core` + `@microsoft/agents-hosting` | TypeScript |
-
-### By agent type and capabilities
-
-| Agent Type | Detection Signals | Available Capabilities |
-|------------|------------------|----------------------|
-| **Custom Engine Agent** | M365/Teams/Copilot signals + `a365.config.json` | • **Observability** — OTel tracing, Defender integration, self-hosted<br>• **Observability + WorkIQ** — Adds pre-built M365 tools (Mail, Calendar, Teams, SharePoint, OneDrive, User), self-hosted<br>• **AI Teammate** — Blueprint + permissions + endpoint registration; you provide hosting |
-| **Non M365 Agents** | No M365 signals, standard agent framework | • **Discoverability** — Blueprint registration only, self-hosted<br>• **Discoverability + Observability** — Registration + telemetry/security, self-hosted<br>• **AI Teammate** — Blueprint + permissions + endpoint registration; you provide hosting |
-
-Skills auto-detect the agent type from codebase analysis and M365 signals, then ask validation questions before presenting capability options.
 
 ---
 
