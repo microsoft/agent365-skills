@@ -6,7 +6,7 @@
     "name": "Microsoft",
     "url": "https://github.com/microsoft"
   },
-  "repository": "https://github.com/microsoft/agent365-skills.git",
+  "repository": "https://github.com/microsoft/agent365-skills/",
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
   "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "blueprint"],

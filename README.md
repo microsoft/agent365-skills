@@ -32,7 +32,7 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 ### Claude Code
 
 ```
-/plugin marketplace add https://github.com/microsoft/agent365-skills.git
+/plugin marketplace add https://github.com/microsoft/agent365-skills/
 /plugin install agent365@agent365-skills
 ```
 
