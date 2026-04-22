@@ -83,19 +83,6 @@ Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop
 "Add work intelligence tools"        "Add MCP tools to this agent"
 ```
 
-**Available WorkIQ MCP Servers:**
-
-| Server | Capabilities | Example Use Cases |
-|--------|-------------|-------------------|
-| Work IQ Mail | Read, send, manage email | "Send a summary of today's meetings", "Check for unread emails from my manager" |
-| Work IQ Calendar | Events, availability, meeting finder | "Find a 30-minute slot for our team next week", "What's on my calendar tomorrow?" |
-| Work IQ Teams | Channel messages, team list | "Summarize recent messages in the Engineering channel", "List all my teams" |
-| Work IQ SharePoint | Document search, file read | "Find the Q4 planning doc", "Summarize the latest sales deck" |
-| Work IQ OneDrive | File management | "Upload this report to my OneDrive", "List recent files" |
-| Work IQ Word | Read and write documents | "Create a meeting agenda document", "Read the project proposal" |
-| Work IQ User | Profile and presence | "Is Sarah available?", "Get contact info for the product team" |
-| Work IQ Copilot | Chat with Microsoft 365 Copilot | "Ask Copilot about our company benefits", "Get insights from Copilot" |
-| Dataverse & Dynamics 365 | Business data CRUD | "Get customer details", "Update opportunity status" |
 
 ### `instrument-observability` — Add A365 Observability
 
