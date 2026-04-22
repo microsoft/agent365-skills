@@ -88,13 +88,6 @@ Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop
 
 Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365 exporter with agentic token resolver into your agent entry point and message handler.
 
-**What Observability provides:**
-- ✅ **Microsoft Defender for Cloud integration** — Your agent's traces are exported to Microsoft's security stack for threat detection
-- ✅ **OpenTelemetry instrumentation** — Industry-standard distributed tracing for monitoring and debugging
-- ✅ **Context propagation** — BaggageBuilder tracks tenant ID, agent ID, and correlation IDs across service boundaries
-- ✅ **Agentic token resolver** — Automatic authentication for trace export with 5-minute caching
-- ✅ **Security compliance** — Required for production A365 agents to meet Microsoft security standards
-
 **Trigger phrases:**
 ```
 "Instrument observability"     "Add A365 observability"
