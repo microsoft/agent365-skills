@@ -4,10 +4,10 @@
   "description": "Skills for Microsoft Agent 365 — register blueprints, add WorkIQ MCP tools, instrument observability, and add local CLI runners. Supports .NET AgentFramework and Node.js LangChain.",
   "author": {
     "name": "Microsoft",
-    "url": "https://github.com/biswapm"
+    "url": "https://github.com/microsoft"
   },
-  "repository": "https://github.com/biswapm/agent365-skills",
-  "homepage": "https://github.com/biswapm/agent365-skills",
+  "repository": "https://github.com/microsoft/agent365-skills",
+  "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
   "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "blueprint"],
   "skills": "./skills/"

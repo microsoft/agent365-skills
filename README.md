@@ -4,7 +4,7 @@
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills teach AI agents how to register Agent 365 blueprints, wire WorkIQ MCP tools, instrument observability, and add local CLI runners using natural language.
 
-Browse the [`plugins/agent365/skills/`](/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
+Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
 ---
 

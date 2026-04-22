@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "owner": {
     "name": "Microsoft",
-    "url": "https://github.com/biswapm"
+    "url": "https://github.com/microsoft"
   },
-  "repository": "https://github.com/biswapm/agent365-skills",
-  "homepage": "https://github.com/biswapm/agent365-skills",
+  "repository": "https://github.com/microsoft/agent365-skills",
+  "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
   "plugins": [
     {
