@@ -35,10 +35,6 @@ dependencies = [
     "typing-extensions>=4.0.0",
 
     # Microsoft Agent 365 SDK packages
-    "microsoft_agents_a365_tooling >= 0.1.0",
-    "microsoft_agents_a365_tooling_extensions_agentframework >= 0.1.0",
-    "microsoft_agents_a365_observability_core >= 0.1.0",
-    "microsoft_agents_a365_observability_extensions_agent_framework >= 0.1.0",
     "microsoft_agents_a365_runtime >= 0.1.0",
     "microsoft_agents_a365_notifications >= 0.1.0"
 ]
@@ -56,39 +52,6 @@ pip install -e .
 
 ---
 
-## token_cache.py
-
-```python
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License.
-
-import logging
-
-logger = logging.getLogger(__name__)
-
-_agentic_token_cache: dict = {}
-
-
-def cache_agentic_token(tenant_id: str, agent_id: str, token: str) -> None:
-    """Cache agentic token for use by the A365 Observability exporter."""
-    key = f"{tenant_id}:{agent_id}"
-    _agentic_token_cache[key] = token
-    logger.debug(f"Cached agentic token for {key}")
-
-
-def get_cached_agentic_token(tenant_id: str, agent_id: str) -> str | None:
-    """Retrieve cached agentic token for the A365 Observability exporter."""
-    key = f"{tenant_id}:{agent_id}"
-    token = _agentic_token_cache.get(key)
-    if token:
-        logger.debug(f"Retrieved cached agentic token for {key}")
-    else:
-        logger.debug(f"No cached token found for {key}")
-    return token
-```
-
----
-
 ## agent.py — AgentInterface Implementation
 
 ```python
@@ -100,11 +63,9 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
-from token_cache import cache_agentic_token, get_cached_agentic_token
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
-from microsoft_agents_a365_tooling import McpToolRegistrationService
 from microsoft_agents_a365_notifications import NotificationType
 
 logger = logging.getLogger(__name__)
@@ -125,11 +86,10 @@ Use the tools available to you to help answer the user's questions.
 
 
 class MyAgent(AgentInterface):
-    """AI Teammate agent using AgentFramework + A365 tooling."""
+    """AI Teammate agent using AgentFramework."""
 
     def __init__(self):
         self._agent: ChatAgent | None = None
-        self._tool_service: McpToolRegistrationService | None = None
 
     def _create_chat_client(self) -> AzureOpenAIChatClient:
         endpoint   = os.environ["AZURE_OPENAI_ENDPOINT"]
@@ -158,35 +118,9 @@ class MyAgent(AgentInterface):
         chat_client = self._create_chat_client()
         return ChatAgent(chat_client=chat_client, tools=tools or [])
 
-    async def token_resolver(self, tenant_id: str, agent_id: str) -> str | None:
-        """Token resolver for A365 Observability exporter."""
-        return get_cached_agentic_token(tenant_id, agent_id)
-
     async def initialize(self) -> None:
         self._agent = self._create_agent()
-        self._tool_service = McpToolRegistrationService()
         logger.info("Agent initialized")
-
-    async def setup_mcp_servers(
-        self,
-        auth: str | None,
-        auth_handler_name: str | None,
-        context,
-    ) -> None:
-        """Load WorkIQ MCP tools from ToolingManifest.json into the agent."""
-        if not self._tool_service or not self._agent:
-            return
-
-        use_agentic = os.getenv("USE_AGENTIC_AUTH", "false").lower() == "true"
-        if not use_agentic or not auth:
-            return
-
-        try:
-            self._agent = await self._tool_service.add_tool_servers_to_agent(
-                self._agent, auth, auth_handler_name, context
-            )
-        except Exception as exc:
-            logger.warning(f"MCP tool setup failed (non-fatal): {exc}")
 
     async def process_user_message(
         self,
@@ -201,10 +135,9 @@ class MyAgent(AgentInterface):
         safe_name = _sanitize_display_name(user_name)
         prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
 
-        await self.setup_mcp_servers(auth, auth_handler_name, context)
-
         result = await self._agent.run(message, system_prompt=prompt)
         return self._extract_result(result)
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
 
     async def handle_agent_notification_activity(
         self,
@@ -250,7 +183,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent_interface import AgentInterface
-from token_cache import cache_agentic_token
 
 from aiohttp import web
 from microsoft_agents_hosting_aiohttp import CloudAdapterAiohttp
@@ -260,8 +192,6 @@ from microsoft_agents_a365_notifications import (
     ChannelId,
     NotificationType,
 )
-from microsoft_agents_a365_observability_core import configure as configure_observability
-from microsoft_agents_a365_runtime import get_agent_identity
 
 logger = logging.getLogger(__name__)
 
@@ -273,15 +203,6 @@ class GenericAgentHost:
         self._agent = agent
         self._adapter: CloudAdapterAiohttp | None = None
         self._app: web.Application | None = None
-
-    def _setup_observability(self):
-        service_name = os.getenv("OBSERVABILITY_SERVICE_NAME", "my-agent")
-        service_namespace = os.getenv("OBSERVABILITY_SERVICE_NAMESPACE", "agents")
-        configure_observability(
-            service_name=service_name,
-            service_namespace=service_namespace,
-            token_resolver=self._agent.token_resolver,
-        )
 
     def _setup_handlers(self):
         """Register all activity handlers on the adapter."""
@@ -350,7 +271,6 @@ class GenericAgentHost:
                 await context.send_activity(reply)
 
     async def start_server(self):
-        self._setup_observability()
         await self._agent.initialize()
 
         self._adapter = CloudAdapterAiohttp(
@@ -428,9 +348,6 @@ class AgentInterface(ABC):
         auth_handler_name: str | None,
     ) -> str | None:
         return None
-
-    async def token_resolver(self, tenant_id: str, agent_id: str) -> str | None:
-        return None
 ```
 
 ---
@@ -462,14 +379,6 @@ USE_AGENTIC_AUTH=true
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__TYPE=AgenticUserAuthorization
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__SCOPES=https://graph.microsoft.com/.default
 
-# Observability
-OBSERVABILITY_SERVICE_NAME=my-agent
-OBSERVABILITY_SERVICE_NAMESPACE=agents
-ENABLE_OBSERVABILITY=true
-ENABLE_A365_OBSERVABILITY_EXPORTER=false
-ENABLE_OTEL=true
-ENABLE_SENSITIVE_DATA=true
-
 # Server
 PORT=3978
 PYTHON_ENVIRONMENT=development
@@ -484,9 +393,9 @@ LOG_LEVEL=INFO
 |------|-----|
 | `load_dotenv()` at top of `host_agent_server.py` before any imports | Env vars must be set before SDK packages read them at import time |
 | `_sanitize_display_name()` strips control characters | `context.activity.from_property.name` is user-controlled text; prevents prompt injection |
-| `USE_AGENTIC_AUTH` guards MCP setup | MCP tools require a valid agentic token; skipping in dev prevents 401 errors |
 | `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
-| `McpToolRegistrationService` singleton or per-agent instance | Tool metadata can be cached; re-creating per-turn is expensive |
+| `ToolingManifest.json` created empty | Populated later by the `add-workiq-tools` skill |
 | `/api/health` returns 200 without auth | Load balancers and A365 infrastructure require unauthenticated health probes |
+

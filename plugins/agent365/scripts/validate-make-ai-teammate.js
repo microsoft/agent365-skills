@@ -119,33 +119,17 @@ if (language === 'nodejs') {
     issues.push("import '@microsoft/agents-a365-notifications' not found — notification deserialization will break");
   }
 
-  // Check 3: Client factory + observability
-  if (!anyFileContains(tsFiles, 'ObservabilityManager')) {
-    issues.push('ObservabilityManager not found — observability not initialized');
-  }
-  if (!anyFileContains(tsFiles, 'McpToolRegistrationService', 'addToolServersToAgent')) {
-    issues.push('McpToolRegistrationService / addToolServersToAgent not found — WorkIQ tools not wired');
-  }
-  if (!anyFileContains(tsFiles, 'InferenceScope')) {
-    issues.push('InferenceScope not found in client — LLM calls are not wrapped with telemetry');
+  // Check 3: Client factory
+  if (!anyFileContains(tsFiles, 'getClient')) {
+    issues.push('getClient() factory not found in src/client.ts — LLM client factory missing');
   }
 
-  // Check 4: Token cache
-  const tokenCacheFile = path.join(cwd, 'src', 'token-cache.ts');
-  if (!fs.existsSync(tokenCacheFile)) {
-    issues.push('src/token-cache.ts not found');
-  } else {
-    if (!fileContains(tokenCacheFile, 'createAgenticTokenCacheKey')) {
-      issues.push('src/token-cache.ts is missing createAgenticTokenCacheKey export');
-    }
-  }
-
-  // Check 5: Required packages in package.json
+  // Check 4: Required packages in package.json
   const pkgFile = jsonFiles.find(f => path.basename(f) === 'package.json' && !f.includes('/src/'));
   if (pkgFile) {
     const required = [
       '@microsoft/agents-hosting',
-      '@microsoft/agents-a365-observability',
+      '@microsoft/agents-a365-runtime',
       '@microsoft/agents-a365-notifications',
     ];
     for (const pkg of required) {
@@ -185,12 +169,6 @@ if (language === 'dotnet') {
   // Check 1: Program.cs — hosting layer
   const programFile = path.join(cwd, 'Program.cs');
   if (fs.existsSync(programFile)) {
-    if (!fileContains(programFile, 'AddAgenticTracingExporter')) {
-      issues.push('Program.cs is missing AddAgenticTracingExporter — A365 observability exporter not configured');
-    }
-    if (!fileContains(programFile, 'AddA365Tracing')) {
-      issues.push('Program.cs is missing AddA365Tracing — A365 tracing provider not configured');
-    }
     if (!fileContains(programFile, 'AddAgent<')) {
       issues.push('Program.cs is missing AddAgent<T>() — agent not registered with DI container');
     }
@@ -199,10 +177,6 @@ if (language === 'dotnet') {
     }
     if (!fileContains(programFile, '/api/health')) {
       issues.push('Program.cs is missing /api/health endpoint');
-    }
-    if (!fileContains(programFile, 'IMcpToolRegistrationService') &&
-        !fileContains(programFile, 'McpToolRegistrationService')) {
-      issues.push('Program.cs is missing IMcpToolRegistrationService registration — WorkIQ tools not wired');
     }
   } else {
     issues.push('Program.cs not found — hosting layer was not added');
@@ -222,13 +196,11 @@ if (language === 'dotnet') {
     issues.push('isAgenticOnly parameter not found — dual auth registration (agentic + OBO) not configured');
   }
 
-  // Check 3: Required NuGet packages in .csproj
+  // Check 3: Required NuGet packages in .csproj — tooling/observability added by separate skills
   const csprojFiles = findFiles(cwd, ['.csproj']);
   if (csprojFiles.length > 0) {
     const required = [
       'Microsoft.Agents.A365.Notifications',
-      'Microsoft.Agents.A365.Tooling.Extensions.AgentFramework',
-      'Microsoft.Agents.A365.Observability.Extensions.AgentFramework',
     ];
     for (const pkg of required) {
       if (!anyFileContains(csprojFiles, pkg)) {
@@ -283,36 +255,24 @@ if (language === 'python') {
     if (!fileContains(agentFile, 'AgentInterface') && !fileContains(agentFile, 'process_user_message')) {
       issues.push('agent.py does not implement AgentInterface / process_user_message — agent class incomplete');
     }
-    if (!fileContains(agentFile, 'McpToolRegistrationService') &&
-        !anyFileContains(pyFiles, 'McpToolRegistrationService')) {
-      issues.push('McpToolRegistrationService not found — WorkIQ tools not wired');
+    if (!fileContains(agentFile, 'handle_agent_notification_activity')) {
+      issues.push('agent.py is missing handle_agent_notification_activity — notification handling not implemented');
     }
   } else {
     issues.push('agent.py not found — agent implementation was not added');
   }
 
-  // Check 3: token_cache.py
-  const tokenCacheFile = path.join(cwd, 'token_cache.py');
-  if (!fs.existsSync(tokenCacheFile)) {
-    issues.push('token_cache.py not found');
-  } else {
-    if (!fileContains(tokenCacheFile, 'cache_agentic_token')) {
-      issues.push('token_cache.py is missing cache_agentic_token function');
-    }
-  }
-
-  // Check 4: agent_interface.py
+  // Check 3: agent_interface.py
   const interfaceFile = path.join(cwd, 'agent_interface.py');
   if (!fs.existsSync(interfaceFile)) {
     issues.push('agent_interface.py not found — AgentInterface ABC is required');
   }
 
-  // Check 5: Required packages in pyproject.toml
+  // Check 4: Required packages in pyproject.toml — tooling/observability added by separate skills
   if (hasPyproject) {
     const required = [
-      'microsoft_agents_a365_tooling',
       'microsoft_agents_a365_notifications',
-      'microsoft_agents_a365_observability',
+      'microsoft_agents_a365_runtime',
       'microsoft-agents-hosting-aiohttp',
     ];
     for (const pkg of required) {
