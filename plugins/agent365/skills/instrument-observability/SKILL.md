@@ -60,51 +60,31 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 ---
 
-## Phase 0: Initial Detection and User Validation
+## Phase 0: Load Detection Cache and Validate
 
-**TaskCreate** — "Detect agent stack, programming language, and validate with user"
+**TaskCreate** — "Load detection cache and validate with user"
 
-### Phase 0A: Silent Detection
+**Read** `.a365-workspace-detection.json`.
 
-**First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 0B.
+If the file is missing or `detectedAt` is older than 60 minutes:
+> "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
+> the project detection cache this skill depends on. Run `a365-setup` now, then return here."
 
-Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
+Stop until the user confirms `a365-setup` has been run.
 
-**Step 1: Detect Agent Stack** → Store as `agentStack`
-- Check for .csproj + Microsoft.Agents.* → `Agent Framework`
-- Check for package.json + @langchain → `LangChain`  
-- Check for package.json + "openai" (no LangChain) → `OpenAI`
-- Check for requirements.txt + langchain → `LangChain`
-- Check for requirements.txt + openai → `OpenAI`
+Load from cache: `agentStack`, `programmingLanguage`.
 
-**Step 2: Detect Programming Language** → Store as `programmingLanguage`
-- .csproj exists → `DotNet`
-- package.json exists → `NodeJS`
-- requirements.txt OR .py files → `Python`
-
-**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
-- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
-- Otherwise → `0`
-
-### Phase 0B: User Validation
-
-Present **all three detections in a single message** and wait for ONE response:
+Present the loaded values in one message and wait for confirmation:
 
 ```
 Here's what we detected about your agent:
-  • Stack:          {agentStack}
-  • Language:       {programmingLanguage}
-  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
+  • Stack:    {agentStack}
+  • Language: {programmingLanguage}
 
-Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
+Reply **yes** to confirm, or describe any corrections.
 ```
 
-- If the user replies **yes / y**: accept all three values.
-- If the user describes corrections: update the relevant variable(s).
-
-After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
-
-**TaskUpdate** — Mark complete: "Detect agent stack, programming language, and validate with user"
+**TaskUpdate** — Mark complete: "Load detection cache and validate with user"
 
 ---
 
@@ -385,62 +365,21 @@ After confirming, write `.a365-workspace-detection.json` (see `agent-detection.m
 
 ---
 
-## Phase 8: Launch Local Test Session
+## Phase 8: Test Locally
 
-**TaskCreate** — "Launch local test session"
+**TaskCreate** — "Test locally"
 
 Ask the user:
 
 ```
 AskUserQuestion:
-  question: "Build succeeded. Want to start the agent and open AgentsPlayground for a quick local test?"
+  question: "Build succeeded. Want to run a quick local test now?"
   options:
-    - "Yes — start agent and open AgentsPlayground"
+    - "Yes — run the test-local skill"
     - "No — I'll test later"
 ```
 
-### If yes
-
-Inform the user:
-> Starting the agent in the background. AgentsPlayground will open once it initializes.
-
-**For .NET AgentFramework:**
-
-```bash
-dotnet run
-```
-
-Poll until the agent responds (max ~15 s), then launch:
-
-```bash
-for i in $(seq 1 15); do curl -s --max-time 1 http://localhost:5000/api/messages > /dev/null 2>&1 && break; sleep 1; done
-agentsplayground -e "http://localhost:5000/api/messages" -c "emulator"
-```
-
-**For Node.js LangChain:**
-
-```bash
-npm start
-```
-
-Poll until the agent responds (max ~15 s), then launch:
-
-```bash
-for i in $(seq 1 15); do curl -s --max-time 1 http://localhost:3978/api/messages > /dev/null 2>&1 && break; sleep 1; done
-agentsplayground -e "http://localhost:3978/api/messages" -c "emulator"
-```
-
-Tell the user:
-> **What to watch for in the terminal:**
-> - `.NET`: Look for `[Microsoft.Agents.A365.Observability] Exporting span:` lines — confirms traces are flowing.
-> - `Node.js`: Look for observability log lines from `@microsoft/agents-a365-observability`.
->
-> Observability is currently **disabled** (`EnableAgent365Exporter: false` / `ENABLE_A365_OBSERVABILITY_EXPORTER=false`).
-> Set it to `true` in your config when you're ready to export traces to the A365 service.
-
-### If no
-
-Skip launch — proceed to Final Summary.
+If yes, invoke the `test-local` skill.
 
 **TaskUpdate** — Mark complete.
 

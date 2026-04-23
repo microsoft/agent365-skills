@@ -10,10 +10,16 @@ This directory contains evaluation test cases for Agent 365 skills. Each skill h
 evals/
 ├── README.md                         # This file
 └── agent365/
+    ├── make-ai-teammate/
+    │   └── evals.json                # 10 test cases
+    ├── a365-setup/
+    │   └── evals.json                # 7 test cases
+    ├── add-workiq-tools/
+    │   └── evals.json                # 5 test cases
     ├── instrument-observability/
     │   └── evals.json                # 5 test cases
-    └── a365-setup/
-        └── evals.json                # 7 test cases
+    └── test-local/
+        └── evals.json                # 5 test cases
 ```
 
 Each `evals.json` file contains:
@@ -29,62 +35,68 @@ Each `evals.json` file contains:
 
 ---
 
+## Prerequisites
+
+All skills except `test-local` require `.a365-workspace-detection.json` to be present in the
+project directory. This file is written by `a365-setup` and contains `agentStack`,
+`programmingLanguage`, and `detectedAt`. Skills read from this cache instead of running their
+own detection.
+
+---
+
 ## Running Evaluations
 
 ### Manual Testing
 
 To manually test a skill against an eval:
 
-1. **Prepare a test environment**:
-   - For `instrument-observability`: Use a real .NET AgentFramework or Node.js LangChain agent project
-   - For `a365-setup`: Use an agent project with a365 CLI and Azure CLI installed
+1. **Prepare a test environment** — use a real agent project for the target language:
+   - `make-ai-teammate`: A plain Node.js/Python/dotnet LLM agent with no M365 integration
+   - `a365-setup`: Any agent project with a365 CLI and Azure CLI installed
+   - `add-workiq-tools`: An agent already transformed by `make-ai-teammate` (has `.a365-workspace-detection.json`)
+   - `instrument-observability`: An agent already transformed by `make-ai-teammate`
+   - `test-local`: Any agent with a build script or `dotnet run` / `uv run`
 
-2. **Start the agent** with the plugin loaded:
+2. **Start Claude** with the plugin loaded:
    ```bash
    cd /path/to/test-agent-project
    claude --plugin-dir /path/to/agent365-skills/plugins/agent365
    ```
 
-3. **Run the eval prompt**:
+3. **Run the eval prompt**, e.g.:
    ```
-   # Example for instrument-observability eval #1
+   "Make this agent an AI Teammate"
+   "Add WorkIQ tools"
    "Instrument observability for this agent"
    ```
 
 4. **Verify expectations**:
-   - Check that a `workflow-log.md` was created
    - Go through each expectation in the eval and verify it was met
-   - Check files, commands run, outputs, and error handling
+   - Check files created/modified, commands run, and user interactions
+   - Verify idempotency by running the skill a second time
 
 5. **Document results**:
    - Note which expectations passed/failed
-   - Record any issues or unexpected behavior
-   - Update the eval if the expected behavior has changed
-
-### Automated Testing
-
-> **Note**: Automated eval runner coming soon. For now, use manual testing.
-
-In the future, we plan to add an automated eval runner that:
-- Spins up test environments for each eval
-- Runs the skill with the eval prompt
-- Parses `workflow-log.md` and tool outputs
-- Validates expectations automatically
-- Generates a test report
+   - Update the eval if expected behavior has legitimately changed
 
 ---
 
 ## Eval Categories
 
-### `instrument-observability` Evals
+### `make-ai-teammate` Evals
 
 | ID | Scenario | Purpose |
 |----|----------|---------|
-| 1 | .NET AgentFramework | Verify full instrumentation flow for .NET agents |
-| 2 | Node.js LangChain | Verify full instrumentation flow for Node.js agents |
-| 3 | Already instrumented (.NET) | Test idempotency on a pre-instrumented agent |
-| 4 | Already instrumented (Node.js) | Test idempotency on a pre-instrumented agent |
-| 5 | Unknown agent type | Test error handling for unsupported projects |
+| 1 | Node.js LangChain — full | Full transformation from plain LangChain agent |
+| 2 | Node.js OpenAI SDK — partial | Hosting present; adds agent class + notifications |
+| 3 | Node.js Claude SDK | Claude-specific transformation path |
+| 4 | Node.js — fully configured | Idempotency: all components already present |
+| 5 | Node.js — existing Express | Migrates non-CloudAdapter server |
+| 6 | Node.js — unknown framework | Stub path with manual LLM wiring |
+| 7 | .NET AgentFramework — full | Full transformation for .NET agents |
+| 8 | .NET AgentFramework — partial | Hosting present; adds missing handlers |
+| 9 | Python AgentFramework — full | Full transformation for Python agents |
+| 10 | Python — partial (idempotent) | Hosting + agent class present; adds manifest + env |
 
 ### `a365-setup` Evals
 
@@ -97,6 +109,36 @@ In the future, we plan to add an automated eval runner that:
 | 5 | Not authenticated | Test error handling when Azure CLI is not authenticated |
 | 6 | Global Admin handoff | Test GA consent workflow explanation |
 | 7 | Already configured | Test idempotency on a fully configured agent |
+
+### `add-workiq-tools` Evals
+
+| ID | Scenario | Purpose |
+|----|----------|---------|
+| 1 | .NET — blueprint not yet created | Full flow; permissions path A (a365 setup all) |
+| 2 | Node.js — blueprint already exists | Full flow; permissions path B (admin runs add-mcp-servers) |
+| 3 | Selective install — user picks specific servers | Verifies partial server selection works |
+| 4 | Idempotency — servers already in manifest | Skip re-adding; skip code wiring; revalidate build |
+| 5 | Error — a365 CLI missing | Install CLI automatically and retry |
+
+### `instrument-observability` Evals
+
+| ID | Scenario | Purpose |
+|----|----------|---------|
+| 1 | .NET AgentFramework — full | Full instrumentation including BaggageBuilder and token resolver |
+| 2 | Node.js LangChain — full | Full instrumentation with ObservabilityManager |
+| 3 | Already instrumented (.NET) | Idempotency: skip if marker comments present |
+| 4 | Already instrumented (Node.js) | Idempotency: skip if marker comments present |
+| 5 | Unknown agent type | Write `.a365setup-unknown-agent` marker and exit with clear error |
+
+### `test-local` Evals
+
+| ID | Scenario | Purpose |
+|----|----------|---------|
+| 1 | .NET — agentsplayground installed | Happy path: build + launch |
+| 2 | Node.js — agentsplayground installed | Happy path: build + launch |
+| 3 | agentsplayground not installed | Auto-install via npm then launch |
+| 4 | User declines launch | Show manual commands and exit cleanly |
+| 5 | Build fails | Stop before launch; surface error output |
 
 ---
 
@@ -123,13 +165,12 @@ When adding a new eval test case:
 
 ## Best Practices
 
-1. **Test on real projects**: Use actual .NET AgentFramework and Node.js LangChain projects, not mock data
+1. **Test on real projects**: Use actual agent projects, not mock data — skills interact with the filesystem and CLI tools
 2. **Start from clean state**: Reset test environments between evals to avoid contamination
-3. **Check the workflow log**: Verify that `workflow-log.md` captures all phases and decisions
-4. **Validate marker comments**: Ensure all instrumented code has the A365 marker comment
-5. **Test error paths**: Don't just test the happy path — verify error handling and recovery
-6. **Verify idempotency**: Skills should be safe to run multiple times without breaking
-7. **Document deviations**: If actual behavior differs from expectations, update the eval or fix the skill
+3. **Test error paths**: Don't just test the happy path — verify error handling and recovery
+4. **Verify idempotency**: Every skill should be safe to run multiple times without breaking
+5. **Check prerequisite state**: Skills except `test-local` require `.a365-workspace-detection.json` — ensure it exists before testing
+6. **Document deviations**: If actual behavior differs from expectations, update the eval or fix the skill
 
 ---
 
