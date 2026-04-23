@@ -13,13 +13,20 @@ This plugin instruments and configures A365 agents. It contains five skills:
 |-------|---------|---------|
 | `make-ai-teammate` | `/agent365:make-ai-teammate` | "make this agent an AI Teammate", "add AI Teammate hosting", "transform agent to Teams agent" |
 | `a365-setup` | `/agent365:a365-setup` | "run a365 setup", "create blueprint", "register agent" |
-| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
+| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
 **Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
 
-**Skill overlap note:** `make-ai-teammate` now runs `a365 setup all` and `a365 create-instance` inline after the build passes (Phases 10–11), then offers WorkIQ tools, observability, and local testing (Phases 12–13). Use the standalone `a365-setup` skill when you need to re-register, change the endpoint, or set up a Custom Engine Agent or Standard Agent that was not transformed by `make-ai-teammate`.
+**Skill dependency chain:**
+```
+make-ai-teammate  →  a365-setup  →  add-workiq-tools
+                                 →  instrument-observability
+test-local  (no prerequisite)
+```
+`make-ai-teammate` creates the hosting layer, agent class, notification handling, and an empty `ToolingManifest.json`. It does **not** run `a365 setup`, wire WorkIQ tools, or instrument observability — those are handled by the downstream skills.
+`a365-setup` writes `.a365-workspace-detection.json`; `add-workiq-tools` and `instrument-observability` read this file to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -35,7 +42,7 @@ plugins/agent365/
 │   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
 │   ├── make-ai-teammate/
-│   │   ├── SKILL.md              # Full AI Teammate transformation (hosting, observability, notifications, WorkIQ)
+│   │   ├── SKILL.md              # Hosting layer, agent class, notifications, empty ToolingManifest.json
 │   │   └── references/
 │   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (Node.js LangChain/OpenAI/Claude)
 │   │       ├── nodejs-notifications.md  # Notification + lifecycle event patterns (Node.js)
