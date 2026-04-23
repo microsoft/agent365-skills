@@ -37,21 +37,36 @@ copilot plugin install agent365@agent365-skills
 
 ## Recommended Workflow
 
-Skills are independent but build on each other in this order:
+Three entry points — choose the one that fits your goal:
 
 ```
-make-ai-teammate          ← wraps your LLM code with the hosting layer
-       ↓
-   a365-setup             ← registers the Blueprint and grants permissions (prerequisite for the next two)
-    ↙        ↘
-add-workiq-tools    instrument-observability
-                              ↓
-                          test-local   ← no prerequisite; can run after any step
+        make-ai-teammate          make-a365-agent          a365-setup
+        (AI Teammate path)        (Standard / CEA)    (verifies CLI + Azure,
+               ↓                        ↓               then delegates to one
+         a365 setup all           a365 setup all          of the two above)
+          + publish + Teams
+               ↓                        ↓
+    ┌──────────┴────────┐   ┌───────────┴───────────┐
+    │                   │   │                       │
+instrument-         add-workiq-tools     instrument-      add-workiq-tools
+observability       (optional)           observability    (optional)
+(strongly rec.)                          (optional)
+
+test-local   ← no prerequisite; can run after any step
 ```
 
 `a365-setup` writes `.a365-workspace-detection.json`. The `add-workiq-tools` and
 `instrument-observability` skills read that file to skip re-detection and to confirm
 the agent is registered before they run.
+
+**Already have a registered Standard Agent?** You can add WorkIQ and Observability at any time without re-running setup:
+
+```
+"Add WorkIQ tools to this agent"          → add-workiq-tools
+"Add observability to this agent"         → instrument-observability
+```
+
+Both skills detect the existing registration from `.a365-workspace-detection.json` and run standalone.
 
 ---
 
