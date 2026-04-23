@@ -7,19 +7,38 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains five skills:
+This plugin instruments and configures A365 agents. It contains six skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
 | `make-ai-teammate` | `/agent365:make-ai-teammate` | "make this agent an AI Teammate", "add AI Teammate hosting", "transform agent to Teams agent" |
 | `a365-setup` | `/agent365:a365-setup` | "run a365 setup", "create blueprint", "register agent" |
-| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
+| `make-a365-agent` | `/agent365:make-a365-agent` | "provision agent with a365", "discoverability setup", "observability setup", "register agent for discoverability" |
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
+| `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
 **Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
 
-**Skill overlap note:** `make-ai-teammate` now runs `a365 setup all` and `a365 create-instance` inline after the build passes (Phases 10–11), then offers WorkIQ tools, observability, and local testing (Phases 12–13). Use the standalone `a365-setup` skill when you need to re-register, change the endpoint, or set up a Custom Engine Agent or Standard Agent that was not transformed by `make-ai-teammate`.
+**Skill dependency chain:**
+```
+make-ai-teammate  ─────────────────────────────────→  add-workiq-tools
+      │                                            →  instrument-observability
+      └→  a365-setup (CLI install + Azure prereqs
+            when isAITeammate = true, delegates back to make-ai-teammate)
+
+a365-setup  →  make-ai-teammate    (AI Teammate path)
+            →  make-a365-agent     (Discoverability / Observability / WorkIQ paths)
+
+make-a365-agent  →  instrument-observability  (Observability paths)
+                 →  add-workiq-tools          (WorkIQ paths)
+
+test-local  (no prerequisite)
+```
+`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all`, reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
+`a365-setup` verifies the CLI and Azure prerequisites (Steps 1–2), then delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
+`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ), then conditionally invokes `instrument-observability` and `add-workiq-tools`.
+`add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.json` to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -35,14 +54,16 @@ plugins/agent365/
 │   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
 │   ├── make-ai-teammate/
-│   │   ├── SKILL.md              # Full AI Teammate transformation (hosting, observability, notifications, WorkIQ)
+│   │   ├── SKILL.md              # Hosting layer, agent class, notifications, empty ToolingManifest.json
 │   │   └── references/
 │   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (Node.js LangChain/OpenAI/Claude)
 │   │       ├── nodejs-notifications.md  # Notification + lifecycle event patterns (Node.js)
 │   │       ├── dotnet-ai-teammate.md    # Complete patterns for .NET AgentFramework
 │   │       └── python-ai-teammate.md   # Complete patterns for Python AgentFramework
 │   ├── a365-setup/
-│   │   └── SKILL.md              # Full A365 CLI lifecycle
+│   │   └── SKILL.md              # Entry point: CLI + prereqs, then delegates to make-ai-teammate or make-a365-agent
+│   ├── make-a365-agent/
+│   │   └── SKILL.md              # Non-AI Teammate provisioning: a365 setup all + optional observability/WorkIQ
 │   ├── instrument-observability/
 │   │   ├── SKILL.md              # OTel + A365 exporter instrumentation
 │   │   └── references/
@@ -60,6 +81,7 @@ plugins/agent365/
 ├── scripts/
 │   ├── validate-make-ai-teammate.js  # Stop hook validator for make-ai-teammate
 │   ├── validate-setup.js             # Stop hook validator for a365-setup
+│   ├── validate-make-a365-agent.js   # Stop hook validator for make-a365-agent
 │   ├── validate-observability.js     # Stop hook validator for instrument-observability
 │   ├── validate-add-workiq-tools.js
 │   └── validate-test-local.js
@@ -73,6 +95,8 @@ evals/
     ├── make-ai-teammate/
     │   └── evals.json
     ├── a365-setup/
+    │   └── evals.json
+    ├── make-a365-agent/
     │   └── evals.json
     ├── instrument-observability/
     │   └── evals.json

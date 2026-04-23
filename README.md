@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. These skills transform Node.js, .NET, and Python agents into production-ready Microsoft Agent 365 AI Teammates: registering blueprints, wiring WorkIQ MCP tools, instrumenting observability, and handling Teams messages and email notifications.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for Discoverability or Observability paths, wiring WorkIQ MCP tools, instrumenting observability, and local testing with AgentsPlayground.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -74,27 +74,44 @@ An **AI Teammate** is an agent registered with Microsoft Agent 365 that can rece
 
 ---
 
-### `a365-setup` — Register, Configure & Publish
+### `a365-setup` — A365 Onboarding Entry Point
 
-Full A365 CLI lifecycle. Detects your agent stack and Custom Engine Agent status automatically,
-then asks two questions — agent type and desired capabilities — and follows the right path:
+Detects your agent stack and asks which capabilities you want, then delegates to the right skill:
 
-| Agent Type | Available Capabilities |
-|------------|----------------------|
-| **Custom Engine Agent** | • **Observability** — OTel tracing + Defender integration<br>• **Observability + WorkIQ** — Adds M365 tools: Mail, Calendar, Teams, SharePoint<br>• **AI Teammate** — Blueprint, permissions, and messaging endpoint registration |
-| **Standard Agent** | • **Discoverability** — M365 catalog registration<br>• **Discoverability + Observability** — Registration + telemetry<br>• **AI Teammate** — Blueprint, permissions, and messaging endpoint registration |
+| Path | Delegated to |
+|------|-------------|
+| **AI Teammate** | `make-ai-teammate` — full code generation + registration + publish |
+| **Discoverability / Observability / WorkIQ** | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
 
-**AI Teammate path** — collects Agent Name, Manager Email, and Messaging Endpoint (devtunnel or custom HTTPS). Creates `a365.config.json`, runs `a365 setup all` (Blueprint + permissions + endpoint), and publishes the manifest to M365 Admin Center. You host the agent on your own infrastructure.
-
-**Discoverability path** — Blueprint + permissions only. Agent appears in the M365 catalog but has no messaging endpoint.
-
-**Observability path** — instruments OTel tracing, BaggageBuilder context, and the A365 exporter with agentic token resolver for Microsoft Defender.
+Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azure CLI login, checks Entra ID roles, and confirms language-specific build tools. After prerequisites are confirmed, all remaining work is handed off.
 
 **Trigger phrases:**
 ```
 "Run a365 setup"         "Create blueprint"
 "Register agent"         "Onboard agent"
 "Provision agent"        "Publish agent"
+```
+
+---
+
+### `make-a365-agent` — Provision Non-AI Teammate Agents
+
+Provisions a non-AI Teammate agent with Agent 365 — for Discoverability, Observability, and WorkIQ paths. Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirmed, but can also be called directly.
+
+| Capability | What it does |
+|-----------|-------------|
+| **Discoverability** | Blueprint + Entra permissions. Agent appears in the M365 catalog. |
+| **Discoverability + Observability** | Same, then invokes `instrument-observability`. |
+| **Observability** (Custom Engine Agent) | Blueprint + permissions, then invokes `instrument-observability`. |
+| **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
+
+Always shows a dry-run preview before applying anything. `a365 setup all` is idempotent — safe to re-run. WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens; users consent on first data access.
+
+**Trigger phrases:**
+```
+"Discoverability setup"                "Observability setup"
+"Provision agent with a365"            "Register agent for discoverability"
+"Create a365 blueprint"                "Make this a custom engine agent"
 ```
 
 ---
@@ -201,10 +218,16 @@ I have a Python agent using agent-framework-azure-ai. Make it a Microsoft Agent 
 AI Teammate with aiohttp hosting and email notification handling.
 ```
 
-**Register for Discoverability only (self-hosted):**
+**Register for Discoverability only:**
 ```
-I want to register this agent so it shows up in the M365 catalog,
-but I'll handle hosting and deployment myself. Set up Discoverability.
+I want to register this agent so it shows up in the M365 catalog.
+Set up Discoverability — I'll handle hosting myself.
+```
+
+**Discoverability + Observability:**
+```
+Register this agent for discoverability and add A365 observability so I can
+track LLM calls and tool invocations in Microsoft Defender.
 ```
 
 **Custom Engine Agent — add observability and WorkIQ:**
@@ -228,7 +251,7 @@ Check which Agent 365 skills have already been applied to this agent and tell me
 
 ## What's Included
 
-- **5 skills** covering full AI Teammate transformation, blueprint setup, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
+- **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
 - **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK), .NET AgentFramework, and Python AgentFramework
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
