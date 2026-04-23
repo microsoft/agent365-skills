@@ -70,51 +70,27 @@ All changes are **additive** and **idempotent** — rerunning is safe.
 
 ---
 
-## Phase 0A — Initial Detection and User Validation
+## Phase 0A — Load Detection Cache
 
-**TaskCreate** — "Detect agent stack, programming language, and validate with user"
+**Read** `.a365-workspace-detection.json`.
 
-### Silent Detection
+If the file is missing or `detectedAt` is older than 60 minutes:
+> "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
+> the project detection cache this skill depends on. Run `a365-setup` now, then return here."
 
-**First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to User Validation.
+Stop until the user confirms `a365-setup` has been run.
 
-Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
+Load from cache: `agentStack`, `programmingLanguage`.
 
-**Step 1: Detect Agent Stack** → Store as `agentStack`
-- Check for .csproj + Microsoft.Agents.* → `Agent Framework`
-- Check for package.json + @langchain → `LangChain`  
-- Check for package.json + "openai" (no LangChain) → `OpenAI`
-- Check for requirements.txt + langchain → `LangChain`
-- Check for requirements.txt + openai → `OpenAI`
-
-**Step 2: Detect Programming Language** → Store as `programmingLanguage`
-- .csproj exists → `DotNet`
-- package.json exists → `NodeJS`
-- requirements.txt OR .py files → `Python`
-
-**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
-- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
-- Otherwise → `0`
-
-### User Validation
-
-Present **all three detections in a single message** and wait for ONE response:
+Present the loaded values in one message and wait for confirmation:
 
 ```
 Here's what we detected about your agent:
-  • Stack:          {agentStack}
-  • Language:       {programmingLanguage}
-  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
+  • Stack:    {agentStack}
+  • Language: {programmingLanguage}
 
-Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
+Reply **yes** to confirm, or describe any corrections.
 ```
-
-- If the user replies **yes / y**: accept all three values.
-- If the user describes corrections: update the relevant variable(s).
-
-After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
-
-**TaskUpdate** — Mark complete: "Detect agent stack, programming language, and validate with user"
 
 ---
 
@@ -466,7 +442,15 @@ If build fails, present error output with suggested fixes. Do not revert changes
 
 1. **TaskList** — Show all completed tasks.
 
-2. Present summary:
+2. Ask:
+```
+WorkIQ tools are wired. Want to run a quick local test now?
+  1. Yes — run the test-local skill
+  2. No  — show me the summary and I'll test later
+```
+If yes, invoke the `test-local` skill.
+
+3. Present summary:
 
 ```
 ✅ WorkIQ tools added!

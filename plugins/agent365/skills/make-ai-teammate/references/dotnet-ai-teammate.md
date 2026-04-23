@@ -12,8 +12,6 @@ Add to the `.csproj` file:
 ```xml
 <!-- A365 SDK Packages -->
 <PackageReference Include="Microsoft.Agents.A365.Notifications" Version="*-beta.*" />
-<PackageReference Include="Microsoft.Agents.A365.Tooling.Extensions.AgentFramework" Version="*-beta.*" />
-<PackageReference Include="Microsoft.Agents.A365.Observability.Extensions.AgentFramework" Version="*-beta.*" />
 
 <!-- Agent Framework Packages -->
 <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.*" />
@@ -22,31 +20,17 @@ Add to the `.csproj` file:
 <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="9.10.0-preview.*" />
 <PackageReference Include="Azure.AI.OpenAI" Version="2.5.0-beta.*" />
 <PackageReference Include="Azure.Identity" Version="1.17.0" />
-
-<!-- OpenTelemetry -->
-<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.12.0" />
-<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.12.0" />
-<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.12.0" />
-<PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.12.0" />
-<PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.12.0" />
 ```
 
 Install via dotnet CLI (example):
 ```bash
 dotnet add package Microsoft.Agents.A365.Notifications --prerelease
-dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
-dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework --prerelease
 dotnet add package Microsoft.Agents.AI --prerelease
 dotnet add package Microsoft.Agents.Authentication.Msal
 dotnet add package Microsoft.Agents.Hosting.AspNetCore
 dotnet add package Microsoft.Extensions.AI.OpenAI --prerelease
 dotnet add package Azure.AI.OpenAI --prerelease
 dotnet add package Azure.Identity
-dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol
-dotnet add package OpenTelemetry.Extensions.Hosting
-dotnet add package OpenTelemetry.Instrumentation.AspNetCore
-dotnet add package OpenTelemetry.Instrumentation.Http
-dotnet add package OpenTelemetry.Instrumentation.Runtime
 ```
 
 ---
@@ -59,10 +43,6 @@ dotnet add package OpenTelemetry.Instrumentation.Runtime
 
 using YourNamespace;
 using YourNamespace.Agent;
-using Microsoft.Agents.A365.Observability;
-using Microsoft.Agents.A365.Observability.Extensions.AgentFramework;
-using Microsoft.Agents.A365.Tooling.Extensions.AgentFramework.Services;
-using Microsoft.Agents.A365.Tooling.Services;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Agents.Storage;
@@ -72,28 +52,10 @@ using Azure.AI.OpenAI;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// OpenTelemetry (Aspire service defaults or manual setup)
-builder.ConfigureOpenTelemetry();
-
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
 builder.Logging.AddConsole();
-
-// ────── A365 Services ──────────────────────────────────────────────────────
-
-// A365 agentic tracing exporter (sends spans to Microsoft Defender)
-builder.Services.AddAgenticTracingExporter(clusterCategory: "production");
-
-// A365 tracing with Agent Framework integration
-builder.AddA365Tracing(config =>
-{
-    config.WithAgentFramework();
-});
-
-// WorkIQ MCP tooling service (loaded per-turn from ToolingManifest.json)
-builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
-builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
 
 // ────── Auth & Storage ─────────────────────────────────────────────────────
 
@@ -119,8 +81,6 @@ builder.Services.AddSingleton<IChatClient>(sp =>
         .AsIChatClient()
         .AsBuilder()
         .UseFunctionInvocation()
-        .UseOpenTelemetry(sourceName: "agent.inference",
-            configure: cfg => cfg.EnableSensitiveData = true)
         .Build();
 });
 
@@ -168,16 +128,12 @@ app.Run();
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-using Microsoft.Agents.A365.Observability.Caching;
-using Microsoft.Agents.A365.Runtime.Utils;
-using Microsoft.Agents.A365.Tooling.Extensions.AgentFramework.Services;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Builder.App;
 using Microsoft.Agents.Builder.State;
 using Microsoft.Agents.Core.Models;
 using Microsoft.Extensions.AI;
-using System.Collections.Concurrent;
 
 namespace YourNamespace.Agent
 {
@@ -209,32 +165,19 @@ namespace YourNamespace.Agent
 
         private readonly IChatClient? _chatClient;
         private readonly IConfiguration? _configuration;
-        private readonly IExporterTokenCache<AgenticTokenStruct>? _agentTokenCache;
         private readonly ILogger<MyAgent>? _logger;
-        private readonly IMcpToolRegistrationService? _toolService;
         private readonly string? AgenticAuthHandlerName;
         private readonly string? OboAuthHandlerName;
-        private static readonly ConcurrentDictionary<string, List<AITool>> _agentToolCache = new();
-
-        public static bool TryGetBearerTokenForDevelopment(out string? bearerToken)
-        {
-            bearerToken = Environment.GetEnvironmentVariable("BEARER_TOKEN");
-            return !string.IsNullOrEmpty(bearerToken);
-        }
 
         public MyAgent(
             AgentApplicationOptions options,
             IChatClient chatClient,
             IConfiguration configuration,
-            IExporterTokenCache<AgenticTokenStruct> agentTokenCache,
-            IMcpToolRegistrationService toolService,
             ILogger<MyAgent> logger) : base(options)
         {
             _chatClient = chatClient;
             _configuration = configuration;
-            _agentTokenCache = agentTokenCache;
             _logger = logger;
-            _toolService = toolService;
 
             AgenticAuthHandlerName = _configuration.GetValue<string>("AgentApplication:AgenticAuthHandlerName");
             OboAuthHandlerName = _configuration.GetValue<string>("AgentApplication:OboAuthHandlerName");
@@ -303,29 +246,13 @@ namespace YourNamespace.Agent
 
             try
             {
-                // Resolve auth handler for this turn
-                var authHandlerName = turnContext.Activity.IsAgenticActivity()
-                    ? AgenticAuthHandlerName : OboAuthHandlerName;
-
-                // Preload observability token for Defender tracing
-                if (_agentTokenCache != null)
-                {
-                    var agentId = Utility.ResolveAgentIdentity(turnContext);
-                    var tenantId = turnContext.Activity.Conversation?.TenantId;
-                    // Token preload — fire and forget; failure is non-fatal
-                    _ = RefreshObservabilityToken(agentId, tenantId, _agentTokenCache);
-                }
-
-                // Build the LLM agent with MCP tools and run
-                var clientAgent = await GetClientAgent(
-                    turnContext, turnState, _toolService, authHandlerName);
                 var instructions = GetAgentInstructions(turnContext.Activity.From?.Name);
-                var thread = GetConversationThread(clientAgent, turnState);
+                var clientAgent = new ChatClientAgent(_chatClient!);
 
                 // Streaming response
                 var streamingResponse = turnContext.GetStreamingResponse();
-                await foreach (var update in clientAgent!.RunStreamingAsync(
-                    turnContext.Activity.Text, instructions, thread, cancellationToken))
+                await foreach (var update in clientAgent.RunStreamingAsync(
+                    turnContext.Activity.Text, instructions, null, cancellationToken))
                 {
                     if (update is TextContent textContent)
                         streamingResponse.QueueTextChunk(textContent.Text);
@@ -338,70 +265,7 @@ namespace YourNamespace.Agent
                 await typingTask.IgnoreCancellationExceptionAsync();
             }
         }
-
-        private async Task<AIAgent?> GetClientAgent(
-            ITurnContext context, ITurnState turnState,
-            IMcpToolRegistrationService? toolService, string? authHandlerName)
-        {
-            string? accessToken = null;
-
-            // Try agentic auth first, fall back to BEARER_TOKEN for dev
-            if (!string.IsNullOrEmpty(authHandlerName))
-            {
-                var tokenResult = await context.GetTokenOrDefaultAsync(authHandlerName);
-                accessToken = tokenResult?.Token;
-            }
-            if (string.IsNullOrEmpty(accessToken))
-                TryGetBearerTokenForDevelopment(out accessToken);
-
-            var agentId = Utility.ResolveAgentIdentity(context);
-
-            // Load MCP tools from ToolingManifest.json
-            List<AITool> tools = [];
-            if (toolService != null && !string.IsNullOrEmpty(accessToken))
-            {
-                var toolCacheKey = GetToolCacheKey(turnState);
-                if (!_agentToolCache.TryGetValue(toolCacheKey, out var cachedTools))
-                {
-                    cachedTools = (await toolService.GetMcpToolsAsync(
-                        agentId, accessToken, context.Activity)).ToList();
-                    _agentToolCache[toolCacheKey] = cachedTools;
-                }
-                tools = cachedTools;
-            }
-
-            return new ChatClientAgent(_chatClient!, tools: tools)
-                .UseOpenTelemetry("agent.inference");
-        }
-
-        private static AgentThread GetConversationThread(AIAgent? agent, ITurnState turnState)
-        {
-            const string key = "conversation.threadInfo";
-            var serialized = turnState.Conversation.Get<string>(key);
-            var thread = serialized != null
-                ? JsonSerializer.Deserialize<AgentThread>(serialized) ?? new AgentThread()
-                : new AgentThread();
-            return thread;
-        }
-
-        private string GetToolCacheKey(ITurnState turnState) =>
-            turnState.User.Get<string>("user.toolCacheKey") ?? string.Empty;
-
-        private static async Task RefreshObservabilityToken(
-            string? agentId, string? tenantId,
-            IExporterTokenCache<AgenticTokenStruct> cache)
-        {
-            // Fire-and-forget token refresh for Defender observability
-            try
-            {
-                // Implementation delegates to the A365 observability runtime
-                await cache.RefreshAsync(agentId, tenantId);
-            }
-            catch (Exception)
-            {
-                // Non-fatal — observability tracing degrades gracefully
-            }
-        }
+        // Note: WorkIQ MCP tool loading is added by the add-workiq-tools skill.
     }
 }
 ```
@@ -489,11 +353,9 @@ namespace YourNamespace.Agent
 
 | Rule | Why |
 |------|-----|
-| `AddAgenticTracingExporter` before `AddA365Tracing` | Exporter must be registered before the tracer provider builds |
-| `IMcpToolRegistrationService` as Singleton | Service caches tool metadata; transient would re-fetch on every turn |
 | `AgenticAuthHandlerName` from config, not hardcoded | Allows Playground (no auth) and production (agentic) to share the same binary |
 | `GetAgentInstructions()` sanitizes `Activity.From.Name` | Prevents prompt injection via user display names |
 | `/api/health` has no auth middleware | Health checks must pass without a valid JWT (used by ALB/ingress) |
 | Typing indicator loop at 4 s | Prevents Teams from timing out the typing indicator (5 s TTL) |
 | Dual `OnActivity` registrations for `isAgenticOnly: true/false` | A365 production uses agentic auth; AgentsPlayground uses OBO or no auth |
-| `IMcpToolServerConfigurationService` alongside `IMcpToolRegistrationService` | Configuration service reads `ToolingManifest.json`; registration service uses it |
+| `ToolingManifest.json` created empty | Populated later by the `add-workiq-tools` skill |

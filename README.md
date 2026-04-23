@@ -35,16 +35,35 @@ copilot plugin install agent365@agent365-skills
 
 ---
 
+## Recommended Workflow
+
+Skills are independent but build on each other in this order:
+
+```
+make-ai-teammate          ← wraps your LLM code with the hosting layer
+       ↓
+   a365-setup             ← registers the Blueprint and grants permissions (prerequisite for the next two)
+    ↙        ↘
+add-workiq-tools    instrument-observability
+                              ↓
+                          test-local   ← no prerequisite; can run after any step
+```
+
+`a365-setup` writes `.a365-workspace-detection.json`. The `add-workiq-tools` and
+`instrument-observability` skills read that file to skip re-detection and to confirm
+the agent is registered before they run.
+
+---
+
 ## Skills
 
 ### `make-ai-teammate` — Transform Any Agent into an AI Teammate
 
-An **AI Teammate** is an agent registered with Microsoft Agent 365 that can receive direct messages in Microsoft Teams, respond to email notifications, and access Microsoft 365 data (mail, calendar, Teams, SharePoint) through WorkIQ tools — all authenticated through your tenant's Entra ID.
+An **AI Teammate** is an agent registered with Microsoft Agent 365 that can receive direct messages in Microsoft Teams, respond to email notifications, and access Microsoft 365 data through WorkIQ tools — all authenticated through your tenant's Entra ID.
 
-**Before this skill:** Your agent is a standalone script or HTTP server. It has no Teams presence, no M365 data access, and no observability.
+**Before this skill:** Your agent is a standalone script or HTTP server with no Teams presence.
 
-**After this skill:** Your agent is a live AI Teammate in Microsoft Teams — registered with Agent 365, users can chat with it directly, it can read and respond to emails, and every LLM call is traced in Microsoft Defender.
-
+**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, ToolingManifest.json, and all required packages. Ready to register with `a365-setup`.
 
 **Trigger phrases:**
 ```
@@ -99,10 +118,14 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
 
+> **Prerequisite:** `a365-setup` must be run first.
+
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
-(which writes `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
+(which updates `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
 and guides the permissions handoff to your Global Administrator.
+
+Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse/Dynamics 365.
 
 **Trigger phrases:**
 ```
@@ -114,10 +137,12 @@ and guides the permissions handoff to your Global Administrator.
 
 ### `instrument-observability` — Add A365 Observability
 
+> **Prerequisite:** `a365-setup` must be run first.
+
 Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365
-exporter with agentic token resolver into an existing agent entry point and message handler.
-Use `make-ai-teammate` for new agents — use this skill to add observability incrementally to
-an agent that already has a hosting layer.
+exporter with agentic token resolver. Adds observability to the entry point and message handler —
+all code is marked `// A365 Observability — best-effort instrumentation` and the change is
+non-destructive and idempotent.
 
 **Trigger phrases:**
 ```
@@ -146,36 +171,51 @@ auth required.
 
 ## Starter Prompts
 
-**Transform a plain Node.js agent into a full AI Teammate (all-in-one):**
+**Step 1 — Transform your agent code:**
 ```
-I have a Node.js LangChain agent that runs as a plain script. Transform it into a
-Microsoft Agent 365 AI Teammate with Teams hosting, observability, email notifications,
-and WorkIQ Mail and Calendar tools.
+Make this agent an AI Teammate.
 ```
 
-**Transform a .NET AgentFramework agent:**
+**Step 2 — Register with Agent 365:**
 ```
-I have a .NET AgentFramework agent. Transform it into a Microsoft Agent 365 AI Teammate
-with full hosting, observability, WorkIQ tools, and email notification handling.
-```
-
-**Transform a Python agent:**
-```
-I have a Python agent using agent-framework-azure-ai. Make it a Microsoft Agent 365
-AI Teammate with Teams hosting, MCP tooling, and email notification handling.
+Register this agent as an AI Teammate — create the blueprint, grant permissions,
+and register my messaging endpoint.
 ```
 
-**Register a transformed agent (after make-ai-teammate):**
+**Step 3a — Add WorkIQ tools:**
 ```
-The code is ready. Register this agent as an AI Teammate with Agent 365 — create the
-blueprint, grant permissions, and register my messaging endpoint.
+Add Work IQ Mail and Work IQ Calendar to this agent.
 ```
+
+**Step 3b — Add observability:**
+```
+Instrument observability for this agent.
+```
+
+**Step 4 — Test locally:**
+```
+Test this agent locally without deploying to Teams.
+```
+
+---
 
 **Full flow in one prompt:**
 ```
 This agent has never been registered with Agent 365. Walk me through the full AI
 Teammate setup: transform the code, register a blueprint, add WorkIQ Mail and
-Teams tools, and test it locally.
+Calendar tools, instrument observability, and test it locally.
+```
+
+**Transform a .NET AgentFramework agent:**
+```
+I have a .NET AgentFramework agent. Make it a Microsoft Agent 365 AI Teammate
+with Teams hosting and email notification handling.
+```
+
+**Transform a Python agent:**
+```
+I have a Python agent using agent-framework-azure-ai. Make it a Microsoft Agent 365
+AI Teammate with aiohttp hosting and email notification handling.
 ```
 
 **Register for Discoverability only:**
@@ -196,15 +236,10 @@ This is a Custom Engine Agent available in Microsoft Teams and Copilot.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 
-**Add specific WorkIQ tools to an existing agent:**
+**Add specific WorkIQ tools to an already-registered agent:**
 ```
 Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — I'll need to know what to give our Global Administrator.
-```
-
-**Test locally with AgentsPlayground:**
-```
-Test my agent locally without deploying to Teams.
 ```
 
 **Check what's already configured:**

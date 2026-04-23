@@ -4,12 +4,7 @@
  *
  * Stop hook validator for the make-ai-teammate skill.
  * Detects the project language (Node.js / .NET / Python) and validates
- * that the full AI Teammate hosting layer was added correctly.
- *
- * Scope: hosting layer, agent class, client factory, token cache, packages.
- * Observability (AddAgenticTracingExporter, ObservabilityManager, etc.) and
- * WorkIQ tooling (McpToolRegistrationService, ToolingManifest.json) are owned
- * by instrument-observability and add-workiq-tools — not validated here.
+ * that the full AI Teammate hosting layer was added.
  *
  * Exit codes:
  *   0  → ok: true  (session may end)
@@ -53,14 +48,34 @@ const issues = [];
 
 // ── Detect language ─────────────────────────────────────────────────────────
 
-const hasCsproj      = findFiles(cwd, ['.csproj']).length > 0;
-const hasPyproject   = fs.existsSync(path.join(cwd, 'pyproject.toml'));
+const hasCsproj     = findFiles(cwd, ['.csproj']).length > 0;
+const hasPyproject  = fs.existsSync(path.join(cwd, 'pyproject.toml'));
 const hasPackageJson = fs.existsSync(path.join(cwd, 'package.json'));
 
-let language = 'nodejs';
-if (hasCsproj)          language = 'dotnet';
-else if (hasPyproject)  language = 'python';
-else if (hasPackageJson) language = 'nodejs';
+let language = 'nodejs'; // default
+if (hasCsproj) {
+  language = 'dotnet';
+} else if (hasPyproject) {
+  language = 'python';
+} else if (hasPackageJson) {
+  language = 'nodejs';
+}
+
+// ── Validate: ToolingManifest.json (all languages) ──────────────────────────
+
+const manifestFile = path.join(cwd, 'ToolingManifest.json');
+if (!fs.existsSync(manifestFile)) {
+  issues.push('ToolingManifest.json not found — run add-workiq-tools skill to configure MCP servers');
+} else {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+    if (!Array.isArray(manifest.mcpServers)) {
+      issues.push('ToolingManifest.json is missing mcpServers array');
+    }
+  } catch {
+    issues.push('ToolingManifest.json exists but cannot be parsed as JSON');
+  }
+}
 
 // ── Node.js validations ─────────────────────────────────────────────────────
 
@@ -68,71 +83,76 @@ if (language === 'nodejs') {
   const tsFiles   = findFiles(cwd, ['.ts']).filter(f => !f.includes('node_modules'));
   const jsonFiles = findFiles(cwd, ['package.json']).filter(f => !f.includes('node_modules'));
 
-  // Hosting layer — src/index.ts
+  // Check 1: Hosting layer — index.ts
   const indexFile = path.join(cwd, 'src', 'index.ts');
   if (fs.existsSync(indexFile)) {
-    if (!fileContains(indexFile, 'CloudAdapter'))
+    if (!fileContains(indexFile, 'CloudAdapter')) {
       issues.push('src/index.ts exists but does not use CloudAdapter — hosting layer incomplete');
-    if (!fileContains(indexFile, '/api/messages'))
+    }
+    if (!fileContains(indexFile, '/api/messages')) {
       issues.push('src/index.ts is missing the /api/messages endpoint');
-    if (!fileContains(indexFile, '/api/health'))
+    }
+    if (!fileContains(indexFile, '/api/health')) {
       issues.push('src/index.ts is missing the /api/health endpoint');
-    if (!fileContains(indexFile, 'authorizeJWT'))
+    }
+    if (!fileContains(indexFile, 'authorizeJWT')) {
       issues.push('src/index.ts is missing authorizeJWT middleware');
-    if (!fileContains(indexFile, 'configDotenv') && !fileContains(indexFile, 'dotenv'))
-      issues.push('src/index.ts does not load .env — configDotenv() must be the first line');
+    }
+    if (!fileContains(indexFile, 'configDotenv') && !fileContains(indexFile, 'dotenv')) {
+      issues.push('src/index.ts does not load .env — configDotenv() must be first line');
+    }
   } else {
     issues.push('src/index.ts not found — hosting layer was not added');
   }
 
-  // Agent class — AgentApplication with notification + lifecycle handlers
-  if (!anyFileContains(tsFiles, 'AgentApplication'))
+  // Check 2: Agent class
+  if (!anyFileContains(tsFiles, 'AgentApplication')) {
     issues.push('No TypeScript file extends AgentApplication — agent class not added');
-  if (!anyFileContains(tsFiles, 'onAgentNotification'))
+  }
+  if (!anyFileContains(tsFiles, 'onAgentNotification')) {
     issues.push('onAgentNotification handler not found — notification routing not wired');
-  if (!anyFileContains(tsFiles, 'InstallationUpdate'))
+  }
+  if (!anyFileContains(tsFiles, 'InstallationUpdate')) {
     issues.push('InstallationUpdate handler not found — lifecycle events not wired');
-  if (!anyFileContains(tsFiles, "agents-a365-notifications"))
-    issues.push("import '@microsoft/agents-a365-notifications' not found — notification deserialization will break at runtime");
-
-  // Client factory — getClient() wrapping existing LLM
-  const clientFile = path.join(cwd, 'src', 'client.ts');
-  if (fs.existsSync(clientFile)) {
-    if (!fileContains(clientFile, 'getClient'))
-      issues.push('src/client.ts exists but is missing getClient() factory function');
-  } else {
-    issues.push('src/client.ts not found — client factory was not added');
+  }
+  if (!anyFileContains(tsFiles, "agents-a365-notifications")) {
+    issues.push("import '@microsoft/agents-a365-notifications' not found — notification deserialization will break");
   }
 
-  // Token cache
-  const tokenCacheFile = path.join(cwd, 'src', 'token-cache.ts');
-  if (!fs.existsSync(tokenCacheFile)) {
-    issues.push('src/token-cache.ts not found');
-  } else if (!fileContains(tokenCacheFile, 'createAgenticTokenCacheKey')) {
-    issues.push('src/token-cache.ts is missing createAgenticTokenCacheKey export');
+  // Check 3: Client factory
+  if (!anyFileContains(tsFiles, 'getClient')) {
+    issues.push('getClient() factory not found in src/client.ts — LLM client factory missing');
   }
 
-  // Required packages
+  // Check 4: Required packages in package.json
   const pkgFile = jsonFiles.find(f => path.basename(f) === 'package.json' && !f.includes('/src/'));
   if (pkgFile) {
-    for (const pkg of ['@microsoft/agents-hosting', '@microsoft/agents-a365-notifications']) {
-      if (!fileContains(pkgFile, pkg))
-        issues.push(`${pkg} not found in package.json — run: npm install ${pkg}`);
+    const required = [
+      '@microsoft/agents-hosting',
+      '@microsoft/agents-a365-runtime',
+      '@microsoft/agents-a365-notifications',
+    ];
+    for (const pkg of required) {
+      if (!fileContains(pkgFile, pkg)) {
+        issues.push(`${pkg} not found in package.json dependencies`);
+      }
     }
   } else {
     issues.push('package.json not found');
   }
 
-  // tsconfig module resolution
+  // Check 6: tsconfig.json module resolution
   const tsconfigFile = path.join(cwd, 'tsconfig.json');
   if (fs.existsSync(tsconfigFile)) {
     try {
       const tsconfig = JSON.parse(fs.readFileSync(tsconfigFile, 'utf8'));
       const opts = tsconfig.compilerOptions ?? {};
-      if (opts.module !== 'node16' && opts.module !== 'Node16')
+      if (opts.module !== 'node16' && opts.module !== 'Node16') {
         issues.push('tsconfig.json: "module" is not "node16" — this will break @microsoft/agents-* imports');
-      if (opts.moduleResolution !== 'node16' && opts.moduleResolution !== 'Node16')
+      }
+      if (opts.moduleResolution !== 'node16' && opts.moduleResolution !== 'Node16') {
         issues.push('tsconfig.json: "moduleResolution" is not "node16"');
+      }
     } catch {
       issues.push('tsconfig.json exists but cannot be parsed');
     }
@@ -146,49 +166,60 @@ if (language === 'nodejs') {
 if (language === 'dotnet') {
   const csFiles = findFiles(cwd, ['.cs']);
 
-  // Program.cs — hosting layer (no observability or WorkIQ — those are downstream skills)
+  // Check 1: Program.cs — hosting layer
   const programFile = path.join(cwd, 'Program.cs');
   if (fs.existsSync(programFile)) {
-    if (!fileContains(programFile, 'AddAgent<'))
+    if (!fileContains(programFile, 'AddAgent<')) {
       issues.push('Program.cs is missing AddAgent<T>() — agent not registered with DI container');
-    if (!fileContains(programFile, '/api/messages'))
+    }
+    if (!fileContains(programFile, '/api/messages')) {
       issues.push('Program.cs is missing /api/messages endpoint');
-    if (!fileContains(programFile, '/api/health'))
+    }
+    if (!fileContains(programFile, '/api/health')) {
       issues.push('Program.cs is missing /api/health endpoint');
+    }
   } else {
     issues.push('Program.cs not found — hosting layer was not added');
   }
 
-  // Agent class — dual isAgenticOnly handlers, GetClientAgent()
-  if (!anyFileContains(csFiles, 'AgentApplication'))
+  // Check 2: Agent class
+  if (!anyFileContains(csFiles, 'AgentApplication')) {
     issues.push('No .cs file extends AgentApplication — agent class not added');
-  if (!anyFileContains(csFiles, 'ActivityTypes.InstallationUpdate'))
-    issues.push('InstallationUpdate handler not found — lifecycle events not wired');
-  if (!anyFileContains(csFiles, 'ActivityTypes.Message'))
+  }
+  if (!anyFileContains(csFiles, 'ActivityTypes.InstallationUpdate')) {
+    issues.push('InstallationUpdate handler not found in agent class — lifecycle events not wired');
+  }
+  if (!anyFileContains(csFiles, 'ActivityTypes.Message')) {
     issues.push('Message handler not found in agent class');
-  if (!anyFileContains(csFiles, 'isAgenticOnly'))
+  }
+  if (!anyFileContains(csFiles, 'isAgenticOnly')) {
     issues.push('isAgenticOnly parameter not found — dual auth registration (agentic + OBO) not configured');
-  if (!anyFileContains(csFiles, 'GetClientAgent'))
-    issues.push('GetClientAgent() not found — LLM wiring into agent class is incomplete');
+  }
 
-  // Required NuGet packages (hosting + notifications only; tooling/observability are downstream)
+  // Check 3: Required NuGet packages in .csproj — tooling/observability added by separate skills
   const csprojFiles = findFiles(cwd, ['.csproj']);
   if (csprojFiles.length > 0) {
-    for (const pkg of ['Microsoft.Agents.A365.Notifications', 'Microsoft.Agents.Hosting.AspNetCore']) {
-      if (!anyFileContains(csprojFiles, pkg))
+    const required = [
+      'Microsoft.Agents.A365.Notifications',
+    ];
+    for (const pkg of required) {
+      if (!anyFileContains(csprojFiles, pkg)) {
         issues.push(`${pkg} not found in .csproj — add with: dotnet add package ${pkg} --prerelease`);
+      }
     }
   } else {
     issues.push('.csproj file not found');
   }
 
-  // appsettings.json — auth + token validation config
+  // Check 4: appsettings.json
   const appsettingsFile = path.join(cwd, 'appsettings.json');
   if (fs.existsSync(appsettingsFile)) {
-    if (!fileContains(appsettingsFile, 'AgentApplication'))
+    if (!fileContains(appsettingsFile, 'AgentApplication')) {
       issues.push('appsettings.json is missing AgentApplication section');
-    if (!fileContains(appsettingsFile, 'TokenValidation'))
+    }
+    if (!fileContains(appsettingsFile, 'TokenValidation')) {
       issues.push('appsettings.json is missing TokenValidation section');
+    }
   } else {
     issues.push('appsettings.json not found — A365 auth configuration is required');
   }
@@ -197,73 +228,58 @@ if (language === 'dotnet') {
 // ── Python validations ──────────────────────────────────────────────────────
 
 if (language === 'python') {
-  // host_agent_server.py — hosting layer
+  const pyFiles = findFiles(cwd, ['.py']);
+
+  // Check 1: host_agent_server.py — hosting layer
   const hostFile = path.join(cwd, 'host_agent_server.py');
   if (fs.existsSync(hostFile)) {
-    if (!fileContains(hostFile, 'CloudAdapterAiohttp'))
+    if (!fileContains(hostFile, 'CloudAdapterAiohttp')) {
       issues.push('host_agent_server.py is missing CloudAdapterAiohttp — hosting layer incomplete');
-    if (!fileContains(hostFile, '/api/messages'))
+    }
+    if (!fileContains(hostFile, '/api/messages')) {
       issues.push('host_agent_server.py is missing /api/messages route');
-    if (!fileContains(hostFile, '/api/health'))
+    }
+    if (!fileContains(hostFile, '/api/health')) {
       issues.push('host_agent_server.py is missing /api/health route');
-    if (!fileContains(hostFile, 'on_agent_notification'))
+    }
+    if (!fileContains(hostFile, 'on_agent_notification') && !anyFileContains(pyFiles, 'on_agent_notification')) {
       issues.push('on_agent_notification handler not found — notification routing not wired');
+    }
   } else {
     issues.push('host_agent_server.py not found — hosting layer was not added');
   }
 
-  // agent.py — AgentInterface implementation
+  // Check 2: agent.py — agent interface implementation
   const agentFile = path.join(cwd, 'agent.py');
   if (fs.existsSync(agentFile)) {
-    if (!fileContains(agentFile, 'AgentInterface') && !fileContains(agentFile, 'process_user_message'))
+    if (!fileContains(agentFile, 'AgentInterface') && !fileContains(agentFile, 'process_user_message')) {
       issues.push('agent.py does not implement AgentInterface / process_user_message — agent class incomplete');
-    if (!fileContains(agentFile, '_sanitize_display_name'))
-      issues.push('agent.py is missing _sanitize_display_name() — prompt injection guard not added');
-    if (!fileContains(agentFile, 'token_resolver'))
-      issues.push('agent.py is missing token_resolver() — A365 observability token callback not wired');
+    }
+    if (!fileContains(agentFile, 'handle_agent_notification_activity')) {
+      issues.push('agent.py is missing handle_agent_notification_activity — notification handling not implemented');
+    }
   } else {
     issues.push('agent.py not found — agent implementation was not added');
   }
 
-  // token_cache.py
-  const tokenCacheFile = path.join(cwd, 'token_cache.py');
-  if (!fs.existsSync(tokenCacheFile)) {
-    issues.push('token_cache.py not found');
-  } else if (!fileContains(tokenCacheFile, 'cache_agentic_token')) {
-    issues.push('token_cache.py is missing cache_agentic_token function');
+  // Check 3: agent_interface.py
+  const interfaceFile = path.join(cwd, 'agent_interface.py');
+  if (!fs.existsSync(interfaceFile)) {
+    issues.push('agent_interface.py not found — AgentInterface ABC is required');
   }
 
-  // agent_interface.py
-  if (!fs.existsSync(path.join(cwd, 'agent_interface.py')))
-    issues.push('agent_interface.py not found — AgentInterface ABC is required');
-
-  // Required packages (hosting + notifications only; tooling/observability are downstream)
+  // Check 4: Required packages in pyproject.toml — tooling/observability added by separate skills
   if (hasPyproject) {
-    for (const pkg of [
+    const required = [
       'microsoft_agents_a365_notifications',
       'microsoft_agents_a365_runtime',
       'microsoft-agents-hosting-aiohttp',
-    ]) {
-      if (!fileContains(path.join(cwd, 'pyproject.toml'), pkg))
-        issues.push(`${pkg} not found in pyproject.toml — add it to [project] dependencies`);
+    ];
+    for (const pkg of required) {
+      if (!fileContains(path.join(cwd, 'pyproject.toml'), pkg)) {
+        issues.push(`${pkg} not found in pyproject.toml dependencies`);
+      }
     }
-  }
-}
-
-// ── a365.config.json (all languages) — Phase 9 creates this ─────────────────
-
-const a365Config = path.join(cwd, 'a365.config.json');
-if (!fs.existsSync(a365Config)) {
-  issues.push('a365.config.json not found — Phase 9 (Register with Agent 365) may not have completed');
-} else {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(a365Config, 'utf8'));
-    if (!cfg.messagingEndpoint)
-      issues.push('a365.config.json is missing messagingEndpoint field');
-    if (!cfg.managerEmail)
-      issues.push('a365.config.json is missing managerEmail field');
-  } catch {
-    issues.push('a365.config.json exists but cannot be parsed as JSON');
   }
 }
 
