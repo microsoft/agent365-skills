@@ -1,11 +1,13 @@
 ---
 name: a365-setup
 description: >
-  Full Agent 365 CLI setup lifecycle for AI agents. Asks two path-determination questions
-  (agent type and desired capabilities), then follows the correct path: verifies and installs
-  the CLI, validates Azure prerequisites, configures the agent blueprint (AI Teammate path),
-  runs a365 setup all to provision Blueprint, permissions, and endpoint registration, and
-  publishes the agent manifest (AI Teammate path). Supports .NET AgentFramework, Node.js LangChain, and Python agents.
+  The default entry point for all Agent 365 (A365) requests — use this skill whenever the user
+  wants to "make this an A365 agent", "set up A365", "add A365", or any general A365 onboarding.
+  Asks two path-determination questions (agent type and desired capabilities), then follows the
+  correct path: verifies and installs the CLI, validates Azure prerequisites, configures the
+  agent blueprint (AI Teammate path), runs a365 setup all to provision Blueprint, permissions,
+  and endpoint registration, and publishes the agent manifest (AI Teammate path). Supports
+  .NET AgentFramework, Node.js LangChain, and Python agents.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -34,7 +36,10 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill automatically:
 > "run a365 setup", "create blueprint", "register agent", "setup agent blueprint",
-> "onboard agent", "provision agent", "deploy agent", "publish agent", "a365 full setup"
+> "onboard agent", "provision agent", "deploy agent", "publish agent", "a365 full setup",
+> "make this an a365 agent", "make this agent an a365 agent", "set up a365",
+> "add a365", "configure a365", "a365 setup", "connect to a365", "integrate with a365",
+> "make this agent work with a365", "set up agent 365", "agent 365 setup"
 
 ---
 
