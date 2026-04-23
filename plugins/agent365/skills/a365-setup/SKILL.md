@@ -1,13 +1,12 @@
 ---
 name: a365-setup
 description: >
-  The default entry point for all Agent 365 (A365) requests — use this skill whenever the user
-  wants to "make this an A365 agent", "set up A365", "add A365", or any general A365 onboarding.
-  Asks two path-determination questions (agent type and desired capabilities), then follows the
-  correct path: verifies and installs the CLI, validates Azure prerequisites, configures the
-  agent blueprint (AI Teammate path), runs a365 setup all to provision Blueprint, permissions,
-  and endpoint registration, and publishes the agent manifest (AI Teammate path). Supports
-  .NET AgentFramework, Node.js LangChain, and Python agents.
+  Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
+  the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
+  for non-AI-Teammate agents (Discoverability, Observability paths). Verifies and installs the CLI,
+  validates Azure prerequisites, runs a365 setup all. For the AI Teammate path, delegates to the
+  make-ai-teammate skill after CLI and prerequisites are confirmed. Supports .NET AgentFramework,
+  Node.js LangChain, and Python agents.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -108,34 +107,32 @@ Wait for the answer. Store as `capabilities`.
 
 After all four questions are answered, set `isAITeammate = true` if `capabilities = AI Teammate`, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
 
-**AI Teammate path** — `isAITeammate = true` (5 todos total):
+**AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
-- Todo 3: `Step 3: Configure the Agent 365 CLI (Initialize Configuration)`
-- Todo 4: `Step 4: Run Agent 365 Setup to Provision Prerequisites`
-- Todo 5: `Step 5: Review, Publish, and Register Endpoint`
+- Todo 3: `Step 3: Run the make-ai-teammate skill`
 
 **Standard path** — `agentType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
-- Todo 3: `Step 4: Run Agent 365 Setup to Provision Prerequisites`
+- Todo 3: `Step 3: Run the make-a365-agent skill`
 
 **Entra app ID path** — `agentType = 1` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
-- Todo 3: `Step 4: Run Agent 365 Setup to Provision Prerequisites`
+- Todo 3: `Step 3: Run the make-a365-agent skill`
 
-> **Note for Entra app ID agents (`agentType = 1`):** Steps 3 and 5 (Blueprint configuration and publish/deploy) do not apply. Follow Steps 1, 2, and 4 only.
-
-**RULE 2 — ALWAYS BEGIN FROM STEP 1.** No step is optional within your path. Even if the CLI appears installed or Azure appears logged in, you MUST run the validation commands in each step. Step 3 (Configure) is only required on the AI Teammate path (`isAITeammate = true`) — it is skipped entirely on all other paths.
+**RULE 2 — ALWAYS BEGIN FROM STEP 1.** No step is optional within your path. Even if the CLI appears installed or Azure appears logged in, you MUST run the validation commands in each step. Step 3 is always the final step — it delegates to the appropriate skill based on `isAITeammate`.
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
-**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. Do NOT run `az account show` or gather Azure values outside of Step 3. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
+**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
 
 **RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 
-**RULE 6 — INPUT FIELDS.** In Step 3 (AI Teammate path only), present exactly 3 fields: Agent Name, Manager Email, and Messaging Endpoint. Do NOT ask the user for a client app ID — the CLI resolves it automatically by the well-known app name "Agent 365 CLI".
+**RULE 6 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
+- **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
+- **Standard paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 
 ---
 
@@ -254,363 +251,70 @@ pip --version
 ```
 Confirm Python 3.10 or later and pip are available.
 
-> **STOP AND CONFIRM before proceeding to Step 3:**
+> **STOP AND CONFIRM before leaving Step 2:**
 > - Project type detected (at least one of: .NET, Node.js, or Python)
 > - Required build tools installed and verified
 > - Azure CLI login confirmed, custom client app validated, permissions checked
 
-> **BEFORE MOVING ON:** Mark Todo 2 (Step 2) as **completed**.
-> - **AI Teammate path** (`isAITeammate = true`): Mark Todo 3 in-progress → proceed to Step 3.
-> - **All other paths** (`isAITeammate = false`): Skip Step 3. Mark Todo 3 in-progress → jump to Step 4.
+> **BEFORE MOVING ON:** Mark Todo 2 (Step 2) as **completed**. Mark Todo 3 in-progress → proceed to Step 3.
 
 ---
 
-## Step 3: Configure the Agent 365 CLI (Initialize Configuration)
+## Step 3: Delegate to the Appropriate Skill
 
-> **AI TEAMMATE PATH ONLY** (`isAITeammate = true`). If `isAITeammate = false`, skip this entire step and go to Step 4.
-
-> **MANDATORY GATE:**
-> - Todo 1 (Step 1) is **completed** — CLI verified/installed
-> - Todo 2 (Step 2) is **completed** — Azure login confirmed, custom client app validated, build tools verified
-> - Todo 3 (Step 3) is **in-progress**
->
-> If any checkbox above is not satisfied, STOP and finish the incomplete step first.
-
-### Gather auto-detected values
-
-```bash
-az account show --query "{tenantId:tenantId}" -o json
-az ad signed-in-user show --query userPrincipalName -o tsv
-```
-
-Extract: `{tenantId}`, `{loggedInUser}`.
-
-### Collect configuration inputs
-
-**"Please provide the following values to configure your agent:"**
-
-| Field | Description | Example |
-|-------|-------------|---------|
-| **Agent Name** | Unique name for your agent (see rules below) | `contoso-support-agent` |
-| **Manager Email** | M365 manager email (must be from your tenant) | `{loggedInUser}` |
-
-> **Agent Name rules:** Unique within your tenant. Derives Agent Identity, Blueprint, and UPN. Lowercase letters, numbers, hyphens only. Start with a letter. 3–20 chars recommended. Include your org name.
->
-> Do NOT ask for `clientAppId` — the CLI resolves it automatically. Do NOT ask for subscription, resource group, location, or Azure infra fields — the CLI no longer manages Azure hosting.
-
-#### Determine messaging endpoint
-
-Ask: **"How is your agent hosted? Choose devtunnel for local development, or provide a custom HTTPS endpoint for production/staging. (devtunnel/custom)"**
-
-- **devtunnel**: Creates a secure tunnel from the internet to your local machine. Tunnel URL becomes `messagingEndpoint`.
-- **custom**: Ask the user to provide their `messagingEndpoint` URL (e.g., `https://myagent.example.com/api/messages`). This can be any hosting provider — Azure App Service, Azure Container Apps, AWS, GCP, on-premises, etc.
-
-#### Set up a dev tunnel
-
-> ⛔ **Run this only if the user chose devtunnel.**
-
-```bash
-# Step 1 — Check if devtunnel CLI is installed
-devtunnel --version
-```
-
-If not installed:
-
-```bash
-# Windows
-winget install Microsoft.devtunnel
-
-# macOS / Linux
-curl -sL https://aka.ms/DevTunnelCliInstall | bash
-
-# After install, restart the terminal or source your profile, then confirm:
-devtunnel --version
-```
-
-Log in (first-time setup only — skip if already authenticated):
-
-```bash
-# Interactive (requires browser)
-devtunnel user login
-
-# Headless / CI environment
-devtunnel user login --device-code
-```
-
-Start the tunnel for your local agent port (default: **3978**):
-
-```bash
-devtunnel host -p 3978 --allow-anonymous
-```
-
-The CLI outputs a URL like `https://abc123-3978.devtunnels.ms`. Set:
-
-```
-messagingEndpoint = https://<tunnel-subdomain>.devtunnels.ms/api/messages
-```
-
-> Keep this terminal running — the tunnel is active as long as this process is alive.
-> If the tunnel URL changes on restart, update the endpoint with:
-> `a365 setup blueprint --update-endpoint https://<new-url>/api/messages`
-
-### Derive naming values from base name
-
-Using `agentBaseName` and domain from `managerEmail`:
-
-| Field | Pattern | Example (`mya365agent` / `contoso.onmicrosoft.com`) |
-|-------|---------|-----------------------------------------------------|
-| `agentIdentityDisplayName` | `{baseName} Identity` | `mya365agent Identity` |
-| `agentBlueprintDisplayName` | `{baseName} Blueprint` | `mya365agent Blueprint` |
-| `agentUserPrincipalName` | `UPN.{baseName}@{domain}` | `UPN.mya365agent@contoso.onmicrosoft.com` |
-| `agentUserDisplayName` | `{baseName} Agent User` | `mya365agent Agent User` |
-| `agentDescription` | `{baseName} - Agent 365 Agent` | `mya365agent - Agent 365 Agent` |
-
-### Confirm derived values with user
-
-Present the derived values and ask:
-
-**"Would you like to update any of these derived values, or proceed with the defaults? (update/proceed)"**
-
-### Create the a365.config.json file
-
-```json
-{
-  "tenantId": "<from az account show>",
-  "environment": "prod",
-  "messagingEndpoint": "<devtunnel URL or custom HTTPS endpoint>/api/messages",
-  "agentIdentityDisplayName": "<derived from baseName>",
-  "agentBlueprintDisplayName": "<derived from baseName>",
-  "agentUserPrincipalName": "<derived from baseName and domain>",
-  "agentUserDisplayName": "<derived from baseName>",
-  "managerEmail": "<user provided>",
-  "agentUserUsageLocation": "US",
-  "agentDescription": "<derived from baseName>"
-}
-```
-
-> The CLI no longer manages Azure infrastructure. `subscriptionId`, `resourceGroup`, `location`, `appServicePlanName`, `webAppName`, `deploymentProjectPath`, and `needDeployment` are removed fields — do not include them.
-
-### Import the configuration
-
-```bash
-a365 config init -c ./a365.config.json
-```
-
-If validation fails (app not found, missing permissions, unrecognized project platform), correct `a365.config.json` and re-run `a365 config init -c ./a365.config.json`.
-
----
-
-## Step 4: Run Agent 365 Setup to Provision Prerequisites
-
-> **Skill tip:** If the `/provision` slash command appears in your Claude Code slash commands, type `/provision <agent_name>` and follow the prompts — then skip the rest of this step.
-
-### 4.1 — Collect provisioning inputs
-
-**For the Standard path (`isAITeammate = false`):** Ask two questions (one at a time):
-
-1. **"What agent name should be used for provisioning?"**
-   - Globally unique across Azure; lowercase, numbers, hyphens; start with letter; 3–20 chars recommended.
-   - If the user replies `default`, use `developer`.
-   - Store as `agent_name`.
-
-2. **"What is the project directory containing your agent code? Reply with a full path, or reply 'current' to use the current working directory."**
-   - Store as `project_dir`. If `current`, use CWD.
-
-**For the AI Teammate path (`isAITeammate = true`):**
-- `agent_name` is derived from `agentBaseName` (Step 3). Do NOT ask again.
-- Run `a365 setup all` from the current working directory (where `a365.config.json` lives).
-
-### 4.2 — Dry-run preview (REQUIRED)
-
-> **MUST run and show to user before applying anything.**
-
-```bash
-# Standard path:
-cd "<project_dir>" && a365 setup all --agent-name <agent_name> --dry-run
-
-# AI Teammate path:
-cd "<project_dir>" && a365 setup all --dry-run
-```
-
-After displaying full output, ask: **"Do you want to proceed with the setup shown above? (yes/no)"**
-
-- **no**: Stop. Tell the user "Setup cancelled. Return to Step 4 when ready."
-- **yes**: Proceed to 4.3.
-
-### 4.3 — Apply setup
-
-```bash
-# Standard path (agentType 3 — Discoverability or Discoverability + Observability):
-cd "<project_dir>" && a365 setup all --agent-name <agent_name>
-
-# AI Teammate path (agentType 2 or agentType 3 — AI Teammate):
-cd "<project_dir>" && a365 setup all
-```
-
-What `a365 setup all` provisions depends on your path:
-
-**Discoverability path** (`agentType 3`, `isAITeammate = false`):
-- Creates the Agent 365 Blueprint in Entra ID (agent identity + app registration)
-- Configures blueprint permissions for Discoverability
-- Does NOT create Azure infrastructure (no Resource Group, App Service Plan, or Web App)
-- Does NOT register a messaging endpoint
-- Agent will appear in the M365 catalog but will not receive messages until a messaging endpoint is configured separately
+The CLI is verified and Azure prerequisites are confirmed. All remaining work is handled by a specialized skill.
 
 **AI Teammate path** (`isAITeammate = true`):
-- Creates the Agent 365 Blueprint in Entra ID
-- Configures blueprint permissions
-- Registers the messaging endpoint from `a365.config.json`
-- Agent identity and blueprint are ready; deploy your agent code to your hosting provider separately
 
-Monitor output carefully:
-- The CLI logs progress in numbered steps (e.g., `[1/5]`). Watch for errors or warnings.
-- Performance notices are non-blocking.
-- Existing resources from a previous run are skipped — expected behavior.
+**Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and follow it from the beginning.
 
-**Handle these conditions:**
+The `make-ai-teammate` skill handles everything: code generation, a365.config.json, `a365 setup all`, manifest review, `a365 publish`, Teams Dev Portal registration, and downstream capability offers (Observability, WorkIQ, local testing).
 
-| Condition | Action |
-|-----------|--------|
-| Graph API Forbidden / Authorization_RequestDenied | Stop. Resolve permission issue (Step 2). Then re-run `a365 setup all`. |
-| Interactive browser auth required | If headless, see Troubleshooting section. |
+> The `make-ai-teammate` skill will detect that the CLI is already installed (Phase 9 Step 1) and that Azure prerequisites are met. It will proceed directly to collecting agent identity inputs.
 
-`a365 setup all` is idempotent — safe to re-run after fixing an issue.
+---
 
-### 4.4 — Show setup output to user
+**Standard paths** (`isAITeammate = false` — Discoverability, Observability, WorkIQ):
 
-After `a365 setup all` completes, show the user:
+**Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-a365-agent/SKILL.md` and follow it from the beginning.
 
-1. **The Setup Summary table** from CLI output — verbatim.
-2. **If the CLI printed an admin consent action item (Permission Grants):** Show both options verbatim:
-   - Option A (Entra portal steps)
-   - Option B (PowerShell script)
-3. **Skip the client secret action item entirely.** Do not show or mention it.
-4. Output exactly this closing line and nothing else:
-   > "Your agent is provisioned. If admin consent is required, have a Global Admin run the PowerShell script above."
+Pass the session context to the skill: `capabilities`, `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`.
 
-> Mark all todos as completed. This is the final action for non-AI Teammate paths. Do NOT proceed to Step 5.
+The `make-a365-agent` skill handles: `a365 setup all` (Blueprint + permissions), and optionally invokes `instrument-observability` (Observability paths) and `add-workiq-tools` (WorkIQ paths).
+
+---
+
+Mark Todo 3 as completed when the delegated skill finishes.
+
+---
+
+## Step 4 (Reference Only)
+
+> **This step is now handled by the `make-a365-agent` skill (Step 3 above).** Kept as a reference for re-running setup without the full skill flow.
+
+If you need to re-run `a365 setup all` on a non-AI Teammate agent without going through the full skill:
+
+```bash
+a365 setup all --agent-name <agent_name> --dry-run   # preview
+a365 setup all --agent-name <agent_name>              # apply
+```
+
+`a365 setup all` is idempotent — safe to re-run after fixing any issue.
 
 ---
 
 ## Step 5: Review, Publish, and Register Endpoint
 
-> **AI TEAMMATE PATH ONLY.** If `isAITeammate = false`, do not proceed here.
+> **This step is handled by the `make-ai-teammate` skill (Step 3 above).** This section is kept as a reference for standalone re-registration scenarios only.
 
-Your agent blueprint and permissions are now configured. Proceed with manifest review and publishing to the M365 admin center. Your agent code is hosted externally — deploy it to your own hosting provider using your standard pipeline.
+If you need to re-publish or re-register an existing AI Teammate agent without re-running the full `make-ai-teammate` flow, the steps are in `make-ai-teammate` Phase 10:
+- Manifest review (`manifest/manifest.json`)
+- `a365 publish`
+- Teams Developer Portal configuration (`a365 config display -g --field agentBlueprintId`)
+- Create agent instance via Teams > Apps > Request Instance
+- Admin approval at [admin.cloud.microsoft/#/agents/all/requested](https://admin.cloud.microsoft/#/agents/all/requested)
 
-### Review and Update the Manifest File (REQUIRED)
-
-Before publishing, you **MUST** review and customize `manifest/manifest.json` in the project root.
-
-#### Manifest fields to update
-
-| Field | Description | What to Update |
-|-------|-------------|----------------|
-| `name.short` | Agent display name (max 30 chars) | Replace `"Your Agent Name"` with actual name |
-| `name.full` | Full name (max 100 chars) | Replace with descriptive full name |
-| `description.short` | Brief description (max 80 chars) | One-line summary of what the agent does |
-| `description.full` | Full description (max 4000 chars) | Cover: what it does, data/systems accessed, how to interact, limitations |
-| `developer.name` | Publisher/org name | Your organization name |
-| `developer.websiteUrl` | Developer website | Your org URL |
-| `developer.privacyUrl` | Privacy policy URL | Required for production |
-| `developer.termsOfUseUrl` | Terms of use URL | Required for production |
-| `icons.color` | Color icon (192x192 PNG) | Ensure `color.png` exists |
-| `icons.outline` | Outline icon (32x32 PNG) | Ensure `outline.png` exists |
-| `accentColor` | Hex accent color | Match your branding (e.g., `"#0078D4"`) |
-| `version` | Semantic version | Update on each change (e.g., `"1.0.0"`) |
-
-#### Example manifest
-
-```json
-{
-  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/vdevPreview/MicrosoftTeams.schema.json",
-  "id": "<auto-generated-by-cli>",
-  "name": {
-    "short": "Contoso HR Bot",
-    "full": "Contoso Human Resources Assistant"
-  },
-  "description": {
-    "short": "Get answers to HR questions and submit time-off requests.",
-    "full": "The Contoso HR Assistant helps employees with common HR tasks. Ask about company policies, check PTO balance, submit time-off requests, and get information about benefits."
-  },
-  "icons": { "outline": "outline.png", "color": "color.png" },
-  "accentColor": "#0078D4",
-  "version": "1.0.0",
-  "manifestVersion": "devPreview",
-  "developer": {
-    "name": "Contoso Ltd",
-    "mpnId": "",
-    "websiteUrl": "https://www.contoso.com",
-    "privacyUrl": "https://www.contoso.com/privacy",
-    "termsOfUseUrl": "https://www.contoso.com/terms"
-  },
-  "agenticUserTemplates": [{ "id": "<auto-generated>", "file": "agenticUserTemplateManifest.json" }]
-}
-```
-
-> The `id` and `agenticUserTemplates[].id` fields are auto-populated by the CLI. Do not set them manually.
-
-Ask the user: **"Have you updated the manifest with your agent's name, description, and developer information? (yes/no)"**
-
-Wait for **yes** before proceeding.
-
-### Publish the agent manifest
-
-```bash
-a365 publish
-```
-
-This updates manifest identifiers and publishes the agent package to the tenant's Microsoft 365 admin center catalog. Watch for errors — if the CLI cannot reach the admin center, verify your account has `Application.ReadWrite.All` and that connectivity is good.
-
-### Deploy your agent code
-
-The A365 CLI no longer manages Azure hosting. Deploy your agent code to your chosen provider (Azure App Service, Azure Container Apps, AWS, GCP, on-premises, etc.) using your standard deployment pipeline.
-
-Your `messagingEndpoint` was already registered with the Blueprint in Step 4. Once your agent is live at that endpoint, it can receive messages from Teams.
-
-### Post-registration (User action required)
-
-> The following steps require browser-based interactions that cannot be automated. Provide these instructions so the user can complete them.
-
-#### Configure agent in Teams Developer Portal
-
-1. Get your blueprint ID:
-   ```bash
-   a365 config display -g --field agentBlueprintId
-   ```
-
-2. Navigate to:
-   ```
-   https://dev.teams.microsoft.com/tools/agent-blueprint/<your-blueprint-id>/configuration
-   ```
-
-3. In the Developer Portal:
-   - Set **Agent Type** to `API Based`
-   - Set **Notification URL** to your messaging endpoint:
-     ```bash
-     a365 config display -g --field messagingEndpoint
-     ```
-   - Select **Save**
-
-#### Create agent instance
-
-1. Open **Teams > Apps** and search for your agent name
-2. Select your agent and click **Request Instance** (or **Create Instance**)
-3. Teams sends the request to your tenant admin for approval
-
-Admins approve from [Microsoft admin center - Requested Agents](https://admin.cloud.microsoft/#/agents/all/requested). After approval, the agent instance is created and available.
-
-> The user needs to be part of the [Frontier preview program](https://adoption.microsoft.com/copilot/frontier-program/) to create agent instances while Agent 365 is in preview.
-
-#### Test your agent
-
-1. Search for the new agent user in Teams
-   > Agent user creation is asynchronous — can take minutes to hours to become searchable.
-2. Start a new chat with the agent instance
-3. Send test messages to verify functionality (e.g., "Hello!")
-4. Check application logs in your hosting provider's dashboard or log stream.
-
-View your agent in the [Microsoft 365 admin center - Agents](https://admin.cloud.microsoft/#/agents/all).
+To re-run just this phase: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and jump to Phase 10.
 
 ---
 

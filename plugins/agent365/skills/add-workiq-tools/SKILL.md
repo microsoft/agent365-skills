@@ -231,7 +231,9 @@ a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
 
 (Adjust to include whichever servers the user selected.)
 
-> ⚠️ This command **only updates `ToolingManifest.json`** — it does NOT grant permissions.
+This command creates `ToolingManifest.json` if it does not exist, or adds the selected servers to it if it does.
+
+> ⚠️ This command **only writes `ToolingManifest.json`** — it does NOT grant permissions.
 > Permissions are handled separately in Phase 5.
 
 ### 3.2 Verify the manifest was updated

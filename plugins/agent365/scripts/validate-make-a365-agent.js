@@ -1,17 +1,10 @@
 #!/usr/bin/env node
 /**
- * validate-setup.js
+ * validate-make-a365-agent.js
  *
- * Stop hook validator for the a365-setup skill.
- * a365-setup is responsible for Steps 1-2 only (CLI + Azure prereqs), then
- * delegates to make-ai-teammate or make-a365-agent. Those skills have their
- * own validators that check their respective artifacts (a365.config.json,
- * a365.generated.config.json, Blueprint ID, etc.).
- *
- * This validator checks only what a365-setup itself is responsible for:
- *   - a365 CLI is installed and on PATH
- *   - If a365.generated.config.json happens to exist (delegated skill ran),
- *     validate it has a non-empty agentBlueprintId (non-blocking warning if missing)
+ * Stop hook validator for the make-a365-agent skill.
+ * Checks that a365 setup all completed successfully — the primary artifact
+ * is a365.generated.config.json with a valid agentBlueprintId.
  *
  * Exit codes:
  *   0  → ok: true  (session may end)
@@ -39,19 +32,18 @@ if (!a365Version) {
   issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease');
 }
 
-// ── Check 2: If generated config exists, verify Blueprint ID is present ─────
-// (Non-blocking — a365-setup delegates setup to make-ai-teammate or make-a365-agent.
-//  The generated config is created by those skills, not by a365-setup itself.
-//  Only fail if the file exists but appears malformed or missing the Blueprint ID.)
+// ── Check 2: Generated config exists (created by a365 setup all) ─────────────
 const genConfigPath = path.join(cwd, 'a365.generated.config.json');
-if (fileExists(genConfigPath)) {
+if (!fileExists(genConfigPath)) {
+  issues.push('a365.generated.config.json not found — a365 setup all may not have completed');
+} else {
   try {
     const genConfig = JSON.parse(fs.readFileSync(genConfigPath, 'utf8'));
     if (!genConfig.agentBlueprintId || genConfig.agentBlueprintId === '') {
-      issues.push('a365.generated.config.json exists but agentBlueprintId is empty — Blueprint creation may have failed');
+      issues.push('agentBlueprintId is empty in a365.generated.config.json — Blueprint creation may have failed');
     }
   } catch {
-    issues.push('a365.generated.config.json exists but cannot be parsed — file may be malformed');
+    issues.push('Could not parse a365.generated.config.json — file may be malformed');
   }
 }
 
@@ -60,7 +52,7 @@ const gitignorePath = path.join(cwd, '.gitignore');
 if (fileExists(gitignorePath)) {
   const gitignore = fs.readFileSync(gitignorePath, 'utf8');
   if (!gitignore.includes('a365.generated.config.json')) {
-    console.warn('[validate-setup] Warning: a365.generated.config.json is not in .gitignore');
+    console.warn('[validate-make-a365-agent] Warning: a365.generated.config.json is not in .gitignore');
   }
 }
 

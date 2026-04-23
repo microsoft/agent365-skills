@@ -1,0 +1,116 @@
+{
+  "skill_name": "make-a365-agent",
+  "eval_instructions": "Test against real agent projects. The skill receives capabilities + language context from a365-setup (or asks directly if invoked standalone). It always runs a365 setup all (Phase 2), then always offers instrument-observability (Phase 3, optional) and add-workiq-tools (Phase 4, optional) regardless of the capability path selected. Blueprint creation is confirmed by a365.generated.config.json existing. The skill does NOT generate code, does NOT create a365.config.json, and does NOT run a365 publish.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Run a365 setup for this agent",
+      "description": "Discoverability path (Standard Agent) — .NET AgentFramework, delegated from a365-setup",
+      "expected_output": "Skill reads context (capabilities=Discoverability, usesTeamsOrCopilot=0) from session. Creates 3 todos (Register, Add Observability optional, Add WorkIQ optional). Runs a365 setup all --dry-run, confirms, runs setup. Shows Setup Summary verbatim. Then always offers observability (Phase 3) and WorkIQ (Phase 4) as optional add-ons.",
+      "files": [],
+      "expectations": [
+        "Phase 0: capabilities, agentStack, programmingLanguage, usesTeamsOrCopilot loaded from session context or detection cache",
+        "Phase 0: 3 todos always created: Register + Add Observability (optional) + Add WorkIQ Tools (optional)",
+        "Phase 1: agent_name and project_dir collected in single message",
+        "Phase 2: a365 setup all --agent-name <name> --dry-run is run and shown to user",
+        "Phase 2: User confirmation required before a365 setup all runs",
+        "Phase 2: a365 setup all --agent-name <name> is run",
+        "Phase 2: Setup Summary table shown verbatim",
+        "Phase 2: Admin consent PowerShell shown if CLI outputs Permission Grants action item",
+        "Phase 3: Observability offer shown — user can accept or skip",
+        "Phase 4: WorkIQ offer shown — includes OBO token note — user can accept or skip",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Set up observability for this agent",
+      "description": "Standard Agent (Node.js LangChain) — user accepts observability offer in Phase 3",
+      "expected_output": "Skill runs a365 setup all, then in Phase 3 user says yes to observability — instrument-observability SKILL.md is read and followed. Phase 4 WorkIQ offer shown regardless.",
+      "files": [],
+      "expectations": [
+        "Phase 0: 3 todos created",
+        "Phase 2: a365 setup all runs, Setup Summary shown",
+        "Phase 3: Observability offer shown and user says yes",
+        "Phase 3: instrument-observability SKILL.md is read and followed",
+        "Phase 4: WorkIQ offer shown — user can accept or skip",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Provision this Custom Engine Agent",
+      "description": "Observability path (Custom Engine Agent, usesTeamsOrCopilot=1) — Python AgentFramework, user accepts both offers",
+      "expected_output": "Skill runs a365 setup all, user says yes to observability (Phase 3) and yes to WorkIQ (Phase 4). Both downstream skills are invoked.",
+      "files": [],
+      "expectations": [
+        "Phase 0: usesTeamsOrCopilot = 1 (Custom Engine Agent)",
+        "Phase 0: 3 todos created",
+        "Phase 2: a365 setup all runs with --dry-run then actual run",
+        "Phase 3: Observability offer shown, instrument-observability invoked — user said yes",
+        "Phase 4: WorkIQ offer includes OBO token note, add-workiq-tools invoked — user said yes",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Add WorkIQ and observability to this agent",
+      "description": "User skips observability but accepts WorkIQ — .NET AgentFramework",
+      "expected_output": "Skill runs setup all. Phase 3 observability offer shown, user skips. Phase 4 WorkIQ offer shown, user says yes — add-workiq-tools invoked. OBO token note included.",
+      "files": [],
+      "expectations": [
+        "Phase 0: 3 todos created",
+        "Phase 2: a365 setup all runs successfully",
+        "Phase 3: Observability offer shown — user says skip — instrument-observability NOT invoked",
+        "Phase 4: WorkIQ offer includes OBO token note",
+        "Phase 4: add-workiq-tools SKILL.md is read and followed — user said yes",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Register this agent",
+      "description": "Invoked directly (no session context) — skill asks the user for capabilities",
+      "expected_output": "Skill detects no session context, checks .a365-workspace-detection.json, if not found asks user to select capability path. Proceeds with normal flow including always offering observability and WorkIQ.",
+      "files": [],
+      "expectations": [
+        "Phase 0: No session context detected",
+        "Phase 0: .a365-workspace-detection.json checked — if absent, capability menu shown",
+        "Phase 0: User selects a path; 3 todos always created",
+        "Phase 1: agent_name and project_dir collected",
+        "Phase 2: a365 setup all --dry-run shown, user confirms, then runs",
+        "Phase 3: Observability offer shown",
+        "Phase 4: WorkIQ offer shown",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Run a365 setup for this agent",
+      "description": "Idempotency — agent already has a365.generated.config.json from previous run",
+      "expected_output": "Skill runs a365 setup all again (idempotent — existing resources skipped). Shows updated Setup Summary. Continues to offer observability and WorkIQ.",
+      "files": [],
+      "expectations": [
+        "Phase 2: a365 setup all --dry-run shown, user confirms",
+        "Phase 2: a365 setup all runs (existing resources skipped — expected behavior)",
+        "Phase 2: Setup Summary shown verbatim",
+        "Phase 3: Observability offer shown",
+        "Phase 4: WorkIQ offer shown"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Set up this agent",
+      "description": "User declines both offers — setup completes without observability or WorkIQ",
+      "expected_output": "Skill runs setup all, shows both offers, user skips both. Final summary shown without observability or WorkIQ bullets. No error.",
+      "files": [],
+      "expectations": [
+        "Phase 2: a365 setup all runs successfully",
+        "Phase 3: Observability offer shown — user says skip — instrument-observability NOT invoked",
+        "Phase 4: WorkIQ offer shown — user says skip — add-workiq-tools NOT invoked",
+        "Phase 5: Final summary shown without observability or WorkIQ bullets",
+        "a365.generated.config.json exists after completion"
+      ]
+    }
+  ]
+}

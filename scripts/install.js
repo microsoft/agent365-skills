@@ -217,12 +217,16 @@ checkA365();
 
 header('Done');
 console.log('\n  Skills installed! Try these trigger phrases:\n');
+console.log('    💡 "Make this agent an AI Teammate"');
 console.log('    💡 "Run a365 setup for this agent"');
+console.log('    💡 "Discoverability setup for this agent"');
 console.log('    💡 "Add workiq tools to this agent"');
 console.log('    💡 "Instrument observability for this agent"');
 console.log('    💡 "Test this agent locally"\n');
 console.log('  Or invoke directly:');
+console.log(`    /agent365:make-ai-teammate`);
 console.log(`    /agent365:a365-setup`);
+console.log(`    /agent365:make-a365-agent`);
 console.log(`    /agent365:add-workiq-tools`);
 console.log(`    /agent365:instrument-observability`);
 console.log(`    /agent365:test-local\n`);
