@@ -50,7 +50,7 @@ hooks:
 
 **First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 1B.
 
-Run all three detection globs **in parallel** (single tool call with multiple Glob/Grep):
+Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
 
 **Step 1: Detect Agent Stack** → Store as `agentStack`
 - Check for .csproj + Microsoft.Agents.* → `Agent Framework`
@@ -64,48 +64,64 @@ Run all three detection globs **in parallel** (single tool call with multiple Gl
 - package.json exists → `NodeJS`
 - requirements.txt OR .py files → `Python`
 
-**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
-- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
-- Otherwise → `0`
+**Step 3: Detect Agent Type** → Store as `usesTeamsOrCopilot`
+
+Check the following signals **in parallel** (Glob + Grep). Any one positive result → `1` (CEA). All negative → `0`.
+
+*File presence signals (Glob):*
+- `teamsapp.yml` or `teamsapp.local.yml` exists → CEA (Teams Toolkit project)
+- `appPackage/manifest.json` or `manifest/manifest.json` exists → CEA (Teams app package)
+- `a365.config.json` or `a365.generated.config.json` exists → CEA (already A365-registered)
+
+*Package reference signals (Grep in package.json / .csproj / requirements.txt / pyproject.toml):*
+- Node.js: `@microsoft/teams-ai` or `"botbuilder"` in package.json → CEA
+- .NET: `Microsoft.Teams.AI` or `Microsoft.Bot.Builder` in .csproj → CEA
+- Python: `teams-ai` or `botbuilder-core` in requirements.txt or pyproject.toml → CEA
+
+*Config/env signals (Grep in .env, appsettings.json):*
+- `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` present → CEA
+
+If none of the above are found → `0` (Standard Agent / Non-M365 Agent)
 
 ### Phase 1B: User Validation Questions
 
-Present **all three detections in a single message** and wait for ONE response:
+Present **all four detections in a single message** and wait for ONE response:
 
 ```
 Here's what we detected about your agent:
-  • Stack:          {agentStack}
-  • Language:       {programmingLanguage}
-  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
+  • Stack:         {agentStack}
+  • Language:      {programmingLanguage}
+  • Agent type:    {usesTeamsOrCopilot == 1
+                     ? "Custom Engine Agent (CEA) — has Teams/Copilot integration"
+                     : "Standard Agent — no Teams/Copilot integration (Non-M365)"}
 
-Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
+Reply **yes** to confirm, or describe any corrections.
+Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all three values and proceed to Question 4.
-- If the user describes corrections: update the relevant variable(s) and proceed to Question 4.
+- If the user replies **yes / y**: accept all values and proceed to Question 4.
+- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to Question 4.
+- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to Question 4.
+- If the user describes other corrections: update the relevant variable(s) and proceed to Question 4.
 
 After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
 **Question 4: What capabilities do you want to enable?**
 
-Present only the options that apply based on `usesTeamsOrCopilot`:
+Present these four options:
 
-- **If `usesTeamsOrCopilot = 1`** (Custom Engine Agent):
-  1. Observability
-  2. Observability and Work IQ
-  3. AI Teammate
-- **If `usesTeamsOrCopilot = 0`** (Standard Agent):
-  1. Discoverability
-  2. Discoverability and Observability
-  3. AI Teammate
+  1. Discoverability — make the agent findable in the M365 catalog
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
+  3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  4. AI Teammate — full Teams/Copilot integration with hosting layer, registration, and publish
 
 Wait for the answer. Store as `capabilities`.
 
-> **Note:** The setup automatically includes all prerequisite capabilities for your selection.
+> **Note:** Options can be combined — e.g. a user can say "1 and 2" for Discoverability + Observability.
 
 ### Phase 1C: Determine Path and Create Todos
 
-After all four questions are answered, set `isAITeammate = true` if `capabilities = AI Teammate`, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
+After all four questions are answered, set `isAITeammate = true` if the user selected option **4 (AI Teammate)**, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
