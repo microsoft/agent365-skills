@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. a365-setup detects agentStack (Agent Framework/LangChain/OpenAI), programmingLanguage, and usesTeamsOrCopilot (CEA=1, Standard=0), asks the final capabilities question, then verifies CLI (Step 1) and Azure prerequisites (Step 2), and delegates to the right skill at Step 3. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Capabilities menu: Discoverability, Observability, Tools (WorkIQ), AI Teammate — combinable. Phase 1B shows agent type as 'Custom Engine Agent (CEA)' or 'Standard Agent — no Teams/Copilot integration (Non-M365)'. CEA detection uses multi-signal check: teamsapp.yml, Teams/Bot packages, BOT_ID/MicrosoftAppId/TEAMS_APP_ID env vars, or existing a365 configs.",
+  "eval_instructions": "Test against real agent projects in clean state. a365-setup detects agentStack (Agent Framework/LangChain/OpenAI), programmingLanguage, and usesTeamsOrCopilot (CEA=1, Standard=0), asks the final capabilities question, then verifies CLI (Step 1) and Azure prerequisites (Step 2), and delegates to the right skill at Step 3. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Capabilities menu: Discoverability, Observability, Tools (WorkIQ), AI Teammate — combinable. Phase 1B shows agent type as 'Custom Engine Agent (CEA)' or 'Standard Agent — no Teams/Copilot integration (Non-M365)'. CEA detection uses multi-signal check: strong standalone signals (teamsapp.yml, Teams app manifests, teams-ai SDK packages, existing a365 configs) or paired signals (generic botbuilder packages + structural marker, env vars + structural marker). Phase 1C derives registrationType from usesTeamsOrCopilot: usesTeamsOrCopilot=1 → registrationType=1 (CEA/Entra app ID path); usesTeamsOrCopilot=0 → registrationType=3 (Standard path). registrationType is derived, never asked.",
   "evals": [
     {
       "id": 1,
@@ -14,6 +14,7 @@
         "Phase 1B: Capabilities menu shows all 4 options: Discoverability, Observability, Tools (WorkIQ), AI Teammate",
         "Phase 1B: User is told options can be combined",
         "Phase 1C: isAITeammate = false (Discoverability path selected)",
+        "Phase 1C: registrationType = 3 (derived from usesTeamsOrCopilot=0 — Standard path)",
         "Phase 1C: 3 todos created: Step 1 (CLI), Step 2 (Prerequisites), Step 3 (Run the make-a365-agent skill)",
         "Step 1: dotnet --version is checked",
         "Step 1: a365 --version is run to verify CLI is installed",
@@ -59,6 +60,7 @@
         "Phase 1B: Agent type shown as 'Custom Engine Agent (CEA) — has Teams/Copilot integration'",
         "Phase 1B: User can correct to Standard Agent if detection is wrong",
         "Phase 1B: 4-option capabilities menu shown: Discoverability, Observability, Tools (WorkIQ), AI Teammate",
+        "Phase 1C: registrationType = 1 (derived from usesTeamsOrCopilot=1 — CEA/Entra app ID path)",
         "Phase 1C: 3 todos created",
         "Step 1: a365 CLI validated",
         "Step 2: Azure prerequisites confirmed"

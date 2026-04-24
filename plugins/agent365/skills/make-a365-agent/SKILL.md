@@ -72,9 +72,12 @@ What capabilities would you like to enable? (options can be combined)
   2. Observability — end-to-end activity tracing for every message, LLM call,
      and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  4. AI Teammate — full Teams/Copilot integration (handled by a different skill)
 ```
 
-   Store the answer as `capabilities`. (Option 4 AI Teammate is handled by make-ai-teammate, not this skill.)
+   - If the user selects **option 4 (AI Teammate)** — stop here and tell them:
+     > "AI Teammate setup is handled by the `make-ai-teammate` skill. Run `/agent365:a365-setup` and select option 4, or invoke `make-ai-teammate` directly."
+   - Otherwise store the answer as `capabilities` and continue.
 
 **Create all todos for this session:**
 

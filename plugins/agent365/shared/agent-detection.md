@@ -100,8 +100,10 @@ Grep: Microsoft.Teams.AI in .csproj                         → Teams AI SDK —
 Grep: teams-ai in requirements.txt/pyproject.toml           → Teams AI SDK — Python CEA (allowed)
 ```
 Note: generic Bot Framework packages (`botbuilder`, `Microsoft.Bot.Builder`, `botbuilder-core`)
-are NOT sufficient on their own — channel bots use these too. Only structural file markers above
-are treated as unambiguous CEA exceptions in this HARD STOP context.
+are NOT sufficient on their own — channel bots use these too. In this HARD STOP context, only the
+explicitly listed CEA markers above are sufficient exceptions: the structural file markers AND the
+Teams AI SDK package references (`@microsoft/teams-ai`, `Microsoft.Teams.AI`, `teams-ai`).
+Do not treat generic Bot Framework packages as standalone CEA markers.
 
 - **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent. **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
 - **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.

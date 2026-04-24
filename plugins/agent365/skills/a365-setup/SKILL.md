@@ -4,8 +4,8 @@ description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
   for non-AI-Teammate agents (Discoverability, Observability paths). Verifies and installs the CLI,
-  validates Azure prerequisites, runs a365 setup all. For the AI Teammate path, delegates to the
-  make-ai-teammate skill after CLI and prerequisites are confirmed. Supports .NET AgentFramework,
+  validates Azure prerequisites, then delegates to make-a365-agent or make-ai-teammate at Step 3.
+  Does NOT run a365 setup all inline — setup is run by the delegated skill. Supports .NET AgentFramework,
   Node.js LangChain, and Python agents.
 compatibility:
   - claude-code
@@ -122,7 +122,15 @@ Wait for the answer. Store as `capabilities`.
 
 ### Phase 1C: Determine Path and Create Todos
 
-After both questions are answered, set `isAITeammate = true` if the user selected **AI Teammate** from the capabilities menu, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
+After the capabilities question is answered (and the detection/confirmation above is complete):
+
+1. Set `isAITeammate = true` if the user selected **AI Teammate**, else `isAITeammate = false`.
+2. Derive `registrationType` from Phase 1A signals (do not ask the user):
+   - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
+   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard agent path)
+   - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
+
+Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
@@ -134,7 +142,7 @@ After both questions are answered, set `isAITeammate = true` if the user selecte
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**Entra app ID path** — `registrationType = 1` (3 todos total):
+**Entra app ID path** — `registrationType = 1, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
