@@ -4,8 +4,8 @@ description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
   for non-AI-Teammate agents (Discoverability, Observability paths). Verifies and installs the CLI,
-  validates Azure prerequisites, runs a365 setup all. For the AI Teammate path, delegates to the
-  make-ai-teammate skill after CLI and prerequisites are confirmed. Supports .NET AgentFramework,
+  validates Azure prerequisites, then delegates to make-a365-agent or make-ai-teammate at Step 3.
+  Does NOT run a365 setup all inline — setup is run by the delegated skill. Supports .NET AgentFramework,
   Node.js LangChain, and Python agents.
 compatibility:
   - claude-code
@@ -50,7 +50,7 @@ hooks:
 
 **First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 1B.
 
-Run all three detection globs **in parallel** (single tool call with multiple Glob/Grep):
+Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
 
 **Step 1: Detect Agent Stack** → Store as `agentStack`
 - Check for .csproj + Microsoft.Agents.* → `Agent Framework`
@@ -64,9 +64,25 @@ Run all three detection globs **in parallel** (single tool call with multiple Gl
 - package.json exists → `NodeJS`
 - requirements.txt OR .py files → `Python`
 
-**Step 3: Detect Custom Engine Agent** → Store as `usesTeamsOrCopilot`
-- M365 signals (Teams/Copilot references) AND (a365.config.json OR a365.generated.config.json exists) → `1`
-- Otherwise → `0`
+**Step 3: Detect Agent Type** → Store as `usesTeamsOrCopilot`
+
+Check the following signals **in parallel** (Glob + Grep).
+
+*Strong standalone signals — any one → CEA:*
+- `teamsapp.yml` or `teamsapp.local.yml` exists (Teams Toolkit project)
+- `appPackage/manifest.json` or `manifest/manifest.json` exists (Teams app package)
+- `a365.config.json` or `a365.generated.config.json` exists (already A365-registered)
+- `@microsoft/teams-ai` in package.json (Teams AI SDK — Node.js specific)
+- `Microsoft.Teams.AI` in .csproj (.NET Teams AI SDK)
+- `teams-ai` in requirements.txt or pyproject.toml (Python Teams AI SDK)
+
+*Paired signals — CEA only if also matched by a structural file signal above:*
+- `"botbuilder"` in package.json + structural marker → CEA (generic Bot Framework; standalone = channel bot risk)
+- `Microsoft.Bot.Builder` in .csproj + structural marker → CEA
+- `botbuilder-core` in requirements.txt or pyproject.toml + structural marker → CEA
+- `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` in .env/appsettings.json + structural marker → CEA
+
+If no strong standalone signal and no valid pairing → `0` (Standard Agent / Non-M365 Agent)
 
 ### Phase 1B: User Validation Questions
 
@@ -74,50 +90,59 @@ Present **all three detections in a single message** and wait for ONE response:
 
 ```
 Here's what we detected about your agent:
-  • Stack:          {agentStack}
-  • Language:       {programmingLanguage}
-  • Teams/Copilot:  {usesTeamsOrCopilot == 1 ? "Yes" : "No"}
+  • Stack:         {agentStack}
+  • Language:      {programmingLanguage}
+  • Agent type:    {usesTeamsOrCopilot == 1
+                     ? "Custom Engine Agent (CEA) — has Teams/Copilot integration"
+                     : "Standard Agent — no Teams/Copilot integration (Non-M365)"}
 
-Reply **yes** to confirm, or describe any corrections (e.g. "language is NodeJS" or "it's not Teams").
+Reply **yes** to confirm, or describe any corrections.
+Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all three values and proceed to Question 4.
-- If the user describes corrections: update the relevant variable(s) and proceed to Question 4.
+- If the user replies **yes / y**: accept all values and proceed to the final capabilities question below.
+- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the final capabilities question below.
+- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
+- If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
 After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
-**Question 4: What capabilities do you want to enable?**
+**Final question: What capabilities do you want to enable?**
 
-Present only the options that apply based on `usesTeamsOrCopilot`:
+Present these four options:
 
-- **If `usesTeamsOrCopilot = 1`** (Custom Engine Agent):
-  1. Observability
-  2. Observability and Work IQ
-  3. AI Teammate
-- **If `usesTeamsOrCopilot = 0`** (Standard Agent):
-  1. Discoverability
-  2. Discoverability and Observability
-  3. AI Teammate
+  1. Discoverability — make the agent findable in the M365 catalog
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
+  3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  4. AI Teammate — full Teams/Copilot integration with hosting layer, registration, and publish
 
 Wait for the answer. Store as `capabilities`.
 
-> **Note:** The setup automatically includes all prerequisite capabilities for your selection.
+> **Note:** Options can be combined — e.g. a user can say "1 and 2" for Discoverability + Observability.
 
 ### Phase 1C: Determine Path and Create Todos
 
-After all four questions are answered, set `isAITeammate = true` if `capabilities = AI Teammate`, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
+After the capabilities question is answered (and the detection/confirmation above is complete):
+
+1. Set `isAITeammate = true` if the user selected **AI Teammate**, else `isAITeammate = false`.
+2. Derive `registrationType` from Phase 1A signals (do not ask the user):
+   - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
+   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard agent path)
+   - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
+
+Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-ai-teammate skill`
 
-**Standard path** — `agentType = 3, isAITeammate = false` (3 todos total):
+**Standard path** — `registrationType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**Entra app ID path** — `agentType = 1` (3 todos total):
+**Entra app ID path** — `registrationType = 1, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
@@ -126,7 +151,7 @@ After all four questions are answered, set `isAITeammate = true` if `capabilitie
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
-**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
+**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The detection confirmation and final capabilities question were already answered before Step 1.
 
 **RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 

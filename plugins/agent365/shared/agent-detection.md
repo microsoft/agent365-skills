@@ -9,7 +9,7 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 
 The skill MUST detect and store these three variables before asking ANY questions:
 
-1. **`agentType`** — Agent stack/framework
+1. **`agentStack`** — Agent stack/framework
    - Possible values: `Agent Framework`, `LangChain`, `OpenAI`
    - Detection: See detection logic below
 
@@ -19,7 +19,7 @@ The skill MUST detect and store these three variables before asking ANY question
 
 3. **`usesTeamsOrCopilot`** — Is this a Custom Engine Agent?
    - Possible values: `1` (true) or `0` (false)
-   - Detection: Check for M365/Teams/Copilot signals AND a365.config.json markers
+   - Detection: Check for CEA signals across file presence, packages, and config (see below)
 
 ### Agent Stack Detection Logic
 
@@ -39,12 +39,24 @@ Python → requirements.txt OR .py files
 
 ### Custom Engine Agent Detection (usesTeamsOrCopilot)
 
+Run these checks in parallel (Glob + Grep).
+
+**Strong standalone signals — any one → CEA:**
 ```
-Set usesTeamsOrCopilot = 1 if ALL of these are true:
-  - M365 signals found (channelId.*msteams, TeamsChannel, etc.)
-  - a365.config.json exists OR a365.generated.config.json exists
-  
-Set usesTeamsOrCopilot = 0 otherwise
+teamsapp.yml or teamsapp.local.yml                      → CEA (Teams Toolkit project)
+appPackage/manifest.json or manifest/manifest.json      → CEA (Teams app package)
+a365.config.json or a365.generated.config.json          → CEA (already A365-registered)
+@microsoft/teams-ai in package.json                     → CEA (Teams AI SDK, Node.js-specific)
+Microsoft.Teams.AI in .csproj                           → CEA (.NET Teams AI SDK)
+teams-ai in requirements.txt or pyproject.toml          → CEA (Python Teams AI SDK)
+```
+
+**Paired signals — CEA only when a structural file signal above is also present:**
+```
+"botbuilder" in package.json             + structural → CEA (standalone = channel bot risk)
+Microsoft.Bot.Builder in .csproj         + structural → CEA
+botbuilder-core in requirements.txt      + structural → CEA
+BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 ```
 
 ---
@@ -77,17 +89,24 @@ Grep: "biz.?chat" (regex)        in ToolingManifest.json, manifest.json
 Grep: "teams.?channel" (regex)   in ToolingManifest.json, manifest.json
 ```
 
-**If any M365 signal is found**, first check for M365 custom engine markers before stopping:
+**If any M365 signal is found**, check for CEA markers before stopping:
 
 ```
-Glob: **/a365.config.json                            → M365 custom engine agent (allowed)
-Glob: **/a365.generated.config.json                 → M365 custom engine agent (allowed)
-Grep: "entraAppId"      in a365.config.json         → agentType 1 (Entra app ID)
-Grep: "blueprintId"     in a365.config.json         → agentType 2 (Blueprint)
+Glob: teamsapp.yml or teamsapp.local.yml                    → Teams Toolkit CEA (allowed)
+Glob: appPackage/manifest.json or manifest/manifest.json    → Teams app package (allowed)
+Glob: a365.config.json or a365.generated.config.json        → already A365-registered (allowed)
+Grep: @microsoft/teams-ai in package.json                   → Teams AI SDK — Node.js CEA (allowed)
+Grep: Microsoft.Teams.AI in .csproj                         → Teams AI SDK — .NET CEA (allowed)
+Grep: teams-ai in requirements.txt/pyproject.toml           → Teams AI SDK — Python CEA (allowed)
 ```
+Note: generic Bot Framework packages (`botbuilder`, `Microsoft.Bot.Builder`, `botbuilder-core`)
+are NOT sufficient on their own — channel bots use these too. In this HARD STOP context, only the
+explicitly listed CEA markers above are sufficient exceptions: the structural file markers AND the
+Teams AI SDK package references (`@microsoft/teams-ai`, `Microsoft.Teams.AI`, `teams-ai`).
+Do not treat generic Bot Framework packages as standalone CEA markers.
 
-- **M365 signal found AND a365 custom engine marker found** → This is an M365 custom engine agent (agentType 1 or 2). **Do NOT block.** Continue to Step 2 and pre-fill `agentType` accordingly.
-- **M365 signal found AND NO a365 custom engine marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.
+- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent. **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
+- **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.
 
 > Tell the user (STOP case only):
 > "This agent is configured for Teams channels, BizChat, or Microsoft Copilot.
@@ -199,9 +218,9 @@ AskUserQuestion:
 
 ## A365 Setup — Registration Type Classification
 
-The a365-setup skill classifies agents into one of three registration types **orthogonal to framework type**. Use these signals to pre-fill `agentType` before asking the user.
+The a365-setup skill classifies agents into one of three registration types **orthogonal to framework type**. Use these signals to pre-fill `registrationType` before asking the user.
 
-### agentType 1 — M365 custom engine agent (Entra app ID)
+### registrationType 1 — M365 custom engine agent (Entra app ID)
 
 The agent already has an Entra app registration but NO A365 Blueprint. You are adding observability or WorkIQ tools to an existing M365 custom engine agent.
 
@@ -212,9 +231,9 @@ The agent already has an Entra app registration but NO A365 Blueprint. You are a
 | Entra app ID referenced | `Grep "entraAppId" **/a365.config.json` OR `Grep "MicrosoftAppId" **/appsettings.json` |
 | No `needDeployment` field | `a365.config.json` exists but lacks `needDeployment` |
 
-**Pre-fill:** `agentType = 1`. Capabilities options: Observability, Observability + WorkIQ.
+**Pre-fill:** `registrationType = 1`, `usesTeamsOrCopilot = 1`. Capabilities menu: all 4 options apply; options 2 (Observability) and 3 (Tools/WorkIQ) are most relevant.
 
-### agentType 2 — M365 custom engine agent (Blueprint)
+### registrationType 2 — M365 custom engine agent (Blueprint)
 
 The agent has both an Entra app registration AND an existing A365 Blueprint. You are deploying it as an AI Teammate.
 
@@ -224,9 +243,9 @@ The agent has both an Entra app registration AND an existing A365 Blueprint. You
 | M365 auth signals present | See Step 1 greps above |
 | `needDeployment` in config | `Grep "needDeployment" **/a365.config.json` |
 
-**Pre-fill:** `agentType = 2`. Capabilities options: AI Teammate only.
+**Pre-fill:** `registrationType = 2`, `usesTeamsOrCopilot = 1`. Capabilities menu: option 4 (AI Teammate) is the primary path; options 2 and 3 can be combined.
 
-### agentType 3 — All other agents
+### registrationType 3 — All other agents
 
 Standard A365 agent with no M365 custom engine configuration. Fresh setup or Discoverability-only registration.
 
@@ -236,11 +255,11 @@ Standard A365 agent with no M365 custom engine configuration. Fresh setup or Dis
 | No existing a365 config | `a365.config.json` absent |
 | Standard agent framework | dotnet-agentframework or nodejs-langchain detected |
 
-**Pre-fill:** `agentType = 3`. Capabilities options: Discoverability, Discoverability + Observability, AI Teammate.
+**Pre-fill:** `registrationType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
 
 ### Discoverability detection signals
 
-Agents needing Discoverability capability (agentType 3, non-AI Teammate) typically show these signals:
+Agents needing Discoverability capability (registrationType 3, non-AI Teammate) typically show these signals:
 
 | Signal | Meaning |
 |--------|---------|
