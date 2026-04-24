@@ -66,22 +66,23 @@ Run all three detection steps **in parallel** (single tool call with multiple Gl
 
 **Step 3: Detect Agent Type** → Store as `usesTeamsOrCopilot`
 
-Check the following signals **in parallel** (Glob + Grep). Any one positive result → `1` (CEA). All negative → `0`.
+Check the following signals **in parallel** (Glob + Grep).
 
-*File presence signals (Glob):*
-- `teamsapp.yml` or `teamsapp.local.yml` exists → CEA (Teams Toolkit project)
-- `appPackage/manifest.json` or `manifest/manifest.json` exists → CEA (Teams app package)
-- `a365.config.json` or `a365.generated.config.json` exists → CEA (already A365-registered)
+*Strong standalone signals — any one → CEA:*
+- `teamsapp.yml` or `teamsapp.local.yml` exists (Teams Toolkit project)
+- `appPackage/manifest.json` or `manifest/manifest.json` exists (Teams app package)
+- `a365.config.json` or `a365.generated.config.json` exists (already A365-registered)
+- `@microsoft/teams-ai` in package.json (Teams AI SDK — Node.js specific)
+- `Microsoft.Teams.AI` in .csproj (.NET Teams AI SDK)
+- `teams-ai` in requirements.txt or pyproject.toml (Python Teams AI SDK)
 
-*Package reference signals (Grep in package.json / .csproj / requirements.txt / pyproject.toml):*
-- Node.js: `@microsoft/teams-ai` or `"botbuilder"` in package.json → CEA
-- .NET: `Microsoft.Teams.AI` or `Microsoft.Bot.Builder` in .csproj → CEA
-- Python: `teams-ai` or `botbuilder-core` in requirements.txt or pyproject.toml → CEA
+*Paired signals — CEA only if also matched by a structural file signal above:*
+- `"botbuilder"` in package.json + structural marker → CEA (generic Bot Framework; standalone = channel bot risk)
+- `Microsoft.Bot.Builder` in .csproj + structural marker → CEA
+- `botbuilder-core` in requirements.txt or pyproject.toml + structural marker → CEA
+- `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` in .env/appsettings.json + structural marker → CEA
 
-*Config/env signals (Grep in .env, appsettings.json):*
-- `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` present → CEA
-
-If none of the above are found → `0` (Standard Agent / Non-M365 Agent)
+If no strong standalone signal and no valid pairing → `0` (Standard Agent / Non-M365 Agent)
 
 ### Phase 1B: User Validation Questions
 

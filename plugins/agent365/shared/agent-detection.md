@@ -39,25 +39,24 @@ Python → requirements.txt OR .py files
 
 ### Custom Engine Agent Detection (usesTeamsOrCopilot)
 
-Run these checks in parallel (Glob + Grep). Any one positive → `usesTeamsOrCopilot = 1`. All negative → `0`.
+Run these checks in parallel (Glob + Grep).
 
-**File presence (Glob):**
+**Strong standalone signals — any one → CEA:**
 ```
-teamsapp.yml or teamsapp.local.yml            → CEA (Teams Toolkit project)
-appPackage/manifest.json or manifest/manifest.json  → CEA (Teams app package)
-a365.config.json or a365.generated.config.json → CEA (already A365-registered)
-```
-
-**Package references (Grep in package.json / .csproj / requirements.txt / pyproject.toml):**
-```
-Node.js:  @microsoft/teams-ai  OR  "botbuilder"         → CEA
-.NET:     Microsoft.Teams.AI   OR  Microsoft.Bot.Builder → CEA
-Python:   teams-ai             OR  botbuilder-core       → CEA
+teamsapp.yml or teamsapp.local.yml                      → CEA (Teams Toolkit project)
+appPackage/manifest.json or manifest/manifest.json      → CEA (Teams app package)
+a365.config.json or a365.generated.config.json          → CEA (already A365-registered)
+@microsoft/teams-ai in package.json                     → CEA (Teams AI SDK, Node.js-specific)
+Microsoft.Teams.AI in .csproj                           → CEA (.NET Teams AI SDK)
+teams-ai in requirements.txt or pyproject.toml          → CEA (Python Teams AI SDK)
 ```
 
-**Config/env signals (Grep in .env, appsettings.json):**
+**Paired signals — CEA only when a structural file signal above is also present:**
 ```
-BOT_ID, MicrosoftAppId, or TEAMS_APP_ID present         → CEA
+"botbuilder" in package.json             + structural → CEA (standalone = channel bot risk)
+Microsoft.Bot.Builder in .csproj         + structural → CEA
+botbuilder-core in requirements.txt      + structural → CEA
+BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 ```
 
 ---
@@ -93,14 +92,16 @@ Grep: "teams.?channel" (regex)   in ToolingManifest.json, manifest.json
 **If any M365 signal is found**, check for CEA markers before stopping:
 
 ```
-Glob: teamsapp.yml or teamsapp.local.yml              → Teams Toolkit CEA (allowed)
-Glob: appPackage/manifest.json or manifest/manifest.json → Teams app package (allowed)
-Glob: a365.config.json or a365.generated.config.json  → already A365-registered CEA (allowed)
-Grep: @microsoft/teams-ai or botbuilder in package.json → Node.js CEA (allowed)
-Grep: Microsoft.Teams.AI or Microsoft.Bot.Builder in .csproj → .NET CEA (allowed)
-Grep: teams-ai or botbuilder-core in requirements.txt/pyproject.toml → Python CEA (allowed)
-Grep: BOT_ID or MicrosoftAppId or TEAMS_APP_ID in .env/appsettings.json → CEA (allowed)
+Glob: teamsapp.yml or teamsapp.local.yml                    → Teams Toolkit CEA (allowed)
+Glob: appPackage/manifest.json or manifest/manifest.json    → Teams app package (allowed)
+Glob: a365.config.json or a365.generated.config.json        → already A365-registered (allowed)
+Grep: @microsoft/teams-ai in package.json                   → Teams AI SDK — Node.js CEA (allowed)
+Grep: Microsoft.Teams.AI in .csproj                         → Teams AI SDK — .NET CEA (allowed)
+Grep: teams-ai in requirements.txt/pyproject.toml           → Teams AI SDK — Python CEA (allowed)
 ```
+Note: generic Bot Framework packages (`botbuilder`, `Microsoft.Bot.Builder`, `botbuilder-core`)
+are NOT sufficient on their own — channel bots use these too. Only structural file markers above
+are treated as unambiguous CEA exceptions in this HARD STOP context.
 
 - **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent. **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
 - **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.
