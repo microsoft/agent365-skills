@@ -85,7 +85,7 @@ If none of the above are found → `0` (Standard Agent / Non-M365 Agent)
 
 ### Phase 1B: User Validation Questions
 
-Present **all four detections in a single message** and wait for ONE response:
+Present **all three detections in a single message** and wait for ONE response:
 
 ```
 Here's what we detected about your agent:
