@@ -99,14 +99,14 @@ Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all values and proceed to the capabilities question.
-- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the capabilities question.
-- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to the capabilities question.
-- If the user describes other corrections: update the relevant variable(s) and proceed to the capabilities question.
+- If the user replies **yes / y**: accept all values and proceed to the final capabilities question below.
+- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the final capabilities question below.
+- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
+- If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
 After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
-**Capabilities question: What capabilities do you want to enable?**
+**Final question: What capabilities do you want to enable?**
 
 Present these four options:
 
@@ -142,7 +142,7 @@ After both questions are answered, set `isAITeammate = true` if the user selecte
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
-**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The path determination questions (`agentType`, `capabilities`) were already answered before Step 1.
+**RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The detection confirmation and final capabilities question were already answered before Step 1.
 
 **RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 

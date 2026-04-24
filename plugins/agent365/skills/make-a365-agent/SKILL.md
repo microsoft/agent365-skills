@@ -66,16 +66,15 @@ the session already has `capabilities`, `agentStack`, `programmingLanguage`, and
 2. **If no fresh cache**, ask the user in a single message:
 
 ```
-What would you like to set up?
+What capabilities would you like to enable? (options can be combined)
 
-If your agent is a Standard Agent (no Teams/Copilot integration):
-  A. Discoverability — make the agent appear in the M365 catalog
-
-If your agent is a Custom Engine Agent (Teams or Copilot integration):
-  B. Observability — OTel tracing for a Teams/Copilot-connected agent
+  1. Discoverability — make the agent findable in the M365 catalog
+  2. Observability — end-to-end activity tracing for every message, LLM call,
+     and tool use, visible in the Agent 365 portal and Microsoft Defender
+  3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
 ```
 
-   Store the answer as `capabilities`.
+   Store the answer as `capabilities`. (Option 4 AI Teammate is handled by make-ai-teammate, not this skill.)
 
 **Create all todos for this session:**
 
