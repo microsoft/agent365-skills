@@ -128,12 +128,12 @@ After all four questions are answered, set `isAITeammate = true` if the user sel
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-ai-teammate skill`
 
-**Standard path** — `agentType = 3, isAITeammate = false` (3 todos total):
+**Standard path** — `registrationType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**Entra app ID path** — `agentType = 1` (3 todos total):
+**Entra app ID path** — `registrationType = 1` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`

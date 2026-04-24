@@ -9,7 +9,7 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 
 The skill MUST detect and store these three variables before asking ANY questions:
 
-1. **`agentType`** — Agent stack/framework
+1. **`agentStack`** — Agent stack/framework
    - Possible values: `Agent Framework`, `LangChain`, `OpenAI`
    - Detection: See detection logic below
 
@@ -215,9 +215,9 @@ AskUserQuestion:
 
 ## A365 Setup — Registration Type Classification
 
-The a365-setup skill classifies agents into one of three registration types **orthogonal to framework type**. Use these signals to pre-fill `agentType` before asking the user.
+The a365-setup skill classifies agents into one of three registration types **orthogonal to framework type**. Use these signals to pre-fill `registrationType` before asking the user.
 
-### agentType 1 — M365 custom engine agent (Entra app ID)
+### registrationType 1 — M365 custom engine agent (Entra app ID)
 
 The agent already has an Entra app registration but NO A365 Blueprint. You are adding observability or WorkIQ tools to an existing M365 custom engine agent.
 
@@ -228,9 +228,9 @@ The agent already has an Entra app registration but NO A365 Blueprint. You are a
 | Entra app ID referenced | `Grep "entraAppId" **/a365.config.json` OR `Grep "MicrosoftAppId" **/appsettings.json` |
 | No `needDeployment` field | `a365.config.json` exists but lacks `needDeployment` |
 
-**Pre-fill:** `agentType = 1`, `usesTeamsOrCopilot = 1`. Capabilities menu: all 4 options apply; options 2 (Observability) and 3 (Tools/WorkIQ) are most relevant.
+**Pre-fill:** `registrationType = 1`, `usesTeamsOrCopilot = 1`. Capabilities menu: all 4 options apply; options 2 (Observability) and 3 (Tools/WorkIQ) are most relevant.
 
-### agentType 2 — M365 custom engine agent (Blueprint)
+### registrationType 2 — M365 custom engine agent (Blueprint)
 
 The agent has both an Entra app registration AND an existing A365 Blueprint. You are deploying it as an AI Teammate.
 
@@ -240,9 +240,9 @@ The agent has both an Entra app registration AND an existing A365 Blueprint. You
 | M365 auth signals present | See Step 1 greps above |
 | `needDeployment` in config | `Grep "needDeployment" **/a365.config.json` |
 
-**Pre-fill:** `agentType = 2`, `usesTeamsOrCopilot = 1`. Capabilities menu: option 4 (AI Teammate) is the primary path; options 2 and 3 can be combined.
+**Pre-fill:** `registrationType = 2`, `usesTeamsOrCopilot = 1`. Capabilities menu: option 4 (AI Teammate) is the primary path; options 2 and 3 can be combined.
 
-### agentType 3 — All other agents
+### registrationType 3 — All other agents
 
 Standard A365 agent with no M365 custom engine configuration. Fresh setup or Discoverability-only registration.
 
@@ -252,11 +252,11 @@ Standard A365 agent with no M365 custom engine configuration. Fresh setup or Dis
 | No existing a365 config | `a365.config.json` absent |
 | Standard agent framework | dotnet-agentframework or nodejs-langchain detected |
 
-**Pre-fill:** `agentType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
+**Pre-fill:** `registrationType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
 
 ### Discoverability detection signals
 
-Agents needing Discoverability capability (agentType 3, non-AI Teammate) typically show these signals:
+Agents needing Discoverability capability (registrationType 3, non-AI Teammate) typically show these signals:
 
 | Signal | Meaning |
 |--------|---------|
