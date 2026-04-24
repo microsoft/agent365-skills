@@ -99,14 +99,14 @@ Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all values and proceed to Question 4.
-- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to Question 4.
-- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to Question 4.
-- If the user describes other corrections: update the relevant variable(s) and proceed to Question 4.
+- If the user replies **yes / y**: accept all values and proceed to the capabilities question.
+- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the capabilities question.
+- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to the capabilities question.
+- If the user describes other corrections: update the relevant variable(s) and proceed to the capabilities question.
 
 After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
 
-**Question 4: What capabilities do you want to enable?**
+**Capabilities question: What capabilities do you want to enable?**
 
 Present these four options:
 
@@ -121,7 +121,7 @@ Wait for the answer. Store as `capabilities`.
 
 ### Phase 1C: Determine Path and Create Todos
 
-After all four questions are answered, set `isAITeammate = true` if the user selected option **4 (AI Teammate)**, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
+After both questions are answered, set `isAITeammate = true` if the user selected **AI Teammate** from the capabilities menu, else `isAITeammate = false`. Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
