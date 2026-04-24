@@ -1,17 +1,18 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. a365-setup is responsible for two things only: (1) detect agent stack + ask capabilities, (2) verify a365 CLI (Step 1) and Azure prerequisites (Step 2), then (3) delegate to the appropriate skill at Step 3. For the AI Teammate path (isAITeammate=true), Step 3 reads and follows make-ai-teammate/SKILL.md. For all other paths (Discoverability, Observability, WorkIQ), Step 3 reads and follows make-a365-agent/SKILL.md. a365-setup itself does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish — all of that is handled by the delegated skills.",
+  "eval_instructions": "Test against real agent projects in clean state. a365-setup is responsible for two things only: (1) detect agent stack + ask capabilities, (2) verify a365 CLI (Step 1) and Azure prerequisites (Step 2), then (3) delegate to the appropriate skill at Step 3. For the AI Teammate path (isAITeammate=true), Step 3 reads and follows make-ai-teammate/SKILL.md. For all other paths (Discoverability, Observability, WorkIQ), Step 3 reads and follows make-a365-agent/SKILL.md. a365-setup itself does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish — all of that is handled by the delegated skills. The capabilities menu has 4 options: 1=Discoverability, 2=Observability, 3=Tools (WorkIQ), 4=AI Teammate. Options can be combined. Phase 1B shows agent type as 'Custom Engine Agent (CEA)' or 'Standard Agent — no Teams/Copilot integration (Non-M365)'.",
   "evals": [
     {
       "id": 1,
       "prompt": "Run a365 setup for this agent",
-      "description": "Non-AI Teammate path (Discoverability) on a .NET AgentFramework project — a365 CLI and Azure CLI available",
-      "expected_output": "The skill detects .NET + AgentFramework, confirms with user, asks capabilities, user selects Discoverability, creates 3 todos (Step 1, Step 2, Step 3: make-a365-agent), validates a365 CLI (Step 1), validates Azure CLI + .NET SDK (Step 2), then reads and follows make-a365-agent/SKILL.md (Step 3). a365-setup itself does NOT run a365 setup all.",
+      "description": "Non-AI Teammate path (Discoverability, option 1) on a .NET AgentFramework project — a365 CLI and Azure CLI available",
+      "expected_output": "The skill detects .NET + AgentFramework, confirms with user (showing Agent type as Standard Agent or CEA), asks capabilities from 4-option menu, user selects option 1 (Discoverability), creates 3 todos (Step 1, Step 2, Step 3: make-a365-agent), validates a365 CLI (Step 1), validates Azure CLI + .NET SDK (Step 2), then reads and follows make-a365-agent/SKILL.md (Step 3). a365-setup itself does NOT run a365 setup all.",
       "files": [],
       "expectations": [
-        "Phase 1A: Agent stack, language, and Teams/Copilot flag are detected",
-        "Phase 1B: Detection summary is shown and user is asked to confirm",
-        "Phase 1B: Capabilities menu is shown (Discoverability / Discoverability+Observability / AI Teammate)",
+        "Phase 1A: Agent stack, language, and agent type (CEA vs Standard) are detected",
+        "Phase 1B: Detection summary shows Stack, Language, and Agent type (human-readable CEA or Standard Agent label)",
+        "Phase 1B: Capabilities menu shows all 4 options: Discoverability, Observability, Tools, AI Teammate",
+        "Phase 1B: User is told options can be combined",
         "Phase 1C: isAITeammate = false (Discoverability path selected)",
         "Phase 1C: 3 todos created: Step 1 (CLI), Step 2 (Prerequisites), Step 3 (Run the make-a365-agent skill)",
         "Step 1: dotnet --version is checked",
@@ -29,12 +30,13 @@
     {
       "id": 2,
       "prompt": "Create blueprint for this agent",
-      "description": "Non-AI Teammate path on a Node.js LangChain agent — user selects Discoverability+Observability",
-      "expected_output": "Skill detects Node.js + LangChain, confirms, asks capabilities, user selects Discoverability+Observability. Validates CLI and Node.js prerequisites. Delegates to make-a365-agent at Step 3 with context.",
+      "description": "Non-AI Teammate path on a Node.js LangChain agent — user selects options 1 and 2 (Discoverability+Observability)",
+      "expected_output": "Skill detects Node.js + LangChain, confirms agent type, asks capabilities from 4-option menu, user selects '1 and 2' (Discoverability+Observability). Validates CLI and Node.js prerequisites. Delegates to make-a365-agent at Step 3 with context.",
       "files": [],
       "expectations": [
         "Phase 1A: language detected as NodeJS from package.json",
-        "Phase 1B: Detection summary and capabilities menu shown",
+        "Phase 1B: Detection summary shown with Agent type field (CEA or Standard Agent)",
+        "Phase 1B: 4-option capabilities menu shown",
         "Phase 1C: 3 todos created, Todo 3 = Step 3: Run the make-a365-agent skill",
         "Step 1: a365 --version is run",
         "Step 2: az --version is run",
@@ -47,6 +49,23 @@
     },
     {
       "id": 3,
+      "prompt": "Set up A365 for this agent",
+      "description": "CEA detection — Node.js project with teamsapp.yml and @microsoft/teams-ai present, no a365.config.json yet",
+      "expected_output": "Skill detects Node.js project. Phase 1A finds teamsapp.yml (or @microsoft/teams-ai in package.json) and classifies as CEA (usesTeamsOrCopilot=1) without requiring a365.config.json to exist. Phase 1B shows 'Custom Engine Agent (CEA)' as agent type. User confirms. Capabilities menu shown. Skill proceeds normally.",
+      "files": [],
+      "expectations": [
+        "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA) from teamsapp.yml or @microsoft/teams-ai — NOT from a365.config.json alone",
+        "Phase 1A: Detection does NOT require a365.config.json to exist for CEA classification",
+        "Phase 1B: Agent type shown as 'Custom Engine Agent (CEA) — has Teams/Copilot integration'",
+        "Phase 1B: User can correct to Standard Agent if detection is wrong",
+        "Phase 1B: 4-option capabilities menu shown",
+        "Phase 1C: 3 todos created",
+        "Step 1: a365 CLI validated",
+        "Step 2: Azure prerequisites confirmed"
+      ]
+    },
+    {
+      "id": 4,
       "prompt": "Register this agent",
       "description": "Non-AI Teammate path — fresh detection cache exists (under 60 min old)",
       "expected_output": "The skill finds a fresh .a365-workspace-detection.json, skips re-detection, shows the cached values to the user for confirmation, then proceeds to validate CLI, Azure prerequisites, and delegates to make-a365-agent.",
@@ -62,7 +81,7 @@
       ]
     },
     {
-      "id": 4,
+      "id": 5,
       "prompt": "Register agent with Microsoft 365",
       "description": "Error handling — a365 CLI not installed",
       "expected_output": "The skill detects a365 CLI is not installed, provides installation instructions, and exits early. Delegation to make-a365-agent does not happen until CLI is installed.",
@@ -76,7 +95,7 @@
       ]
     },
     {
-      "id": 5,
+      "id": 6,
       "prompt": "Onboard agent to A365",
       "description": "Error handling — Azure CLI not authenticated",
       "expected_output": "The skill validates a365 CLI is installed (Step 1), then in Step 2 detects Azure CLI is not authenticated, provides az login instructions, and pauses. No delegation occurs until authentication is confirmed.",
@@ -91,13 +110,14 @@
       ]
     },
     {
-      "id": 6,
+      "id": 7,
       "prompt": "Make this an AI Teammate agent",
       "description": "AI Teammate path — verifies CLI + prerequisites then delegates to make-ai-teammate",
       "expected_output": "The skill selects AI Teammate path, creates 3 todos (CLI, Prerequisites, invoke make-ai-teammate), validates CLI and Azure prerequisites (Steps 1-2), then reads make-ai-teammate/SKILL.md and follows it from the beginning. Does NOT run a365 setup all, a365 config init, or a365 publish inline.",
       "files": [],
       "expectations": [
-        "Phase 1B: User selects AI Teammate capability",
+        "Phase 1B: 4-option capabilities menu shown",
+        "Phase 1B: User selects option 4 (AI Teammate)",
         "Phase 1C: isAITeammate = true",
         "Phase 1C: 3 todos created: Step 1, Step 2, Step 3 = invoke make-ai-teammate",
         "Step 1: a365 CLI is verified and installed if needed",
@@ -109,7 +129,7 @@
       ]
     },
     {
-      "id": 7,
+      "id": 8,
       "prompt": "Run a365 setup all",
       "description": "Re-run on an agent that was previously set up (non-AI Teammate) — a365.generated.config.json already exists",
       "expected_output": "The skill detects the existing workspace, confirms with user, validates CLI and prereqs, then delegates to make-a365-agent. make-a365-agent runs a365 setup all again (idempotent — existing resources skipped).",
