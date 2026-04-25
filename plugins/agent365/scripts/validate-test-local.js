@@ -53,12 +53,20 @@ const issues = [];
 // ── Detect project type ─────────────────────────────────────────────────────
 
 const csprojFiles = findFiles(cwd, ['.csproj']);
-const jsonFiles = findFiles(cwd, ['.json']).filter(f =>
+const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
+const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
   f.endsWith('package.json') && !f.includes('node_modules'));
+const pyFiles     = findFiles(cwd, ['.py']).filter(f =>
+  !f.includes('__pycache__') && !f.includes('.venv') && !f.includes('/venv/'));
+const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
 
-const isDotnet = csprojFiles.length > 0;
-const isNodejs = jsonFiles.some(f => fileContains(f, '@langchain') || fileContains(f, '"langchain"'));
-const isUnknown = !isDotnet && !isNodejs;
+const isDotnet  = csprojFiles.length > 0;
+const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
+const isPython  = !isDotnet && !isNodejs && (
+  pyFiles.length > 0 ||
+  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
+);
+const isUnknown = !isDotnet && !isNodejs && !isPython;
 
 // Unknown project — pass through, skill handles detection interactively
 if (isUnknown) {
@@ -88,6 +96,13 @@ if (isNodejs) {
   const nodeVersion = run('node --version');
   if (!nodeVersion) {
     issues.push('node not found. Install Node.js 18+ from https://nodejs.org');
+  }
+}
+
+if (isPython) {
+  const pythonVersion = run('python --version') || run('python3 --version');
+  if (!pythonVersion) {
+    issues.push('python not found. Install Python 3.11+ from https://python.org');
   }
 }
 
