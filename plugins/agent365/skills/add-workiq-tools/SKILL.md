@@ -80,7 +80,7 @@ If the file is missing or `detectedAt` is older than 60 minutes:
 
 Stop until the user confirms `a365-setup` has been run.
 
-Load from cache: `agentStack`, `programmingLanguage`.
+Load from cache: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode` (if previously stored).
 
 Present the loaded values in one message and wait for confirmation:
 
@@ -94,7 +94,19 @@ Reply **yes** to confirm, or describe any corrections.
 
 ---
 
-## Phase 0B — Create Task List
+## Phase 0B — Agent Type and Authentication Mode
+
+**Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
+
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
+
+Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
+
+The `authMode` value is used in Phase 4 to annotate which identity is used for M365 tool access. **If `authMode = S2S`, the WorkIQ guard in the shared section must be surfaced before proceeding to Phase 4.**
+
+---
+
+## Phase 0C — Create Task List
 
 ```
 TaskCreate: "Detect agent type and check prerequisites"
@@ -264,9 +276,10 @@ builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerC
 If missing, **Edit** the agent class to add inside `OnMessageActivityAsync` (or equivalent):
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
+// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 var workIQTools = await _toolService.GetMcpToolsAsync(
     agentId,
-    UserAuthorization,
+    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
     handlerForMcp,
     context
 ).ConfigureAwait(false);
@@ -304,12 +317,13 @@ const toolService = new McpToolRegistrationService();
    returning the client:
 ```typescript
 // A365 WorkIQ — added by add-workiq-tools skill
+// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 let agentWithTools = personalizedAgent;
 try {
   agentWithTools = await toolService.addToolServersToAgent(
     personalizedAgent,
     authorization,
-    authHandlerName,
+    authHandlerName,  // "AGENTIC" for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
     turnContext,
     process.env.BEARER_TOKEN ?? '',
   );

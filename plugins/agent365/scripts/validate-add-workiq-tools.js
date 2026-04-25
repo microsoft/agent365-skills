@@ -83,7 +83,7 @@ const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
   f.endsWith('package.json') && !f.includes('node_modules'));
 
 const isDotnet  = csprojFiles.length > 0;
-const isNodejs  = jsonFiles.some(f => fileContains(f, '@langchain') || fileContains(f, '"langchain"'));
+const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
 
 // ── Check 2: Agent code is wired to load MCP tools ──────────────────────────
 

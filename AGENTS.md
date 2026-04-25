@@ -20,6 +20,10 @@ This plugin instruments and configures A365 agents. It contains six skills:
 
 **Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
 
+**Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · CopilotStudio · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
+
+**Supported agent stacks for `add-workiq-tools`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI · Claude SDK · CopilotStudio · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
+
 **Skill dependency chain:**
 ```
 make-ai-teammate  ─────────────────────────────────→  add-workiq-tools
@@ -68,7 +72,8 @@ plugins/agent365/
 │   │   ├── SKILL.md              # OTel + A365 exporter instrumentation
 │   │   └── references/
 │   │       ├── dotnet-observability.md   # Authoritative .NET code patterns
-│   │       └── nodejs-observability.md  # Authoritative Node.js code patterns
+│   │       ├── nodejs-observability.md  # Authoritative Node.js code patterns
+│   │       └── python-observability.md  # Authoritative Python code patterns
 │   ├── add-workiq-tools/
 │   │   ├── SKILL.md              # WorkIQ MCP tool wiring
 │   │   └── references/
@@ -197,6 +202,19 @@ Validators are run by the stop hook before the session ends. They must:
 If two skills share logic (e.g., agent detection), extract it to `shared/`.
 Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 
+### Shared: Agent Type and Auth Mode Detection
+
+`shared/agent-detection.md` contains the **Agent Type and Auth Mode Detection** section used by both `instrument-observability` and `add-workiq-tools`. It implements a two-stage question flow:
+
+- **Stage 1 — Agent kind:** AI Teammate or System Agent (pre-filled from `usesTeamsOrCopilot` cache if available).
+- **Stage 2 — Auth mode:** depends on agent kind:
+  - AI Teammate → `user-delegated` (signed-in user OBO) or `agentic-identity` (agent's own Azure AD user)
+  - System Agent → `agentic-identity` (assistive) or `S2S` (autonomous, no user token)
+
+All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = S2S` and the skill is `add-workiq-tools`, a compatibility warning is surfaced before Phase 4 (WorkIQ requires a user token).
+
+**S2S .NET scaffold requirement:** When `authMode = S2S` and the language is .NET, `instrument-observability` must create two scaffold files (`Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs`) before wiring `Program.cs`. These files provide the 3-hop FMI token chain (`ObservabilityTokenService`) and the `AddAgent365Observability()` / `Agent365ObservabilityContext` DI extensions that replace `AddAgenticTracingExporter()` and per-turn `RegisterObservability()` in the OBO path. The validator (`validate-observability.js`) accepts either the OBO signal (`BaggageBuilder` / `BaggageTurnMiddleware`) or the S2S signal (`ObservabilityTokenService` / `Agent365ObservabilityContext`) to pass the context check.
+
 ---
 
 ## Testing Skills
@@ -216,6 +234,11 @@ claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 cd /path/to/nodejs-langchain-project
 claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 # Then: "add a365 observability"
+
+# Test in a Python project
+cd /path/to/python-agent-project
+claude --plugin-dir /path/to/agent365-skills/plugins/agent365
+# Then: "add a365 observability to this Python agent"
 
 # Test a365-setup
 cd /path/to/agent-project

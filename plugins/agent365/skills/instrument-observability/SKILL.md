@@ -1,14 +1,18 @@
 ---
 name: instrument-observability
 description: >
-  Instruments Microsoft Agent 365 observability into existing .NET AgentFramework or Node.js
-  LangChain agents. Adds OTel-based tracing, BaggageBuilder context propagation, A365 exporter
-  with agentic token resolver, and updates configuration files. Non-destructive and idempotent.
+  Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
+  Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
+  instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — required for
+  store publishing), and updates configuration files. Asks a two-stage question (agent kind +
+  auth mode) to determine the correct token path: OBO (user-delegated / agentic-identity) or
+  S2S (FMI token chain, .NET with ObservabilityTokenService scaffold files). Non-destructive
+  and idempotent.
 compatibility:
   - claude-code
   - vscode-copilot
 user-invocable: true
-argument-hint: "Optional: path to agent project, or framework hint (dotnet|nodejs)"
+argument-hint: "Optional: path to agent project, or framework hint (dotnet|nodejs|python)"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
@@ -19,14 +23,15 @@ hooks:
     - type: prompt
       prompt: |
         Before ending, verify ALL of the following:
-        1. Agent type was correctly detected (.NET AgentFramework or Node.js LangChain).
-        2. A365 observability packages were installed (check package.json or .csproj).
-        3. Observability was wired in the entry point (Program.cs or index.js/ts).
-        4. BaggageBuilder context is added to the message handler.
-        5. Agentic token resolver with caching is implemented.
-        6. Configuration files (appsettings.json or .env) include observability variables.
-        7. Build/compile succeeds (dotnet build or npm run build).
-        8. All instrumented code is marked with: // A365 Observability — best-effort instrumentation
+        1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
+        2. agentType (ai-teammate or system-agent) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
+        3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
+        4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
+        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered). For S2S path (.NET): InvokeAgentScope.Start().FromTurnContext() used; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist; no per-turn RegisterObservability call.
+        6. Agentic token resolver with caching is implemented.
+        7. Configuration files (appsettings.json or .env) include observability variables.
+        8. Build/compile succeeds (dotnet build, npm run build, or python import check).
+        9. All instrumented code is marked with: // A365 Observability — best-effort instrumentation
         If any item failed or was skipped, return {"ok": false, "reason": "<specific item>"}.
         If all items completed successfully, return {"ok": true}.
       timeout: 30000
@@ -40,6 +45,8 @@ hooks:
 > - "enable tracing"
 > - "add otel"
 > - "observe this agent"
+> - "add observability to my python agent"
+> - "instrument for store publishing"
 
 ---
 
@@ -48,13 +55,17 @@ hooks:
 This skill instruments Microsoft Agent 365 observability into an existing agent codebase
 without disrupting the agent's core logic. It:
 
-1. **Detects** the agent type (.NET AgentFramework or Node.js LangChain)
-2. **Installs** the correct A365 observability packages
+1. **Detects** the agent type (.NET AgentFramework, Node.js, or Python)
+2. **Installs** the correct A365 observability packages (core + hosting + optional extensions)
 3. **Wires** observability in the entry point
-4. **Adds** BaggageBuilder context to message handlers
+4. **Adds** BaggageBuilder context or BaggageMiddleware to message handlers
 5. **Implements** the agentic token resolver with caching
-6. **Updates** configuration files with observability settings
-7. **Validates** the build passes
+6. **Adds** manual instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — **required for store publishing**)
+7. **Updates** configuration files with observability settings
+8. **Validates** the build passes
+
+> **Store publishing requirement:** The Agent 365 store validation requires `InvokeAgentScope`,
+> `InferenceScope`, and `ExecuteToolScope` to be implemented. This skill wires them.
 
 All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
@@ -72,7 +83,7 @@ If the file is missing or `detectedAt` is older than 60 minutes:
 
 Stop until the user confirms `a365-setup` has been run.
 
-Load from cache: `agentStack`, `programmingLanguage`.
+Load from cache: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode` (if previously stored).
 
 Present the loaded values in one message and wait for confirmation:
 
@@ -88,6 +99,22 @@ Reply **yes** to confirm, or describe any corrections.
 
 ---
 
+## Phase 0.5: Agent Type and Authentication Mode
+
+**TaskCreate** — "Determine agent type and authentication mode"
+
+**Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
+
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
+
+Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
+
+The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry point wiring (Phase 3), message handler pattern (Phase 4), and token resolver (Phase 5). **Phases 2, 6, 7, and 8 are identical regardless of `authMode`.**
+
+**TaskUpdate** — Mark complete: "Determine agent type and authentication mode"
+
+---
+
 ## Phase 1: Detect Agent Type
 
 **TaskCreate** — "Detect agent type and load reference patterns"
@@ -95,15 +122,17 @@ Reply **yes** to confirm, or describe any corrections.
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` for detection heuristics.
 
 2. **Run detection** following the rules in `agent-detection.md`:
-   - Check for `.NET AgentFramework` indicators (Microsoft.Agent.*, AgentFramework)
-   - Check for `Node.js LangChain` indicators (@langchain/*, @azure/msal-node)
-   - Determine package file (*.csproj, package.json)
-   - Determine entry point (Program.cs, index.ts/js, app.ts)
+   - Check for `.NET AgentFramework` indicators (Microsoft.Agent.*, AgentFramework) → `.csproj`
+   - Check for `Node.js` indicators (package.json, @langchain, openai, @microsoft/agents-*)
+   - Check for `Python` indicators (requirements.txt, pyproject.toml, `.py` files, `microsoft-agents`)
+   - Determine package file (*.csproj, package.json, pyproject.toml/requirements.txt)
+   - Determine entry point (Program.cs, index.ts/js, app.py / host_agent_server.py)
    - Determine message handler location
 
 3. **Load reference patterns:**
    - If .NET: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md`
    - If Node.js: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md`
+   - If Python: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md`
 
 4. **If agent type cannot be determined**, write marker `.a365setup-unknown-agent` and **exit early** with clear error message.
 
@@ -117,24 +146,67 @@ Reply **yes** to confirm, or describe any corrections.
 
 ### For .NET AgentFramework
 
-1. **Bash** — Run package installation:
+1. **Bash** — Run package installation (core + hosting):
    ```bash
-   dotnet add package Microsoft.Agents.A365.Observability
+   dotnet add package Microsoft.Agents.A365.Observability.Runtime
+   dotnet add package Microsoft.Agents.A365.Observability.Hosting
    ```
 
-2. **Verify** the package appears in the `.csproj` file.
+2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+   ```bash
+   # Semantic Kernel
+   dotnet add package Microsoft.Agents.A365.Observability.Extensions.SemanticKernel
+   # OpenAI
+   dotnet add package Microsoft.Agents.A365.Observability.Extensions.OpenAI
+   # Agent Framework
+   dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
+   ```
 
-### For Node.js LangChain
+3. **Verify** the packages appear in the `.csproj` file.
 
-1. **Bash** — Run package installation:
+### For Node.js
+
+1. **Bash** — Run package installation (core + hosting):
    ```bash
    npm install @microsoft/agents-a365-observability
    npm install @microsoft/agents-a365-runtime
+   npm install @microsoft/agents-a365-observability-hosting
    ```
 
-2. **Verify** the packages appear in `package.json`.
+2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+   ```bash
+   # OpenAI Agents SDK
+   npm install @microsoft/agents-a365-observability-extensions-openai
+   # LangChain
+   npm install @microsoft/agents-a365-observability-extensions-langchain
+   ```
 
-3. **TaskUpdate** — Mark complete.
+3. **Verify** the packages appear in `package.json`.
+
+### For Python
+
+1. **Bash** — Run package installation (core + hosting):
+   ```bash
+   pip install microsoft-agents-a365-observability-core
+   pip install microsoft-agents-a365-runtime
+   pip install microsoft-agents-a365-observability-hosting
+   ```
+
+2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+   ```bash
+   # Semantic Kernel
+   pip install microsoft-agents-a365-observability-extensions-semantic-kernel
+   # OpenAI Agents SDK
+   pip install microsoft-agents-a365-observability-extensions-openai
+   # Agent Framework
+   pip install microsoft-agents-a365-observability-extensions-agent-framework
+   # LangChain
+   pip install microsoft-agents-a365-observability-extensions-langchain
+   ```
+
+3. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
+
+4. **TaskUpdate** — Mark complete.
 
 ---
 
@@ -146,21 +218,38 @@ Reply **yes** to confirm, or describe any corrections.
 
 1. **Read** the current entry point (`Program.cs` or detected file).
 
-2. **Edit** — Add observability wiring following the reference pattern:
-   - Add the full using block from `references/dotnet-observability.md` (5 namespaces)
-   - Add `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
+2. **Edit** — Add observability wiring following the reference pattern in `dotnet-observability.md`:
+   - Add using directives for the observability namespaces
+   - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
+   - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()`) and `Observability/ObservabilityTokenService.cs` (background service with FMI 3-hop chain). Then call `builder.Services.AddAgent365Observability();` and `builder.AddA365Tracing();`. Also run `dotnet add package Azure.Identity` and `dotnet add package Microsoft.Identity.Client`.
+   - Optionally register `adapter.Use(new BaggageTurnMiddleware())` (OBO path only) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing code — only add new lines, never remove.
 
-### For Node.js LangChain
+### For Node.js
 
 1. **Read** the current entry point (`index.ts`, `app.ts`, or detected file).
 
-2. **Edit** — Add observability initialization following the reference pattern:
-   - Add imports for ObservabilityManager
-   - Add `ObservabilityManager.configure()` at the top of `main()` or entry function
+2. **Edit** — Add observability initialization following the reference pattern in `nodejs-observability.md`:
+   - Add imports for `ObservabilityManager` from `@microsoft/agents-a365-observability`
+   - **OBO path**: Add `ObservabilityManager.configure()` with `withTokenResolver` pointing to `AgenticTokenCacheInstance`. Call `.start()` before any LLM imports.
+   - **S2S path** (provisional — see reference doc): Set `exporterOptions.useS2SEndpoint = true` and wire a `withTokenResolver` using MSAL `acquireTokenByClientCredential`. Note: Node.js S2S is not yet officially documented; treat as best-effort.
+   - Optionally register `adapter.use(new BaggageMiddleware())` (OBO path) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+
+3. **Preserve** all existing code — only add new lines, never remove.
+
+### For Python
+
+1. **Read** the current entry point (`app.py`, `host_agent_server.py`, or detected file).
+
+2. **Edit** — Add observability configuration following the reference pattern in `python-observability.md`:
+   - Add `from microsoft_agents_a365.observability.core import configure` and call `configure()` with `service_name`, `service_namespace`, and `token_resolver`
+   - **OBO path**: Wire `token_resolver` to `AgenticTokenCache` from the hosting package.
+   - **S2S path** (provisional — see reference doc): Set `use_s2s_endpoint=True` in `Agent365ExporterOptions` and provide a MSAL `acquire_token_for_client` resolver. Note: Python S2S is not yet officially documented; treat as best-effort.
+   - Optionally register `BaggageMiddleware` or use `ObservabilityHostingManager` on the adapter (OBO path) to auto-populate baggage on every request
+   - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing code — only add new lines, never remove.
 
@@ -172,29 +261,72 @@ Reply **yes** to confirm, or describe any corrections.
 
 **TaskCreate** — "Add BaggageBuilder context to message handler"
 
+> **Skip this phase** if BaggageMiddleware was registered in Phase 3 — the middleware handles
+> baggage propagation automatically for every request.
+
+> **Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in the
+> code — the token exchange call is identical. The identity in traces is determined by Azure AD
+> provisioning and the incoming token. Add an inline comment indicating which mode was chosen.
+
 ### For .NET AgentFramework
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Add BaggageBuilder context extraction following the reference pattern:
-   - Add the full using block from `references/dotnet-observability.md` if not already present
-   - Call `new BaggageBuilder().TenantId(...).AgentId(...).ConversationId(...).Build();` — `Build()` returns void, no `using var`. Do NOT use `FromTurnContext()` — it causes a `TypeLoadException` at runtime in current beta packages.
-   - Call `_agentTokenCache.RegisterObservability(...)` with `AuthHandlerName = string.Empty` included
+2. **Edit** — Follow the reference pattern in `dotnet-observability.md` based on `authMode`:
+
+   **OBO path** (`user-delegated` or `agentic-identity`):
+   - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor
+   - Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` — `Build()` returns `IDisposable`, use `using var`
+   - Call `_agentTokenCache.RegisterObservability(new AgenticTokenStruct(userAuthorization: UserAuthorization, turnContext: turnContext, authHandlerName: "AGENTIC"))` per turn
+     - `user-delegated`: token exchange resolves to the **signed-in user's** identity → traces attributed to the user
+     - `agentic-identity`: token exchange resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
+   - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
+
+   **S2S path**:
+   - Inject `Agent365ObservabilityContext` (singleton registered by `AddAgent365Observability()`) in the constructor — **not** `IExporterTokenCache<AgenticTokenStruct>`
+   - Use `InvokeAgentScope.Start(new Request(...), new InvokeAgentScopeDetails(), _obs.AgentDetails).FromTurnContext(turnContext)` — **no** per-turn `RegisterObservability()` call
+   - Add inline comment: `// A365 auth mode: S2S — FMI token chain via ObservabilityTokenService`
+
+   Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+
+3. **Preserve** all existing handler logic.
+
+### For Node.js
+
+1. **Read** the detected message handler file.
+
+2. **Edit** — Add BaggageBuilder context following the reference pattern in `nodejs-observability.md`:
+   - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
+   - Import `AgenticTokenCacheInstance`, `BaggageBuilderUtils` from `@microsoft/agents-a365-observability-hosting`
+   - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
+   - Call `AgenticTokenCacheInstance.RefreshObservabilityToken(agentId, tenantId, context, authorization, scopes)` first (non-fatal, catch errors):
+     - `user-delegated`: `authorization` is the **user's** delegated token → traces attributed to the user
+     - `agentic-identity`: `authorization` resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
+     - `S2S`: agent uses its own service identity — no user authorization token available
+   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context).build()` to build baggage automatically from TurnContext
+   - Wrap the handler body in `await baggageScope.run(async () => { ... })`
+   - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing handler logic.
 
-### For Node.js LangChain
+### For Python
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Add BaggageBuilder context following the reference pattern in `references/nodejs-observability.md`:
-   - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
-   - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
-   - Call `new BaggageBuilder().tenantId(...).agentId(...).correlationId(...).build()`
-   - Wrap the handler body in `await baggageScope.runAsync(async () => { ... })`
-   - Exchange and cache the observability token inside the scope (best-effort, catch errors)
-   - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+2. **Edit** — Add BaggageBuilder context following the reference pattern in `python-observability.md`:
+   - Import `BaggageBuilder` from `microsoft_agents_a365.observability.core`
+   - Import `populate` from `microsoft_agents_a365.observability.hosting.scope_helpers.populate_baggage`
+   - Import `AgenticTokenCache`, `AgenticTokenStruct` from `microsoft_agents_a365.observability.hosting.token_cache_helpers`
+   - Import `get_observability_authentication_scope` from `microsoft_agents_a365.runtime`
+   - Call `token_cache.register_observability(agent_id=..., tenant_id=..., token_generator=AgenticTokenStruct(authorization=AGENT_APP.auth, turn_context=context), observability_scopes=get_observability_authentication_scope())`:
+     - `user-delegated`: the OBO exchange resolves to the **signed-in user's** identity
+     - `agentic-identity`: the OBO exchange resolves to the **agentic user** provisioned in Azure AD
+     - `S2S`: agent authenticates as itself — no user context available
+   - Use `populate(builder, turn_context)` to auto-populate baggage, then `with builder.build():`
+   - Wrap existing agent logic inside the baggage scope
+   - Add inline comment: `# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
+   - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing handler logic.
 
@@ -206,31 +338,73 @@ Reply **yes** to confirm, or describe any corrections.
 
 **TaskCreate** — "Implement agentic token resolver with caching"
 
+For AI Teammate agents using the hosting packages, the built-in token cache (`AddAgenticTracingExporter` for .NET, `AgenticTokenCacheInstance` for Node.js, `AgenticTokenCache` for Python) handles caching automatically — no custom resolver needed. Skip to step 3 for these agents.
+
+### For .NET AgentFramework (hosting path)
+
+1. `AddAgenticTracingExporter()` (registered in Phase 3) provides the `IExporterTokenCache<AgenticTokenStruct>` DI instance — no additional token resolver class needed.
+
+2. In the agent class, inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor and call `RegisterObservability(...)` per turn (already done in Phase 4).
+
+### For .NET AgentFramework (S2S path)
+
+The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Power Platform token automatically via the FMI 3-hop chain — no manual `TokenResolver` delegate needed.
+
+1. **Check** if `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` exist. If yes, **skip** — they were already created in Phase 3.
+
+2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Power Platform token every 50 minutes).
+
+### For Node.js
+
+`AgenticTokenCacheInstance` from `@microsoft/agents-a365-observability-hosting` handles caching automatically. The `ObservabilityManager.configure()` call in Phase 3 wires it as the `tokenResolver`. No additional token resolver module is needed unless `Use_Custom_Resolver=true` is required (see reference doc for custom resolver pattern).
+
+### For Python
+
+`AgenticTokenCache` from `microsoft_agents_a365.observability.hosting.token_cache_helpers` handles caching automatically. It was wired as the `token_resolver` in the `configure()` call in Phase 3. No additional module is needed.
+
+**TaskUpdate** — Mark complete.
+
+---
+
+## Phase 5.5: Wire Manual Instrumentation Scopes
+
+**TaskCreate** — "Wire InvokeAgentScope, InferenceScope, ExecuteToolScope (required for store publishing)"
+
+> **Store publishing requirement:** The Agent 365 store validator requires `InvokeAgentScope`,
+> `InferenceScope`, and `ExecuteToolScope` to be present and populating telemetry. Missing any one
+> of these three scopes causes store validation failure.
+
+Ask the user: "Do you want to add the InvokeAgentScope, InferenceScope, and ExecuteToolScope wrappers now? These are required for store publishing."
+
+If the user confirms (or if this is for store publishing):
+
 ### For .NET AgentFramework
 
-1. **Check** if a token resolver class already exists. If yes, skip creation but verify it matches the pattern.
+Follow the reference patterns in `dotnet-observability.md` for:
+- **`InvokeAgentScope`** — wrap the top-level message handler to capture agent invocation telemetry
+- **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons
+- **`ExecuteToolScope`** — wrap each tool call to capture tool name, arguments, result
+- **`OutputScope`** — use for async response scenarios where output isn't captured synchronously
 
-2. **If not present**, create `AgenticTokenResolver.cs` following the reference pattern:
-   - Implement `DefaultAzureCredential` with caching
-   - Add 5-minute token expiry logic
-   - Expose static `GetTokenAsync()` method
-   - Mark all lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+### For Node.js
 
-3. **Edit** the observability configuration to use the token resolver.
+Follow the reference patterns in `nodejs-observability.md` for:
+- **`InvokeAgentScope`** — wrap the top-level message handler. Use `ScopeUtils.populateInvokeAgentScopeFromTurnContext` from `@microsoft/agents-a365-observability-hosting` to auto-populate from TurnContext
+- **`InferenceScope`** — wrap each LLM call. Use `ScopeUtils.populateInferenceScopeFromTurnContext` if available
+- **`ExecuteToolScope`** — wrap each tool call. Use `ScopeUtils.populateExecuteToolScopeFromTurnContext` if available
+- **`OutputScope`** — for async scenarios
 
-### For Node.js LangChain
+### For Python
 
-1. **Check** if a token resolver module already exists. If yes, skip creation but verify it matches the pattern.
+Follow the reference patterns in `python-observability.md` for:
+- **`InvokeAgentScope`** — wrap the top-level message handler as a context manager
+- **`InferenceScope`** — wrap each LLM call
+- **`ExecuteToolScope`** — wrap each tool call
+- **`OutputScope`** — for async response scenarios
 
-2. **If not present**, create `tokenResolver.ts` (or `.js`) following the reference pattern:
-   - Implement `DefaultAzureCredential` with caching
-   - Add 5-minute token expiry logic
-   - Export `getToken()` function
-   - Mark all lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+All new lines marked with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
-3. **Edit** the observability configuration to use the token resolver.
-
-4. **TaskUpdate** — Mark complete.
+**TaskUpdate** — Mark complete.
 
 ---
 
@@ -249,35 +423,18 @@ Reply **yes** to confirm, or describe any corrections.
 
 3. **Edit** — Add or update observability configuration following the reference pattern:
 
-   **If `a365 setup` was already run (EnableAgent365Exporter exists):**
+   **`appsettings.json`** (exporter enabled by default in all environments except Development):
    ```json
    {
-     "EnableAgent365Exporter": false,  // ← PRESERVE existing value
+     "EnableAgent365Exporter": true,   // ← enabled by default; Development override turns it off
      "Agent365Observability": {
-       "AgentBlueprintId": "...",      // ← PRESERVE from a365 setup
-       "TenantId": "...",               // ← PRESERVE from a365 setup
-       "AgentName": "",                 // ← ADD if empty
-       "AgentDescription": ""           // ← ADD if empty
-     },
-     "Logging": {                       // ← ADD this entire section
-       "LogLevel": {
-         "Default": "Information",
-         "Microsoft.Agents.A365.Observability": "Debug",
-         "OpenTelemetry": "Debug"
-       }
-     }
-   }
-   ```
-
-   **If `a365 setup` was NOT run (no existing config):**
-   ```json
-   {
-     "EnableAgent365Exporter": false,  // ← Default to false (user enables manually)
-     "Agent365Observability": {
-       "AgentBlueprintId": "",         // ← Placeholder (user fills in)
-       "TenantId": "",                  // ← Placeholder (user fills in)
+       "AgentBlueprintId": "...",      // ← populated by a365 setup (or placeholder if not run)
+       "TenantId": "...",
        "AgentName": "",
        "AgentDescription": ""
+       // S2S path only — add:
+       // "ClientId": "<agent-blueprint-client-id>",
+       // "ClientSecret": "<agent-blueprint-client-secret>"  // MSI tried first in prod; secret is local-dev fallback
      },
      "Logging": {
        "LogLevel": {
@@ -289,6 +446,13 @@ Reply **yes** to confirm, or describe any corrections.
    }
    ```
 
+   **`appsettings.Development.json`** (create if absent — disables exporter for local dev so traces go to console only):
+   ```json
+   {
+     "EnableAgent365Exporter": false
+   }
+   ```
+
 4. **Critical:** The `Logging.LogLevel` section is **required** for observability events to appear in console output and Microsoft Defender. Without this, the SDK is instrumented but logs are suppressed. The `a365 setup` command does **not** add logging configuration.
 
 5. **If `appsettings.json` does not exist**, create it with the complete structure above.
@@ -296,10 +460,11 @@ Reply **yes** to confirm, or describe any corrections.
 6. **If `Logging.LogLevel` already exists**, merge the new entries preserving existing log levels.
 
 7. **Inform user:**
-   - If `EnableAgent365Exporter` is `false`: "Observability is instrumented but disabled. Set EnableAgent365Exporter: true in appsettings.json to start exporting traces."
+   - "Observability exporter is enabled by default (`EnableAgent365Exporter: true` in `appsettings.json`). For local development, `appsettings.Development.json` overrides this to `false` so traces go to console only."
    - If `AgentBlueprintId` or `TenantId` are empty: "Run `a365 setup` to populate AgentBlueprintId and TenantId, or fill them manually from your Entra app registration."
+   - If S2S path: "Add `ClientId` and `ClientSecret` under `Agent365Observability` in `appsettings.json` — `ObservabilityTokenService` requires both. In production, MSI is tried first and the secret is a local-dev fallback; `ClientSecret` must still be present in config."
 
-### For Node.js LangChain
+### For Node.js
 
 1. **Read** `.env` (or `.env.local`, `.env.development`).
 
@@ -307,20 +472,12 @@ Reply **yes** to confirm, or describe any corrections.
    - If `ENABLE_A365_OBSERVABILITY_EXPORTER` exists → **preserve** it (do not change)
    - If missing → add with default value `false`
 
-3. **Edit** — Add or update observability environment variables following the reference pattern:
-
-   **If `a365 setup` was already run:**
+3. **Edit** — Add or update observability environment variables following the reference pattern in `nodejs-observability.md`:
    ```dotenv
-   ENABLE_A365_OBSERVABILITY_EXPORTER=false  # ← PRESERVE existing value
-   SERVICE_NAME=my-langchain-agent
+   ENABLE_A365_OBSERVABILITY_EXPORTER=false
+   SERVICE_NAME=my-agent
    A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
-   ```
-
-   **If `a365 setup` was NOT run:**
-   ```dotenv
-   ENABLE_A365_OBSERVABILITY_EXPORTER=false  # ← Default to false (user enables manually)
-   SERVICE_NAME=my-langchain-agent
-   A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
+   Use_Custom_Resolver=false
    ```
 
 4. **If `.env` does not exist**, create it with the variables above.
@@ -328,6 +485,20 @@ Reply **yes** to confirm, or describe any corrections.
 5. **If the project uses `.env.example`**, also update it with placeholder values.
 
 6. **Inform user:**
+   - If `ENABLE_A365_OBSERVABILITY_EXPORTER` is `false`: "Observability is instrumented but disabled. Set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env to start exporting traces."
+
+### For Python
+
+1. **Read** `.env` (or `.env.local`).
+
+2. **Edit** — Add or update observability environment variables:
+   ```dotenv
+   ENABLE_A365_OBSERVABILITY_EXPORTER=false
+   ```
+
+3. **If `.env` does not exist**, create it with the variable above.
+
+4. **Inform user:**
    - If `ENABLE_A365_OBSERVABILITY_EXPORTER` is `false`: "Observability is instrumented but disabled. Set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env to start exporting traces."
 
 7. **TaskUpdate** — Mark complete.
@@ -349,7 +520,7 @@ Reply **yes** to confirm, or describe any corrections.
 
 3. **If build succeeds**, confirm to user.
 
-### For Node.js LangChain
+### For Node.js
 
 1. **Bash** — Run:
    ```bash
@@ -360,6 +531,17 @@ Reply **yes** to confirm, or describe any corrections.
 2. **If build fails**, collect error output and present to user with suggested fixes.
 
 3. **If build succeeds** (or no build script exists), confirm to user.
+
+### For Python
+
+1. **Bash** — Run an import check to verify the packages load without errors:
+   ```bash
+   python -c "from microsoft_agents_a365.observability.core import configure; from microsoft_agents_a365.observability.hosting import AgenticTokenCache; print('A365 observability imports OK')"
+   ```
+
+2. **If import fails**, collect error output and present to user with suggested fixes (usually a missing `pip install`).
+
+3. **If import succeeds**, confirm to user.
 
 4. **TaskUpdate** — Mark complete.
 
@@ -393,20 +575,26 @@ If yes, invoke the `test-local` skill.
    ```
    ✅ A365 observability instrumented successfully!
 
-   **Agent type:** [.NET AgentFramework | Node.js LangChain]
+   **Agent type:** [.NET AgentFramework | Node.js | Python]
+   **Agent kind:** [AI Teammate | System Agent]
+   **Auth mode:** [Access data as signed-in user | Its own persistent identity | Runs autonomously]
    **Packages installed:** [list packages]
    **Files modified:** [list files]
 
    **Next steps:**
-   1. Update the observability endpoint in your config file:
-      - [appsettings.json | .env]
-   2. Set up Azure Application Insights or A365 monitoring backend.
-   3. Run your agent and verify traces are being sent.
+   1. Enable exporting when ready for production:
+      - .NET: set EnableAgent365Exporter: true in appsettings.json
+      - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env
+   2. Run your agent and verify traces appear in the Observability dashboard.
+   3. [If authMode = user-delegated] Confirm the signed-in user's token is being passed correctly.
+      → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+   4. [If authMode = agentic-identity] Ensure the agentic user identity has been provisioned in Azure AD.
+      → Identity docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
+      → OBO flow docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+   5. [If authMode = S2S] No user token required — verify agent blueprint credentials are configured.
+      → Auth flow docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/authentication-flow
 
-   **Verification command:**
-   [dotnet run | npm start]
-
-   All changes are marked with:
+   All instrumented lines are marked with:
    // A365 Observability — best-effort instrumentation (verify against official sample)
    ```
 
@@ -422,7 +610,7 @@ If yes, invoke the `test-local` skill.
 ### Unknown Agent Type
 If the agent type cannot be determined:
 - Write marker: `.a365setup-unknown-agent`
-- Exit early with message: "Could not detect agent type. Please verify this is a .NET AgentFramework or Node.js LangChain project."
+- Exit early with message: "Could not detect agent type. Please verify this is a .NET AgentFramework, Node.js, or Python agent project."
 
 ### Build Failures
 If the build fails after instrumentation:
@@ -454,3 +642,4 @@ This skill is safe to rerun. On subsequent runs:
 - **Agent Detection:** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md`
 - **.NET Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md`
 - **Node.js Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md`
+- **Python Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md`

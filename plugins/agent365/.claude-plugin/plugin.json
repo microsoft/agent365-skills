@@ -1,7 +1,7 @@
 {
   "name": "agent365",
   "version": "1.3.0",
-  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP tools, instrument observability, and test locally. Supports .NET AgentFramework and Node.js LangChain, OpenAI Agents SDK, and Claude SDK.",
+  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP tools, instrument observability, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, CopilotStudio, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
   "author": {
     "name": "Microsoft",
     "url": "https://github.com/microsoft"
@@ -9,6 +9,6 @@
   "repository": "https://github.com/microsoft/agent365-skills/",
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
-  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "blueprint"],
+  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "copilotstudio", "blueprint", "s2s", "fmi", "ai-teammate"],
   "skills": "./skills/"
 }

@@ -6,9 +6,13 @@
       "id": 1,
       "prompt": "Add workiq tools to this agent",
       "description": "Full flow on a .NET AgentFramework project — a365 setup not yet run",
-      "expected_output": "The skill detects .NET AgentFramework, runs a365 develop list-available, asks the user which servers to add, runs a365 develop add-mcp-servers, installs the tooling NuGet package, wires GetMcpToolsAsync in the agent class, registers IMcpToolRegistrationService in Program.cs, explains that a365 setup all will apply permissions, shows how to get a dev token, and validates the build.",
+      "expected_output": "The skill detects .NET AgentFramework, determines agentType and authMode via two-stage question (AI Teammate vs System Agent, then auth mode — with S2S warning if selected), runs a365 develop list-available, asks the user which servers to add, runs a365 develop add-mcp-servers, installs the tooling NuGet package, wires GetMcpToolsAsync in the agent class, registers IMcpToolRegistrationService in Program.cs, explains that a365 setup all will apply permissions, shows how to get a dev token, and validates the build.",
       "files": [],
       "expectations": [
+        "Phase 0B: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0B: Auth mode question presented based on agent type selection",
+        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
+        "Phase 0B: If authMode is S2S, WorkIQ compatibility warning is shown before proceeding to Phase 4",
         "Phase 1: Agent type is detected as .NET AgentFramework",
         "Phase 1: a365 --version is run to verify CLI is installed",
         "Phase 1: a365 develop list-configured is run to check existing servers",
@@ -28,16 +32,20 @@
         "Phase 6: SKIP_TOOLING_ON_ERRORS and BEARER_TOKEN env vars are documented",
         "Phase 6: A WorkIQ dev launch profile is added to launchSettings.json",
         "Phase 7: dotnet build is run and result is shown",
-        "Phase 8: Summary includes MCP servers added, permissions status, and dev testing steps"
+        "Phase 8: Summary includes agent kind, authMode, MCP servers added, permissions status, and dev testing steps"
       ]
     },
     {
       "id": 2,
       "prompt": "Add a365 work intelligence tools",
       "description": "Full flow on a Node.js LangChain project — blueprint already exists",
-      "expected_output": "The skill detects Node.js LangChain, runs a365 develop list-available, adds selected servers via CLI, installs @microsoft/agents-a365-tooling, wires A365McpToolClient.getToolsAsync in the agent, adds env vars to .env, explains that a Global Administrator must run a365 setup permissions mcp since blueprint already exists, shows a365 develop get-token, and validates the build.",
+      "expected_output": "The skill detects Node.js LangChain, determines agentType and authMode via two-stage question (with S2S warning if selected), runs a365 develop list-available, adds selected servers via CLI, installs @microsoft/agents-a365-tooling, wires A365McpToolClient.getToolsAsync in the agent, adds env vars to .env, explains that a Global Administrator must run a365 setup permissions mcp since blueprint already exists, shows a365 develop get-token, and validates the build.",
       "files": [],
       "expectations": [
+        "Phase 0B: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0B: Auth mode question presented based on agent type selection",
+        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
+        "Phase 0B: If authMode is S2S, WorkIQ compatibility warning is shown before proceeding to Phase 4",
         "Phase 1: Agent type is detected as Node.js LangChain",
         "Phase 1: a365 develop list-configured is run",
         "Phase 1: a365.generated.config.json is found with a non-empty agentBlueprintId",
@@ -56,7 +64,7 @@
         "Phase 6: a365 develop get-token is shown",
         "Phase 6: BEARER_TOKEN and SKIP_TOOLING_ON_ERRORS added to .env",
         "Phase 7: npm install and npm run build succeed",
-        "Phase 8: Summary reflects Global Administrator permissions requirement prominently"
+        "Phase 8: Summary includes agent kind, authMode, MCP servers added, and Global Administrator permissions requirement prominently"
       ]
     },
     {
@@ -80,6 +88,7 @@
       "expected_output": "The skill detects that the servers are already configured and GetMcpToolsAsync is already wired, skips those steps, and validates the build.",
       "files": [],
       "expectations": [
+        "Phase 0B: .a365-workspace-detection.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
         "Phase 1: a365 develop list-configured shows WorkIQ servers already present",
         "Phase 2: User is informed which servers are already configured",
         "Phase 3: a365 develop add-mcp-servers is SKIPPED for already-configured servers",
