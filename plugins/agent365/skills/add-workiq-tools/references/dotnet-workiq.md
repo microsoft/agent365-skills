@@ -47,11 +47,19 @@ a365 develop get-token --resource mcp -o raw
 
 ---
 
-## NuGet Package
+## NuGet Packages
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | MCP tool loading | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease` |
+| `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling --prerelease` |
+| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease` |
+| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel --prerelease` |
+
+Install core + the adapter for your framework. Example for AgentFramework:
+```bash
+dotnet add package Microsoft.Agents.A365.Tooling --prerelease
+dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
+```
 
 ---
 

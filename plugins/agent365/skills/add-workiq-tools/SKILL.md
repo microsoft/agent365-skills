@@ -254,9 +254,12 @@ Check `.csproj` for `Microsoft.Agents.A365.Tooling`:
 
 **Grep** `Microsoft.Agents.A365.Tooling` in `**/*.csproj`
 
-If missing:
+If missing, install core + the adapter for the detected framework:
 ```bash
+dotnet add package Microsoft.Agents.A365.Tooling --prerelease
 dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
+# or for Semantic Kernel:
+# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel --prerelease
 ```
 
 #### 4B — Register services in Program.cs
@@ -296,9 +299,13 @@ Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
 
 #### 4A — Install tooling packages (if not present)
 
-**Grep** `agents-a365-tooling-extensions-langchain` in `**/package.json`. If missing:
+**Grep** `agents-a365-tooling` in `**/package.json`. If missing, install core + the adapter for the detected framework:
 ```bash
 npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-langchain
+# or for OpenAI:
+# npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-openai
+# or for Semantic Kernel:
+# npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-semantic-kernel
 ```
 
 #### 4B — Wire McpToolRegistrationService in client.ts
