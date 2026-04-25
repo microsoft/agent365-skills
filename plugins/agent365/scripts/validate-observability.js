@@ -168,13 +168,20 @@ if (isNodejs) {
 // ── Python validation ───────────────────────────────────────────────────────
 
 if (isPython) {
-  // 1. Core package installed
+  // 1. Core package installed (hyphenated distribution names as they appear in requirements.txt/pyproject.toml)
+  const pyObservabilityPackages = [
+    'microsoft-agents-a365-observability-core',
+    'microsoft-agents-a365-observability-hosting',
+    'microsoft-agents-a365-observability-runtime',
+    'microsoft-agents-a365-observability',
+  ];
   const hasPyPkg = reqFiles.some(f =>
-    fileContains(f, 'microsoft-agents-a365-observability-core') ||
-    fileContains(f, 'microsoft-agents-a365-observability-hosting') ||
-    fileContains(f, 'microsoft-agents-a365-observability'));
+    pyObservabilityPackages.some(pkg => fileContains(f, pkg)));
   if (!hasPyPkg) {
-    issues.push('microsoft-agents-a365-observability-core is not in requirements.txt or pyproject.toml');
+    issues.push(
+      'No Microsoft Agent 365 observability distribution found in requirements.txt or pyproject.toml ' +
+      '(expected one of: ' + pyObservabilityPackages.join(', ') + ')'
+    );
   }
 
   // 2. configure() called in a Python file
