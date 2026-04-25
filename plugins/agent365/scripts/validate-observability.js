@@ -171,7 +171,8 @@ if (isPython) {
   // 1. Core package installed
   const hasPyPkg = reqFiles.some(f =>
     fileContains(f, 'microsoft-agents-a365-observability-core') ||
-    fileContains(f, 'microsoft_agents_a365'));
+    fileContains(f, 'microsoft-agents-a365-observability-hosting') ||
+    fileContains(f, 'microsoft-agents-a365-observability'));
   if (!hasPyPkg) {
     issues.push('microsoft-agents-a365-observability-core is not in requirements.txt or pyproject.toml');
   }

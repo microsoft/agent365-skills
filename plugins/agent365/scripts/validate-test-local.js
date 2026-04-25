@@ -81,6 +81,11 @@ if (!playgroundVersion) {
   issues.push(
     'agentsplayground CLI not found. Install with: npm install -g @microsoft/agentsplayground'
   );
+  // npm is required to install agentsplayground regardless of agent stack
+  const npmVersion = run('npm --version');
+  if (!npmVersion) {
+    issues.push('npm not found — Node.js/npm is required to install agentsplayground for all stacks. Install from https://nodejs.org');
+  }
 }
 
 // ── Check build tools are available ─────────────────────────────────────────

@@ -94,7 +94,7 @@ TaskCreate: "Guide local test"
 
 3. Determine default port:
    - **.NET**: `5000` (HTTP, `dotnet run` default)
-   - **Node.js**: `3978` (standard Bot Framework / aiohttp port)
+   - **Node.js**: `3978` (standard Bot Framework port)
    - **Python**: `3978` (aiohttp default in AI Teammate hosting layer)
    - If the user provided a port as the skill argument, use that instead.
 
@@ -379,7 +379,7 @@ To stop: Ctrl+C in the agent terminal.
 |------|----------|---------|
 | `agentsplayground` | Yes (all stacks) | `npm install -g @microsoft/agentsplayground` |
 | `dotnet` (8.0+) | .NET only | https://dotnet.microsoft.com/download |
-| `node` / `npm` | Node.js only + agentsplayground install | https://nodejs.org |
+| `node` / `npm` | All stacks (required to install/run `agentsplayground`) | https://nodejs.org |
 | `python` (3.11+) | Python only | https://python.org |
 
 ---
