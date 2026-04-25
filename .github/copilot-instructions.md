@@ -142,7 +142,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Asks a two-stage question: agent kind (AI Teammate or System Agent) then auth mode (`user-delegated`, `agentic-identity`, or `S2S`)
-2. Installs the observability package (`Microsoft.Agents.A365.Observability`, `@microsoft/agents-a365-observability`, or `microsoft-agents-a365-observability`)
+2. Installs the observability package (`Microsoft.Agents.A365.Observability.Runtime` + `Microsoft.Agents.A365.Observability.Hosting` for .NET, `@microsoft/agents-a365-observability` for Node.js, or `microsoft-agents-a365-observability` for Python)
 3. **OBO path** (user-delegated / agentic-identity): wires `AddAgenticTracingExporter()` and per-turn `RegisterObservability(new AgenticTokenStruct(..., "AGENTIC"))`
 4. **S2S path (.NET only)**: creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds; wires `AddAgent365Observability()` and `InvokeAgentScope.Start().FromTurnContext()`
 5. Updates `appsettings.json` with `Agent365Observability` section (S2S: adds `ClientId` + `ClientSecret` for FMI token chain); creates `appsettings.Development.json` with exporter disabled
@@ -199,15 +199,13 @@ Key rules:
 
 ## Code Conventions
 
-All code added by observability instrumentation must be marked with:
-```
-// A365 Observability — best-effort instrumentation (verify against official sample)
-```
+All code added by observability instrumentation must be marked with the language-appropriate comment form:
+- C# / JavaScript / TypeScript: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+- Python: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
-All code added by WorkIQ wiring must be marked with:
-```
-// A365 WorkIQ — added by add-workiq-tools skill
-```
+All code added by WorkIQ wiring must be marked with the language-appropriate comment form:
+- C# / JavaScript / TypeScript: `// A365 WorkIQ — added by add-workiq-tools skill`
+- Python: `# A365 WorkIQ — added by add-workiq-tools skill`
 
 Skills are **additive and idempotent** — never delete or restructure existing agent code.
 
