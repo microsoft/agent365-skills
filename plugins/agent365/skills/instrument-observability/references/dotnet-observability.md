@@ -332,7 +332,7 @@ public class MyAgent : AgentApplication
         }
         catch (Exception ex)
         {
-            _logger.LogWarning($"Error registering for observability: {ex.Message}");
+            _logger.LogWarning(ex, "Error registering for observability.");
         }
 
         // ... existing agent message handling logic ...
