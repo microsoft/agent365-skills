@@ -22,7 +22,8 @@ function findFiles(dir, extensions, maxDepth = 5) {
     try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj') continue;
+      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj' ||
+          entry.name === 'venv' || entry.name === '__pycache__' || entry.name === 'site-packages') continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full, depth + 1);
       else if (extensions.some(e => entry.name === e || entry.name.endsWith(e))) results.push(full);
@@ -81,9 +82,15 @@ const csprojFiles = findFiles(cwd, ['.csproj']);
 const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
 const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
   f.endsWith('package.json') && !f.includes('node_modules'));
+const pyFiles     = findFiles(cwd, ['.py']);
+const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
 
 const isDotnet  = csprojFiles.length > 0;
-const isNodejs  = jsonFiles.some(f => fileContains(f, '@langchain') || fileContains(f, '"langchain"'));
+const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
+const isPython  = !isDotnet && !isNodejs && (
+  pyFiles.length > 0 ||
+  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
+);
 
 // ── Check 2: Agent code is wired to load MCP tools ──────────────────────────
 
@@ -103,14 +110,29 @@ if (isDotnet) {
 }
 
 if (isNodejs) {
-  const hasMcpClient = anyFileContains(tsFiles, 'A365McpToolClient', 'getToolsAsync', 'agents-a365-tooling');
+  const hasMcpClient = anyFileContains(tsFiles, 'A365McpToolClient', 'getToolsAsync', 'addToolServersToAgent', 'agents-a365-tooling', 'McpToolRegistrationService');
   if (!hasMcpClient) {
-    issues.push('Node.js: No TypeScript/JS file uses A365McpToolClient or imports agents-a365-tooling');
+    issues.push('Node.js: No TypeScript/JS file uses McpToolRegistrationService, A365McpToolClient, or imports agents-a365-tooling');
   }
 
   const hasToolingPkg = jsonFiles.some(f => fileContains(f, 'agents-a365-tooling'));
   if (!hasToolingPkg) {
     issues.push('Node.js: @microsoft/agents-a365-tooling is not in package.json — run: npm install @microsoft/agents-a365-tooling');
+  }
+}
+
+if (isPython) {
+  const hasMcpWiring = anyFileContains(pyFiles,
+    'get_mcp_tools_async', 'add_tool_servers_to_agent', 'McpToolRegistrationService');
+  if (!hasMcpWiring) {
+    issues.push('Python: No .py file calls get_mcp_tools_async, add_tool_servers_to_agent, or imports McpToolRegistrationService');
+  }
+
+  const hasToolingPkg = reqFiles.some(f =>
+    fileContains(f, 'microsoft-agents-a365-tooling') ||
+    fileContains(f, 'microsoft_agents_a365_tooling'));
+  if (!hasToolingPkg) {
+    issues.push('Python: microsoft-agents-a365-tooling is not in requirements.txt or pyproject.toml — run: pip install microsoft-agents-a365-tooling');
   }
 }
 

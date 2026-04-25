@@ -138,7 +138,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
 (which updates `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
-and guides the permissions handoff to your Global Administrator.
+and guides the permissions handoff to your Global Administrator. Supports .NET, Node.js, and Python.
 
 Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse/Dynamics 365.
 
@@ -154,16 +154,22 @@ Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilo
 
 > **Prerequisite:** `a365-setup` must be run first.
 
-Instruments OpenTelemetry-based tracing, BaggageBuilder context propagation, and the A365
-exporter with agentic token resolver. Adds observability to the entry point and message handler —
-all code is marked `// A365 Observability — best-effort instrumentation` and the change is
-non-destructive and idempotent.
+Instruments OpenTelemetry-based tracing, context propagation, and the A365 exporter. Before
+wiring any code, asks a two-stage question to determine **agent kind** (AI Teammate or System
+Agent) and **auth mode** (`user-delegated`, `agentic-identity`, or `S2S`) — the answers drive
+which token path is wired:
+
+- **user-delegated / agentic-identity** (OBO): `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
+- **S2S** (.NET only): creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds (3-hop FMI token chain) + `AddAgent365Observability()` — no per-turn token call
+
+All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 
 **Trigger phrases:**
 ```
-"Instrument observability"     "Add A365 observability"
-"Enable tracing"               "Add OTel"
-"Instrument for Defender"      "Add telemetry"
+"Instrument observability"              "Add A365 observability"
+"Enable tracing"                        "Add OTel"
+"Instrument for Defender"               "Add telemetry"
+"Add A365 observability to this Python agent"
 ```
 
 ---
@@ -257,6 +263,12 @@ Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — I'll need to know what to give our Global Administrator.
 ```
 
+**System Agent with S2S observability (.NET):**
+```
+This is a .NET System Agent that runs autonomously — no signed-in user.
+Add A365 observability with S2S auth (FMI token chain).
+```
+
 **Check what's already configured:**
 ```
 Check which Agent 365 skills have already been applied to this agent and tell me what's missing.
@@ -267,7 +279,8 @@ Check which Agent 365 skills have already been applied to this agent and tell me
 ## What's Included
 
 - **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
-- **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK), .NET AgentFramework, and Python AgentFramework
+- **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
+- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs System Agent) and auth mode (user-delegated / agentic-identity / S2S); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
 - **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365

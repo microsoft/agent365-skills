@@ -53,12 +53,20 @@ const issues = [];
 // ── Detect project type ─────────────────────────────────────────────────────
 
 const csprojFiles = findFiles(cwd, ['.csproj']);
-const jsonFiles = findFiles(cwd, ['.json']).filter(f =>
+const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
+const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
   f.endsWith('package.json') && !f.includes('node_modules'));
+const pyFiles     = findFiles(cwd, ['.py']).filter(f =>
+  !f.includes('__pycache__') && !f.includes('.venv') && !f.includes('/venv/'));
+const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
 
-const isDotnet = csprojFiles.length > 0;
-const isNodejs = jsonFiles.some(f => fileContains(f, '@langchain') || fileContains(f, '"langchain"'));
-const isUnknown = !isDotnet && !isNodejs;
+const isDotnet  = csprojFiles.length > 0;
+const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
+const isPython  = !isDotnet && !isNodejs && (
+  pyFiles.length > 0 ||
+  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
+);
+const isUnknown = !isDotnet && !isNodejs && !isPython;
 
 // Unknown project — pass through, skill handles detection interactively
 if (isUnknown) {
@@ -73,21 +81,35 @@ if (!playgroundVersion) {
   issues.push(
     'agentsplayground CLI not found. Install with: npm install -g @microsoft/agentsplayground'
   );
+  // npm is required to install agentsplayground regardless of agent stack
+  const npmVersion = run('npm --version');
+  if (!npmVersion) {
+    issues.push('npm not found — Node.js/npm is required to install agentsplayground for all stacks. Install from https://nodejs.org');
+  }
 }
 
 // ── Check build tools are available ─────────────────────────────────────────
+// The skill handles missing build tools interactively (Phase 1.3).
+// Validator only blocks if the tool is still missing after the skill ran.
 
 if (isDotnet) {
   const dotnetVersion = run('dotnet --version');
   if (!dotnetVersion) {
-    issues.push('dotnet CLI not found. Install .NET 8.0+ from https://dotnet.microsoft.com/download');
+    issues.push('.NET SDK not found — Phase 1.3 should have installed it. Run: winget install Microsoft.DotNet.SDK.8 (Windows) or brew install dotnet (macOS), restart your terminal, then re-run the skill.');
   }
 }
 
 if (isNodejs) {
   const nodeVersion = run('node --version');
   if (!nodeVersion) {
-    issues.push('node not found. Install Node.js 18+ from https://nodejs.org');
+    issues.push('Node.js not found — Phase 1.3 should have installed it. Run: winget install OpenJS.NodeJS.LTS (Windows) or brew install node (macOS), restart your terminal, then re-run the skill.');
+  }
+}
+
+if (isPython) {
+  const pythonVersion = run('python --version') || run('python3 --version');
+  if (!pythonVersion) {
+    issues.push('Python not found — Phase 1.3 should have installed it. Run: winget install Python.Python.3.11 (Windows) or brew install python@3.11 (macOS), restart your terminal, then re-run the skill.');
   }
 }
 

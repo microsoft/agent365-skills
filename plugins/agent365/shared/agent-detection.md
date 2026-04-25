@@ -10,7 +10,7 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 The skill MUST detect and store these three variables before asking ANY questions:
 
 1. **`agentStack`** — Agent stack/framework
-   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`
+   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`, `Semantic Kernel`, `Claude`, `Google ADK`
    - Detection: See detection logic below
 
 2. **`programmingLanguage`** — Programming language
@@ -23,10 +23,28 @@ The skill MUST detect and store these three variables before asking ANY question
 
 ### Agent Stack Detection Logic
 
+Run in priority order within each language. Stop at the first match.
+
 ```
-Agent Framework → .csproj + (Microsoft.Agents.* OR AgentApplication)
-LangChain       → package.json + @langchain/* OR requirements.txt + langchain
-OpenAI          → package.json + "openai" (no LangChain) OR requirements.txt + openai (no langchain)
+# .NET ─────────────────────────────────────────────────────────────────────
+Agent Framework  → .csproj + (Microsoft.Agents.* OR AgentApplication OR Microsoft.Agents.AI)
+Semantic Kernel  → .csproj + Microsoft.SemanticKernel
+
+# Node.js ────────────────────────────────────────────────────────────────── (check in order)
+LangChain        → package.json + @langchain/* OR "langchain"
+OpenAI           → package.json + @openai/agents OR "openai" (no LangChain)
+Claude           → package.json + @anthropic-ai/sdk OR "anthropic"
+Semantic Kernel  → package.json + @microsoft/semantic-kernel
+Google ADK       → package.json + @google/generative-ai OR @google-cloud/vertexai OR @google/adk
+
+# Python ─────────────────────────────────────────────────────────────────── (check in order)
+Agent Framework  → requirements.txt/pyproject.toml + microsoft-agents-hosting-core
+                   OR microsoft-agents-hosting-aiohttp
+LangChain        → requirements.txt/pyproject.toml + langchain
+OpenAI           → requirements.txt/pyproject.toml + openai-agents OR openai (no langchain)
+Claude           → requirements.txt/pyproject.toml + claude-agent-sdk OR anthropic
+Semantic Kernel  → requirements.txt/pyproject.toml + semantic-kernel
+Google ADK       → requirements.txt/pyproject.toml + google-adk
 ```
 
 ### Programming Language Detection
@@ -66,8 +84,8 @@ BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 ```
 Step 1: Unsupported? (M365/Teams/BizChat non-AI-teammate) → STOP
 Step 2: Digital worker?                                    → Warn, special publish path
-Step 3: Supported type? (dotnet-agentframework, nodejs-langchain)  → Full support
-Step 4: Near-match? (nodejs-openai, python-*, custom)      → Best-effort + confirm
+Step 3: Supported type? (dotnet-agentframework, dotnet-semantic-kernel, nodejs-langchain, python-agentframework) → Full support
+Step 4: Near-match? (nodejs-openai, nodejs-claude, nodejs-google-adk, nodejs-semantic-kernel, python-openai, python-claude, python-google-adk, python-langchain, python-semantic-kernel) → Best-effort + confirm
 Step 5: Unknown (no signals)                               → Ask user
 ```
 
@@ -154,6 +172,7 @@ This is a **temporary workaround** until the MAC team ships a publish API.
 | `.csproj` file exists | `Glob **/*.csproj` |
 | Extends `AgentApplication` | `Grep "AgentApplication" **/*.cs` |
 | Uses `AddAgentFramework()` | `Grep "AddAgentFramework" **/Program.cs` |
+| `Microsoft.Agents.AI` reference | `Grep "Microsoft.Agents.AI" **/*.csproj` |
 | A365 NuGet reference | `Grep "Microsoft.Agents.A365" **/*.csproj` |
 
 **Confirmed .NET AgentFramework** = `.csproj` + any one of the Grep matches.
@@ -177,23 +196,62 @@ Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/nodejs
 > **Framework note:** Coding agents (Claude Code, GitHub Copilot) perform significantly
 > better with Node.js and Python. For new demo agents, prefer LangChain unless .NET is required.
 
+### 3C: .NET Semantic Kernel (P1 — full support)
+
+| Signal | Detection |
+|--------|-----------|
+| `.csproj` file exists | `Glob **/*.csproj` |
+| `Microsoft.SemanticKernel` reference | `Grep "Microsoft.SemanticKernel" **/*.csproj` |
+| A365 NuGet reference | `Grep "Microsoft.Agents.A365" **/*.csproj` |
+
+**Confirmed .NET Semantic Kernel** = `.csproj` + SemanticKernel grep match.
+
+Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/semantic-kernel`
+
+### 3D: Python AgentFramework (P1 — full support)
+
+| Signal | Detection |
+|--------|-----------|
+| `requirements.txt` or `pyproject.toml` | `Glob **/requirements.txt` |
+| Hosting core package | `Grep "microsoft-agents-hosting-core" **/requirements.txt` |
+| Or: aiohttp hosting | `Grep "microsoft-agents-hosting-aiohttp" **/requirements.txt` |
+| A365 observability package | `Grep "microsoft.agents.a365" **/requirements.txt` |
+
+**Confirmed Python AgentFramework** = `requirements.txt` + hosting package grep match.
+
+Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/python/agent-framework`
+
 ---
 
 ## Step 4 — Best-Effort Types (P2)
 
-| Detected Type | Signals | Action |
-|--------------|---------|--------|
-| `nodejs-openai` | `package.json` + `openai` dep, no LangChain | Confirm with user, use Node.js patterns |
-| `python-langchain` | `requirements.txt` + `langchain` | Confirm with user, no official sample yet |
-| `python-openai` | `requirements.txt` + `openai` | Confirm with user, no official sample yet |
-| `custom` | Unknown framework | Confirm with user, closest language match |
+### Node.js P2 types
+
+| Detected Type | Key Signal(s) in `package.json` | Official Sample |
+|--------------|--------------------------------|-----------------|
+| `nodejs-openai` | `@openai/agents` or `"openai"` (no LangChain) | `nodejs/openai` |
+| `nodejs-claude` | `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
+| `nodejs-semantic-kernel` | `@microsoft/semantic-kernel` | — |
+| `nodejs-google-adk` | `@google/generative-ai` or `@google-cloud/vertexai` or `@google/adk` | — |
+
+### Python P2 types
+
+| Detected Type | Key Signal(s) in `requirements.txt` / `pyproject.toml` | Official Sample |
+|--------------|--------------------------------------------------------|-----------------|
+| `python-openai` | `openai-agents` or `openai` (no hosting packages) | `python/openai` |
+| `python-claude` | `claude-agent-sdk` or `anthropic` | `python/claude` |
+| `python-google-adk` | `google-adk` | `python/google-adk` |
+| `python-langchain` | `langchain` | — |
+| `python-semantic-kernel` | `semantic-kernel` | — |
 
 For all P2 types:
 1. Show the user the detected type and ask for confirmation
 2. Use the closest language-matched reference doc from `references/`
-3. Mark every instrumented line with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+3. Mark every instrumented line with: `// A365 Observability — best-effort instrumentation (verify against official sample)` (or `#` prefix for Python)
 4. Write marker: `.a365obs-best-effort`
 5. In the final summary, flag all P2 changes with ⚠️
+
+Official sample base URL: `https://github.com/microsoft/Agent365-Samples/tree/main/`
 
 ---
 
@@ -205,10 +263,18 @@ If no `.csproj`, no `package.json`, no `requirements.txt`:
 AskUserQuestion:
   question: "I couldn't find a recognizable agent project in this directory. What type of agent are you working with?"
   options:
-    - .NET AgentFramework (C#)
-    - Node.js LangChain (TypeScript)
-    - Node.js with OpenAI SDK
-    - Python agent
+    - .NET — Agent Framework
+    - .NET — Semantic Kernel
+    - Node.js — LangChain
+    - Node.js — OpenAI Agents SDK
+    - Node.js — Claude (Anthropic)
+    - Node.js — Google ADK
+    - Python — Agent Framework
+    - Python — LangChain
+    - Python — OpenAI Agents SDK
+    - Python — Claude (Anthropic)
+    - Python — Google ADK
+    - Python — Semantic Kernel
     - Other / I'll point you to the right file
 ```
 
@@ -276,10 +342,19 @@ If all four signals are true and the user hasn't specified AI Teammate intent, s
 
 | Agent Type | Primary Entry Point | Secondary |
 |-----------|-------------------|-----------|
-| dotnet-agentframework | `Program.cs` | `<AgentName>.cs` (AgentApplication subclass) |
-| nodejs-langchain | `src/index.ts` or `index.ts` | `src/agentApp.ts`, `src/handler.ts` |
-| nodejs-openai | `index.ts` or `index.js` | `src/agent.ts` |
-| python-* | `main.py` or `app.py` | `agent.py` |
+| `dotnet-agentframework` | `Program.cs` | `<AgentName>.cs` (AgentApplication subclass) |
+| `dotnet-semantic-kernel` | `Program.cs` | `<AgentName>.cs` |
+| `nodejs-langchain` | `src/index.ts` or `index.ts` | `src/agentApp.ts`, `src/handler.ts` |
+| `nodejs-openai` | `index.ts` or `index.js` | `src/agent.ts` |
+| `nodejs-claude` | `index.ts` or `index.js` | `src/agent.ts` |
+| `nodejs-semantic-kernel` | `index.ts` or `index.js` | `src/agent.ts` |
+| `nodejs-google-adk` | `index.ts` or `index.js` | `src/agent.ts` |
+| `python-agentframework` | `app.py` or `main.py` | `agent.py` |
+| `python-openai` | `app.py` or `main.py` | `agent.py` |
+| `python-claude` | `app.py` or `main.py` | `agent.py` |
+| `python-google-adk` | `app.py` or `main.py` | `agent.py` |
+| `python-langchain` | `main.py` or `app.py` | `agent.py` |
+| `python-semantic-kernel` | `main.py` or `app.py` | `agent.py` |
 
 Always **Read** entry points fully before editing them.
 
@@ -313,7 +388,7 @@ To avoid re-running globs and greps when multiple skills run in the same session
 
 Before any detection, check for `.a365-workspace-detection.json` in the working directory:
 
-- If the file exists and `detectedAt` is within the last **60 minutes**, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it — skip all detection globs and greps.
+- If the file exists and `detectedAt` is within the last **60 minutes**, load `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and `authMode` from it — skip all detection globs and greps.
 - If the file is missing or older than 60 minutes, run full detection as normal.
 
 ### Writing the cache (after detection + user confirmation)
@@ -322,9 +397,11 @@ After detection completes and the user has confirmed the values, write `.a365-wo
 
 ```json
 {
-  "agentStack": "<Agent Framework | LangChain | OpenAI>",
+  "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
+  "agentType": "<ai-teammate | system-agent>",
+  "authMode": "<user-delegated | agentic-identity | S2S>",
   "detectedAt": "<ISO 8601 timestamp>"
 }
 ```
@@ -344,3 +421,157 @@ Detection order:
 
 If not found → warn the user and recommend running `/agent365:a365-setup` first.
 Write marker: `.a365obs-appid-warned` to avoid repeating the warning.
+
+---
+
+## Agent Type and Auth Mode Detection
+
+**Used by:** `instrument-observability`, `add-workiq-tools`
+
+**When to run:** After loading the detection cache, before Phase 1 detection.
+**Cache hit:** If `agentType` and `authMode` are already in the cache, confirm with user and skip questions.
+
+---
+
+### Stage 1 — What kind of agent is this?
+
+Pre-fill from cache if `usesTeamsOrCopilot` is already known:
+- `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate**, ask to confirm
+- `usesTeamsOrCopilot = 0` → suggest **B — System Agent**, ask to confirm
+
+```
+AskUserQuestion:
+  question: |
+    🤖 First — what kind of agent is this?
+
+    A — AI Teammate
+        Works alongside a user in Teams, Outlook, or other Microsoft 365 apps
+
+    B — System Agent
+        Runs on its own, no user actively in the loop
+  options:
+    - "A — AI Teammate"
+    - "B — System Agent"
+```
+
+Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
+
+---
+
+### Stage 2a — If AI Teammate
+
+```
+AskUserQuestion:
+  question: |
+    What does your agent need?
+
+    1 — Access data as the signed-in user
+        Agent acts on behalf of whoever is using it
+        → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+
+    2 — Its own persistent identity in your org
+        Agent has its own mailbox, name, and presence — like a digital employee
+        → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
+
+    ✅ Both options work with Observability and WorkIQ tools
+  options:
+    - "1 — Access data as the signed-in user"
+    - "2 — Its own persistent identity in your org"
+```
+
+| Choice | `authMode` |
+|--------|-----------|
+| Access data as the signed-in user | `user-delegated` |
+| Its own persistent identity in your org | `agentic-identity` |
+
+---
+
+### Stage 2b — If System Agent
+
+```
+AskUserQuestion:
+  question: |
+    What does your agent need?
+
+    1 — Runs autonomously
+        Agent authenticates as itself, no user required
+        → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/authentication-flow
+
+    2 — Assistive
+        Agent acts on behalf of the user triggering it
+        → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+
+    ✅ Both options work with Observability
+    ⚠️  "Runs autonomously" is not supported by WorkIQ tools (WorkIQ requires a user in the loop)
+  options:
+    - "1 — Runs autonomously"
+    - "2 — Assistive"
+```
+
+| Choice | `authMode` |
+|--------|-----------|
+| Runs autonomously | `S2S` |
+| Assistive | `agentic-identity` |
+
+---
+
+### Full result mapping
+
+| `agentType` | Choice | `authMode` |
+|------------|--------|-----------|
+| `ai-teammate` | Access data as the signed-in user | `user-delegated` |
+| `ai-teammate` | Its own persistent identity in your org | `agentic-identity` |
+| `system-agent` | Runs autonomously | `S2S` |
+| `system-agent` | Assistive | `agentic-identity` |
+
+---
+
+### Compatibility table
+
+| `authMode` | Observability | WorkIQ tools |
+|-----------|---------------|-------------|
+| `user-delegated` | ✅ Traces attributed to the signed-in user | ✅ M365 data scoped to the signed-in user |
+| `agentic-identity` | ✅ Traces attributed to agent's own identity | ✅ M365 data scoped to agent identity |
+| `S2S` | ✅ Traces attributed to agent (no user context) | ⚠️ Not supported — WorkIQ requires a user in the loop |
+
+---
+
+### Code impact
+
+All three `authMode` values use `authHandlerName: "AGENTIC"` in the SDK calls — the code is identical across modes. The identity difference comes from Azure AD provisioning and which token is in the incoming request.
+
+Add this inline comment wherever the auth handler is wired:
+
+```
+// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+```
+
+---
+
+### Prerequisite for `agentic-identity`
+
+An **agentic user** must be provisioned in Azure AD — a real user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet done, remind the user:
+
+> "Agentic identity requires an agentic user provisioned in Azure AD.
+> Follow the identity setup guide:
+> https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
+
+`user-delegated` has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `S2S` uses the agent blueprint's own credentials.
+
+---
+
+### WorkIQ guard for `S2S`
+
+If `authMode = S2S` and the current skill is `add-workiq-tools`, surface this before Phase 4:
+
+```
+⚠️  WorkIQ tools require a user in the loop.
+    "Runs autonomously" (S2S) is not compatible — WorkIQ delegates M365 permissions
+    on behalf of a user, and without a user token tool calls will fail at runtime.
+
+    Options:
+      1. Switch to Assistive (agentic-identity) — agent acts on behalf of the user triggering it
+      2. Proceed anyway — wiring will be added but tool calls will fail at runtime
+```
+
+If user switches: update `authMode = agentic-identity` and continue normally.

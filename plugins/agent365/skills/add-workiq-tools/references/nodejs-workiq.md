@@ -53,6 +53,13 @@ a365 develop get-token --resource mcp -o raw
 |---------|---------|---------|
 | `@microsoft/agents-a365-tooling` | Core MCP tooling runtime | `npm install @microsoft/agents-a365-tooling` |
 | `@microsoft/agents-a365-tooling-extensions-langchain` | LangChain adapter — `McpToolRegistrationService` | `npm install @microsoft/agents-a365-tooling-extensions-langchain` |
+| `@microsoft/agents-a365-tooling-extensions-openai` | OpenAI Agents SDK adapter | `npm install @microsoft/agents-a365-tooling-extensions-openai` |
+| `@microsoft/agents-a365-tooling-extensions-semantic-kernel` | Semantic Kernel adapter | `npm install @microsoft/agents-a365-tooling-extensions-semantic-kernel` |
+
+Install core + the adapter for your framework. Example for LangChain:
+```bash
+npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-langchain
+```
 
 ---
 

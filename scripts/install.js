@@ -222,6 +222,7 @@ console.log('    💡 "Run a365 setup for this agent"');
 console.log('    💡 "Discoverability setup for this agent"');
 console.log('    💡 "Add workiq tools to this agent"');
 console.log('    💡 "Instrument observability for this agent"');
+console.log('    💡 "Add A365 observability to this Python agent"');
 console.log('    💡 "Test this agent locally"\n');
 console.log('  Or invoke directly:');
 console.log(`    /agent365:make-ai-teammate`);
