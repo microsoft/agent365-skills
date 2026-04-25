@@ -279,7 +279,7 @@ Check which Agent 365 skills have already been applied to this agent and tell me
 ## What's Included
 
 - **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
-- **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, CopilotStudio, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
+- **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
 - **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs System Agent) and auth mode (user-delegated / agentic-identity / S2S); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured

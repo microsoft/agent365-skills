@@ -3,7 +3,7 @@ name: test-local
 description: >
   Runs an Agent 365 AI Teammate agent locally and opens AgentsPlayground for interactive
   local testing. Works with any AI Teammate stack — .NET (AgentFramework, Semantic Kernel),
-  Node.js (LangChain, OpenAI, Claude SDK, CopilotStudio, Semantic Kernel, Google ADK), or
+  Node.js (LangChain, OpenAI, Claude SDK, Semantic Kernel, Google ADK), or
   Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).
   Checks prerequisites (agentsplayground CLI, build tools), builds the agent, starts it in
   the background, and launches the playground UI pointed at the local endpoint.
@@ -110,7 +110,7 @@ AskUserQuestion:
   question: "I couldn't detect the agent type. What are you working with?"
   options:
     - .NET (AgentFramework or Semantic Kernel)
-    - Node.js (LangChain, OpenAI, Claude SDK, CopilotStudio, Semantic Kernel, or Google ADK)
+    - Node.js (LangChain, OpenAI, Claude SDK, Semantic Kernel, or Google ADK)
     - Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, or Google ADK)
 ```
 

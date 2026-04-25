@@ -20,9 +20,9 @@ This plugin instruments and configures A365 agents. It contains six skills:
 
 **Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
 
-**Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · CopilotStudio · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
+**Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
-**Supported agent stacks for `add-workiq-tools`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI · Claude SDK · CopilotStudio · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
+**Supported agent stacks for `add-workiq-tools`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
 **Skill dependency chain:**
 ```

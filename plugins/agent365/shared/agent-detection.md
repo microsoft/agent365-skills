@@ -10,7 +10,7 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 The skill MUST detect and store these three variables before asking ANY questions:
 
 1. **`agentStack`** — Agent stack/framework
-   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`, `Semantic Kernel`, `Claude`, `CopilotStudio`, `Google ADK`
+   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`, `Semantic Kernel`, `Claude`, `Google ADK`
    - Detection: See detection logic below
 
 2. **`programmingLanguage`** — Programming language
@@ -32,7 +32,6 @@ Semantic Kernel  → .csproj + Microsoft.SemanticKernel
 
 # Node.js ────────────────────────────────────────────────────────────────── (check in order)
 LangChain        → package.json + @langchain/* OR "langchain"
-CopilotStudio    → package.json + @microsoft/agents-copilotstudio-client
 OpenAI           → package.json + @openai/agents OR "openai" (no LangChain)
 Claude           → package.json + @anthropic-ai/sdk OR "anthropic"
 Semantic Kernel  → package.json + @microsoft/semantic-kernel
@@ -46,8 +45,6 @@ OpenAI           → requirements.txt/pyproject.toml + openai-agents OR openai (
 Claude           → requirements.txt/pyproject.toml + claude-agent-sdk OR anthropic
 Semantic Kernel  → requirements.txt/pyproject.toml + semantic-kernel
 Google ADK       → requirements.txt/pyproject.toml + google-adk
-CopilotStudio    → requirements.txt/pyproject.toml + botframework-connector
-                   OR .env containing COPILOT_STUDIO_*
 ```
 
 ### Programming Language Detection
@@ -88,7 +85,7 @@ BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 Step 1: Unsupported? (M365/Teams/BizChat non-AI-teammate) → STOP
 Step 2: Digital worker?                                    → Warn, special publish path
 Step 3: Supported type? (dotnet-agentframework, dotnet-semantic-kernel, nodejs-langchain, python-agentframework) → Full support
-Step 4: Near-match? (nodejs-openai, nodejs-claude, nodejs-copilotstudio, nodejs-google-adk, nodejs-semantic-kernel, python-openai, python-claude, python-google-adk, python-langchain, python-semantic-kernel, python-copilotstudio) → Best-effort + confirm
+Step 4: Near-match? (nodejs-openai, nodejs-claude, nodejs-google-adk, nodejs-semantic-kernel, python-openai, python-claude, python-google-adk, python-langchain, python-semantic-kernel) → Best-effort + confirm
 Step 5: Unknown (no signals)                               → Ask user
 ```
 
@@ -234,7 +231,6 @@ Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/python
 |--------------|--------------------------------|-----------------|
 | `nodejs-openai` | `@openai/agents` or `"openai"` (no LangChain) | `nodejs/openai` |
 | `nodejs-claude` | `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
-| `nodejs-copilotstudio` | `@microsoft/agents-copilotstudio-client` | `nodejs/copilot-studio` |
 | `nodejs-semantic-kernel` | `@microsoft/semantic-kernel` | — |
 | `nodejs-google-adk` | `@google/generative-ai` or `@google-cloud/vertexai` or `@google/adk` | — |
 
@@ -247,7 +243,6 @@ Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/python
 | `python-google-adk` | `google-adk` | `python/google-adk` |
 | `python-langchain` | `langchain` | — |
 | `python-semantic-kernel` | `semantic-kernel` | — |
-| `python-copilotstudio` | `botframework-connector` or `.env` `COPILOT_STUDIO_*` | — |
 
 For all P2 types:
 1. Show the user the detected type and ask for confirmation
@@ -273,7 +268,6 @@ AskUserQuestion:
     - Node.js — LangChain
     - Node.js — OpenAI Agents SDK
     - Node.js — Claude (Anthropic)
-    - Node.js — Copilot Studio
     - Node.js — Google ADK
     - Python — Agent Framework
     - Python — LangChain
@@ -353,7 +347,6 @@ If all four signals are true and the user hasn't specified AI Teammate intent, s
 | `nodejs-langchain` | `src/index.ts` or `index.ts` | `src/agentApp.ts`, `src/handler.ts` |
 | `nodejs-openai` | `index.ts` or `index.js` | `src/agent.ts` |
 | `nodejs-claude` | `index.ts` or `index.js` | `src/agent.ts` |
-| `nodejs-copilotstudio` | `index.ts` or `index.js` | `src/client.ts` |
 | `nodejs-semantic-kernel` | `index.ts` or `index.js` | `src/agent.ts` |
 | `nodejs-google-adk` | `index.ts` or `index.js` | `src/agent.ts` |
 | `python-agentframework` | `app.py` or `main.py` | `agent.py` |
@@ -362,7 +355,6 @@ If all four signals are true and the user hasn't specified AI Teammate intent, s
 | `python-google-adk` | `app.py` or `main.py` | `agent.py` |
 | `python-langchain` | `main.py` or `app.py` | `agent.py` |
 | `python-semantic-kernel` | `main.py` or `app.py` | `agent.py` |
-| `python-copilotstudio` | `app.py` or `main.py` | `bot.py` |
 
 Always **Read** entry points fully before editing them.
 
@@ -405,7 +397,7 @@ After detection completes and the user has confirmed the values, write `.a365-wo
 
 ```json
 {
-  "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | CopilotStudio | Google ADK>",
+  "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
   "agentType": "<ai-teammate | system-agent>",
