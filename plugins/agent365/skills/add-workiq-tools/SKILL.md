@@ -1,9 +1,9 @@
 ---
 name: add-workiq-tools
 description: >
-  Adds WorkIQ MCP tool servers to an existing .NET AgentFramework or Node.js LangChain agent
+  Adds WorkIQ MCP tool servers to an existing .NET AgentFramework, Node.js, or Python agent
   using the A365 CLI. Runs a365 develop list-available to show the catalog, adds selected servers
-  via a365 develop add-mcp-servers (which writes ToolingManifest.json), wires GetMcpToolsAsync
+  via a365 develop add-mcp-servers (which writes ToolingManifest.json), wires McpToolRegistrationService
   in the agent code, and guides the user through the permissions handoff. Non-destructive and idempotent.
 compatibility:
   - claude-code
@@ -20,14 +20,14 @@ hooks:
     - type: prompt
       prompt: |
         Before ending, verify ALL of the following:
-        1. Agent type was correctly detected (.NET AgentFramework or Node.js LangChain).
+        1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
         2. a365 develop list-available was run and results were shown to the user.
         3. a365 develop add-mcp-servers was run for the selected WorkIQ servers.
         4. ToolingManifest.json now contains the selected WorkIQ server entries.
-        5. GetMcpToolsAsync (or equivalent) is wired in the agent code.
+        5. McpToolRegistrationService (or equivalent) is wired in the agent code.
         6. User was informed about the permissions step (a365 setup permissions mcp or a365 setup all).
         7. User was shown how to get a dev token with a365 develop get-token.
-        8. Build/compile succeeds.
+        8. Build/compile succeeds (dotnet build, npm run build, or pip install check).
         If any item failed or was skipped, return {"ok": false, "reason": "<specific item>"}.
         If all items completed successfully, return {"ok": true}.
       timeout: 30000
@@ -130,11 +130,13 @@ TaskCreate: "Validate build"
 
 2. Run detection:
    - **Glob** `**/*.csproj` + **Grep** `AgentApplication` in `**/*.cs` → .NET AgentFramework
-   - **Glob** `**/package.json` + **Grep** `@langchain` or `langchain` → Node.js LangChain
+   - **Glob** `**/package.json` + `.ts`/`.js` files present → Node.js
+   - **Glob** `**/*.py` or `requirements.txt` / `pyproject.toml` → Python
 
 3. Load reference patterns:
    - If .NET: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/dotnet-workiq.md`
    - If Node.js: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md`
+   - If Python: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/python-workiq.md`
 
 ### 1.2 Check prerequisites
 
@@ -335,6 +337,58 @@ try {
 
 Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
 
+### For Python
+
+#### 4A — Install tooling packages (if not present)
+
+**Grep** `microsoft-agents-a365-tooling` in `requirements.txt` or `pyproject.toml`. If missing:
+```bash
+pip install microsoft-agents-a365-tooling
+```
+
+Then install the extension for the detected framework:
+```bash
+# AgentFramework
+pip install microsoft-agents-a365-tooling-extensions-agent-framework
+# LangChain
+pip install microsoft-agents-a365-tooling-extensions-langchain
+# OpenAI Agents SDK
+pip install microsoft-agents-a365-tooling-extensions-openai
+# Semantic Kernel
+pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
+```
+
+Update `requirements.txt` or `pyproject.toml` to record the installed packages.
+
+#### 4B — Wire McpToolRegistrationService in agent code
+
+**Grep** `McpToolRegistrationService` or `get_mcp_tools_async` — if already present, skip.
+
+Follow the pattern for the detected framework in `python-workiq.md`:
+
+**AgentFramework** — add a module-level singleton and call `get_mcp_tools_async` inside the message handler:
+```python
+# A365 WorkIQ — added by add-workiq-tools skill
+from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService
+
+_tool_service = McpToolRegistrationService()
+
+# Inside on_message_activity (or equivalent):
+# A365 WorkIQ — added by add-workiq-tools skill
+# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+work_iq_tools = await _tool_service.get_mcp_tools_async(
+    agent_id,
+    turn_context.activity.caller_id,  # "AGENTIC" handler for all authMode values
+    "AGENTIC",
+    turn_context
+)
+# Pass work_iq_tools to your LLM/function-calling pipeline
+```
+
+**LangChain / other frameworks** — see `python-workiq.md` for the `add_tool_servers_to_agent` pattern. Always catch exceptions and fall back gracefully.
+
+Mark all new lines: `# A365 WorkIQ — added by add-workiq-tools skill`
+
 **Mark task complete: "Wire GetMcpToolsAsync in agent code"**
 
 ---
@@ -423,6 +477,13 @@ BEARER_TOKEN=<token-from-get-token>
 SKIP_TOOLING_ON_ERRORS=true
 ```
 
+**For Python** — add to `.env`:
+```dotenv
+BEARER_TOKEN=<token-from-get-token>
+SKIP_TOOLING_ON_ERRORS=true
+ENV=development
+```
+
 Tell the user: tokens expire — re-run `a365 develop get-token` to refresh.
 
 **Mark task complete: "Set up dev token for testing"**
@@ -439,12 +500,21 @@ Tell the user: tokens expire — re-run `a365 develop get-token` to refresh.
 dotnet build
 ```
 
-### For Node.js LangChain
+### For Node.js
 
 ```bash
 npm install
 npm run build || npm run compile || echo "No build script — skipping compile check"
 ```
+
+### For Python
+
+```bash
+pip install -r requirements.txt || pip install .
+python -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')"
+```
+
+Adjust the import path to match the installed framework extension (e.g. `.langchain`, `.openai`).
 
 If build fails, present error output with suggested fixes. Do not revert changes.
 
@@ -469,7 +539,7 @@ If yes, invoke the `test-local` skill.
 ```
 ✅ WorkIQ tools added!
 
-**Agent type:** [.NET AgentFramework | Node.js LangChain]
+**Agent type:** [.NET AgentFramework | Node.js | Python]
 **MCP servers added:** [list of server names from a365 develop list-configured]
 **ToolingManifest.json:** updated ✅
 **Agent code wired:** GetMcpToolsAsync ✅
@@ -496,7 +566,7 @@ If yes, invoke the `test-local` skill.
 | `a365 develop list-available` fails | Check a365 CLI authentication; run `a365 auth login` |
 | Server name not found in catalog | Show user the `list-available` output and ask to re-select |
 | `add-mcp-servers` fails | Run `a365 develop list-available` again to verify exact server name spelling |
-| Tooling package install fails | Check NuGet/npm registry access; verify .NET SDK is installed |
+| Tooling package install fails | Check NuGet/npm/pip registry access; verify runtime is installed |
 | Build fails after wiring | Do not revert; show error and offer to debug |
 | Token errors at runtime | Run `a365 develop get-token`; set env vars; enable `SKIP_TOOLING_ON_ERRORS=true` |
 
@@ -517,4 +587,5 @@ On subsequent runs:
 - **Agent Detection:** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md`
 - **.NET Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/dotnet-workiq.md`
 - **Node.js Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md`
+- **Python Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/python-workiq.md`
 - **CLI Reference:** https://learn.microsoft.com/en-us/microsoft-agent-365/developer/reference/cli/develop

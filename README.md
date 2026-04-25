@@ -138,7 +138,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
 (which updates `ToolingManifest.json`), wires `McpToolRegistrationService` in the agent code,
-and guides the permissions handoff to your Global Administrator.
+and guides the permissions handoff to your Global Administrator. Supports .NET, Node.js, and Python.
 
 Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilot, Dataverse/Dynamics 365.
 

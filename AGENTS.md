@@ -78,7 +78,8 @@ plugins/agent365/
 │   │   ├── SKILL.md              # WorkIQ MCP tool wiring
 │   │   └── references/
 │   │       ├── dotnet-workiq.md  # .NET MCP tool patterns
-│   │       └── nodejs-workiq.md  # Node.js MCP tool patterns
+│   │       ├── nodejs-workiq.md  # Node.js MCP tool patterns
+│   │       └── python-workiq.md  # Python MCP tool patterns
 │   └── test-local/
 │       └── SKILL.md              # AgentsPlayground local testing
 ├── shared/
