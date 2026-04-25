@@ -43,8 +43,9 @@ pip install microsoft-agents-a365-observability-extensions-langchain
 from microsoft_agents_a365.observability.core import configure
 
 def token_resolver(agent_id: str, tenant_id: str) -> str | None:
-    # Implement secure token retrieval here
-    return "Bearer <token>"
+    # Implement secure token retrieval here.
+    # Return the raw access token only — do not include the "Bearer " prefix.
+    return "<token>"
 
 configure(
     service_name="my-agent-service",
@@ -79,7 +80,7 @@ configure(
 ```python
 # authMode: S2S — service principal, no user OBO.
 # Token must be acquired via MSAL client credentials, NOT AgenticTokenCache.
-import asyncio
+import os
 from msal import ConfidentialClientApplication
 from microsoft_agents_a365.observability.core import configure, Agent365ExporterOptions
 
@@ -402,15 +403,16 @@ AgentFrameworkInstrumentor().instrument()
 ### LangChain
 
 ```python
-from microsoft_agents_a365.observability.core.config import configure
-from microsoft_agents_a365.observability.extensions.langchain import CustomLangChainInstrumentor
+from microsoft_agents_a365.observability.core import configure
+from microsoft_agents_a365.observability.extensions.langchain import LangChainInstrumentor
 
 configure(
     service_name="my-langchain-agent",
     service_namespace="ai.agents"
 )
 
-CustomLangChainInstrumentor()
+instrumentor = LangChainInstrumentor()
+instrumentor.instrument()
 # Your LangChain code is now automatically traced
 ```
 

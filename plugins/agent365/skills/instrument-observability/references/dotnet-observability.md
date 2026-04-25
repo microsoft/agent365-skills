@@ -32,6 +32,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Runtime
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
 
 # Required for S2S agents (authMode: S2S) — FMI token chain
+dotnet add package Microsoft.Agents.A365.Observability.Hosting
 dotnet add package Azure.Identity
 dotnet add package Microsoft.Identity.Client
 
@@ -579,7 +580,7 @@ To investigate export failures, enable verbose logging:
 
 ```json
 {
-  "EnableAgent365Exporter": "True",
+  "EnableAgent365Exporter": true,
   "Logging": {
     "LogLevel": {
       "Microsoft.Agents.A365.Observability": "Debug"

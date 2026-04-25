@@ -75,7 +75,7 @@ Create a module-level `McpToolRegistrationService` singleton, then call
 ```python
 import os
 from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService
-from microsoft.agents.hosting import TurnContext
+from microsoft_agents_hosting import TurnContext
 
 # Module-level singleton — created once, reused across turns
 # A365 WorkIQ — added by add-workiq-tools skill
@@ -110,7 +110,7 @@ Key points:
 ```python
 import os
 from microsoft_agents_a365.tooling.extensions.langchain import McpToolRegistrationService
-from microsoft.agents.hosting import TurnContext
+from microsoft_agents_hosting import TurnContext
 
 # Module-level singleton
 # A365 WorkIQ — added by add-workiq-tools skill

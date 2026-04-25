@@ -204,9 +204,13 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    pip install microsoft-agents-a365-observability-extensions-langchain
    ```
 
-3. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
+3. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or `pyproject.toml` automatically. Explicitly add the installed packages:
+   - `requirements.txt` project: append each package name (e.g. `microsoft-agents-a365-observability`)
+   - `pyproject.toml` project: add under `[project] dependencies` or run `uv add <package> --prerelease` / `poetry add <package>`
 
-4. **TaskUpdate** — Mark complete.
+4. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
+
+5. **TaskUpdate** — Mark complete.
 
 ---
 
@@ -402,7 +406,9 @@ Follow the reference patterns in `python-observability.md` for:
 - **`ExecuteToolScope`** — wrap each tool call
 - **`OutputScope`** — for async response scenarios
 
-All new lines marked with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+All new lines marked with the language-appropriate comment:
+- C# / JavaScript / TypeScript: `// A365 Observability — best-effort instrumentation (verify against official sample)`
+- Python: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
 **TaskUpdate** — Mark complete.
 
@@ -417,7 +423,7 @@ All new lines marked with: `// A365 Observability — best-effort instrumentatio
 1. **Read** `appsettings.json` (or `appsettings.Development.json`).
 
 2. **Check for existing `a365 setup` configuration:**
-   - If `EnableAgent365Exporter` exists → **preserve** it (do not change)
+   - `EnableAgent365Exporter` — always set to `true` in `appsettings.json` (the Development override sets it to `false`; `a365 setup` may have written `false` here, which this skill corrects)
    - If `Agent365Observability` section exists → **preserve** all existing values (AgentBlueprintId, TenantId, AgentName, AgentDescription)
    - If missing → add with defaults
 

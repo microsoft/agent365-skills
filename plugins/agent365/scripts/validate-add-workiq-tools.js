@@ -22,7 +22,8 @@ function findFiles(dir, extensions, maxDepth = 5) {
     try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj') continue;
+      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj' ||
+          entry.name === 'venv' || entry.name === '__pycache__' || entry.name === 'site-packages') continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full, depth + 1);
       else if (extensions.some(e => entry.name === e || entry.name.endsWith(e))) results.push(full);
@@ -81,8 +82,7 @@ const csprojFiles = findFiles(cwd, ['.csproj']);
 const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
 const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
   f.endsWith('package.json') && !f.includes('node_modules'));
-const pyFiles     = findFiles(cwd, ['.py']).filter(f =>
-  !f.includes('__pycache__') && !f.includes('.venv') && !f.includes('/venv/'));
+const pyFiles     = findFiles(cwd, ['.py']);
 const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
 
 const isDotnet  = csprojFiles.length > 0;

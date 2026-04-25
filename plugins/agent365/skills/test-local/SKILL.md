@@ -188,7 +188,12 @@ agentsplayground --version
 
 If found, report the version and continue.
 
-**If not found, install immediately without prompting the user:**
+**If not found**, ask the user:
+
+> "AgentsPlayground CLI is not installed. Install it now with `npm install -g @microsoft/agentsplayground`?"
+> Options: **Yes, install it** / **No, I'll install it manually**
+
+If the user chooses **Yes**:
 
 ```bash
 npm install -g @microsoft/agentsplayground
@@ -200,7 +205,7 @@ Verify the install succeeded:
 agentsplayground --version
 ```
 
-If installation fails, stop and tell the user:
+If installation fails or the user chooses **No**, stop and tell the user:
 > "Install agentsplayground manually with: `npm install -g @microsoft/agentsplayground`
 > then re-run this skill."
 
