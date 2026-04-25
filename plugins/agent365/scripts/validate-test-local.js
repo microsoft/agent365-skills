@@ -84,25 +84,27 @@ if (!playgroundVersion) {
 }
 
 // ── Check build tools are available ─────────────────────────────────────────
+// The skill handles missing build tools interactively (Phase 1.3).
+// Validator only blocks if the tool is still missing after the skill ran.
 
 if (isDotnet) {
   const dotnetVersion = run('dotnet --version');
   if (!dotnetVersion) {
-    issues.push('dotnet CLI not found. Install .NET 8.0+ from https://dotnet.microsoft.com/download');
+    issues.push('.NET SDK not found — Phase 1.3 should have installed it. Run: winget install Microsoft.DotNet.SDK.8 (Windows) or brew install dotnet (macOS), restart your terminal, then re-run the skill.');
   }
 }
 
 if (isNodejs) {
   const nodeVersion = run('node --version');
   if (!nodeVersion) {
-    issues.push('node not found. Install Node.js 18+ from https://nodejs.org');
+    issues.push('Node.js not found — Phase 1.3 should have installed it. Run: winget install OpenJS.NodeJS.LTS (Windows) or brew install node (macOS), restart your terminal, then re-run the skill.');
   }
 }
 
 if (isPython) {
   const pythonVersion = run('python --version') || run('python3 --version');
   if (!pythonVersion) {
-    issues.push('python not found. Install Python 3.11+ from https://python.org');
+    issues.push('Python not found — Phase 1.3 should have installed it. Run: winget install Python.Python.3.11 (Windows) or brew install python@3.11 (macOS), restart your terminal, then re-run the skill.');
   }
 }
 

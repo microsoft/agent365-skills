@@ -70,8 +70,8 @@ All actions are **read-only against your codebase** — no code is modified.
 ## Phase 0 — Create Task List
 
 ```
-TaskCreate: "Detect agent type"
-TaskCreate: "Check and install agentsplayground"
+TaskCreate: "Detect agent type and verify build tools"
+TaskCreate: "Install agentsplayground"
 TaskCreate: "Build agent"
 TaskCreate: "Launch agent and AgentsPlayground"
 TaskCreate: "Guide local test"
@@ -81,7 +81,7 @@ TaskCreate: "Guide local test"
 
 ## Phase 1 — Detect Agent Type
 
-**Mark task in progress: "Detect agent type"**
+**Mark task in progress: "Detect agent type and verify build tools"**
 
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` for detection heuristics.
 
@@ -114,43 +114,99 @@ AskUserQuestion:
     - Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, or Google ADK)
 ```
 
-**Mark task complete: "Detect agent type"**
+### 1.3 — Check language build tool
+
+After detection, immediately verify the required build tool is installed:
+
+**For .NET** — check `dotnet --version`. If missing:
+```
+AskUserQuestion:
+  question: "dotnet SDK 8.0+ is required but not found. Install it now?"
+  options:
+    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "No — I'll install manually and re-run"
+```
+If yes, attempt:
+```bash
+# Windows
+winget install Microsoft.DotNet.SDK.8
+# macOS
+brew install dotnet
+```
+After install, run `dotnet --version` to confirm. If it still fails, show the download link and stop:
+> Download from: https://dotnet.microsoft.com/download — restart your terminal after installing, then re-run this skill.
+
+**For Node.js** — check `node --version`. If missing:
+```
+AskUserQuestion:
+  question: "Node.js 18+ is required but not found. Install it now?"
+  options:
+    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "No — I'll install manually and re-run"
+```
+If yes, attempt:
+```bash
+# Windows
+winget install OpenJS.NodeJS.LTS
+# macOS
+brew install node
+```
+After install, run `node --version` to confirm. If it still fails, show the download link and stop:
+> Download from: https://nodejs.org — restart your terminal after installing, then re-run this skill.
+
+**For Python** — check `python --version` (or `python3 --version`). If missing:
+```
+AskUserQuestion:
+  question: "Python 3.11+ is required but not found. Install it now?"
+  options:
+    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "No — I'll install manually and re-run"
+```
+If yes, attempt:
+```bash
+# Windows
+winget install Python.Python.3.11
+# macOS
+brew install python@3.11
+```
+After install, run `python --version` to confirm. If it still fails, show the download link and stop:
+> Download from: https://python.org — restart your terminal after installing, then re-run this skill.
+
+**Mark task complete: "Detect agent type and verify build tools"**
 
 ---
 
-## Phase 2 — Check and Install agentsplayground
+## Phase 2 — Install agentsplayground
 
-**Mark task in progress: "Check and install agentsplayground"**
+**Mark task in progress: "Install agentsplayground"**
 
-### 2.1 — Check if installed
+Check if installed:
 
 ```bash
 agentsplayground --version
 ```
 
-If the command succeeds, report the version and continue.
+If found, report the version and continue.
 
-### 2.2 — Install if missing
-
-If not found:
+**If not found, install immediately without prompting the user:**
 
 ```bash
 npm install -g @microsoft/agentsplayground
 ```
 
-After install, verify:
+Verify the install succeeded:
 
 ```bash
 agentsplayground --version
 ```
 
-If installation fails, report the error and tell the user:
+If installation fails, stop and tell the user:
 > "Install agentsplayground manually with: `npm install -g @microsoft/agentsplayground`
 > then re-run this skill."
 
 Do NOT continue if agentsplayground cannot be confirmed installed.
 
-**Mark task complete: "Check and install agentsplayground"**
+**Mark task complete: "Install agentsplayground"**
 
 ---
 
