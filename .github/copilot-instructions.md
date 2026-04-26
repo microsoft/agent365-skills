@@ -23,7 +23,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 1. Detects the agent language/framework (Node.js LangChain/OpenAI/Claude SDK, .NET AgentFramework, Python AgentFramework)
 2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python)
 3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
-4. Writes an empty `ToolingManifest.json` and all required environment variables
+4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables
 5. Offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps
 
 **Reference patterns:**
