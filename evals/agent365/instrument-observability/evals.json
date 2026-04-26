@@ -14,7 +14,7 @@
         "Phase 1: references/dotnet-observability.md is read for patterns",
         "Phase 1: Entry point (Program.cs) is identified",
         "Phase 1: Message handler file is identified",
-        "Phase 0.5: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0.5: Agent type question presented — AI Teammate (Digital Worker) or Non-DW",
         "Phase 0.5: Auth mode question presented based on agent type selection",
         "Phase 0.5: agentType and authMode determined and stored in .a365-workspace-detection.json",
         "Phase 0.5: authMode is one of: user-delegated, agentic-identity, or S2S",
@@ -41,7 +41,7 @@
         "Phase 6: Agent365Observability section (AgentBlueprintId, TenantId, AgentName, AgentDescription) and Logging.LogLevel entries added",
         "Phase 7: dotnet build is run to validate",
         "Phase 7: Build succeeds without errors",
-        "Phase 8: Final summary lists agent kind (AI Teammate or System Agent), authMode, packages installed, files modified",
+        "Phase 8: Final summary lists agent kind (AI Teammate (Digital Worker) or Non-DW), authMode, packages installed, files modified",
         "Phase 8: User is reminded to update observability endpoint in config",
         "Phase 8: User is reminded to review against official samples"
       ]
@@ -58,7 +58,7 @@
         "Phase 1: references/nodejs-observability.md is read for patterns",
         "Phase 1: Entry point (index.ts, index.js, app.ts, or app.js) is identified",
         "Phase 1: Message handler location is identified",
-        "Phase 0.5: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0.5: Agent type question presented — AI Teammate (Digital Worker) or Non-DW",
         "Phase 0.5: Auth mode question presented based on agent type selection",
         "Phase 0.5: agentType and authMode determined and stored in .a365-workspace-detection.json",
         "Phase 0.5: authMode is one of: user-delegated, agentic-identity, or S2S",
@@ -86,7 +86,7 @@
         "Phase 7: npm install is run to ensure new packages are installed",
         "Phase 7: npm run build (or compile) is attempted",
         "Phase 7: Build succeeds or no build script exists (both acceptable)",
-        "Phase 8: Final summary lists agent kind (AI Teammate or System Agent), authMode, packages installed, files modified",
+        "Phase 8: Final summary lists agent kind (AI Teammate (Digital Worker) or Non-DW), authMode, packages installed, files modified",
         "Phase 8: User is reminded to update observability endpoint in .env",
         "Phase 8: User is reminded to review against official samples"
       ]
@@ -160,7 +160,7 @@
         "Phase 1: references/python-observability.md is read for patterns",
         "Phase 1: Entry point (main.py, app.py, or similar) is identified",
         "Phase 1: Message handler location is identified",
-        "Phase 0.5: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0.5: Agent type question presented — AI Teammate (Digital Worker) or Non-DW",
         "Phase 0.5: Auth mode question presented based on agent type selection",
         "Phase 0.5: agentType and authMode determined and stored in .a365-workspace-detection.json",
         "Phase 0.5: authMode is one of: user-delegated, agentic-identity, or S2S",
@@ -186,7 +186,7 @@
         "Phase 6: .env.example is also updated if it exists",
         "Phase 7: python -c import check run to verify packages are installed",
         "Phase 7: Import check succeeds",
-        "Phase 8: Final summary lists agent kind (AI Teammate or System Agent), authMode, packages installed, files modified",
+        "Phase 8: Final summary lists agent kind (AI Teammate (Digital Worker) or Non-DW), authMode, packages installed, files modified",
         "Phase 8: User is reminded to set ENABLE_A365_OBSERVABILITY_EXPORTER=true in production",
         "Phase 8: User is reminded to review against official samples"
       ]
@@ -215,7 +215,7 @@
     {
       "id": 8,
       "prompt": "Instrument observability for this agent",
-      "description": "Test on a .NET System Agent — authMode: S2S (FMI token chain, no user OBO)",
+      "description": "Test on a .NET Non-DW agent — authMode: S2S (FMI token chain, no user OBO)",
       "expected_output": "The skill detects .NET, determines agentType as system-agent and authMode as S2S, installs Microsoft.Agents.A365.Observability.Runtime plus Azure.Identity and Microsoft.Identity.Client, creates Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs scaffold files, wires AddAgent365Observability() and AddA365Tracing() in Program.cs (NOT AddAgenticTracingExporter), injects Agent365ObservabilityContext into the agent class with no per-turn RegisterObservability() call, uses InvokeAgentScope.Start().FromTurnContext() for baggage, updates appsettings.json with EnableAgent365Exporter: true including ClientId, and validates the build passes.",
       "files": [],
       "expectations": [
@@ -240,7 +240,7 @@
         "Phase 6: Agent365Observability section includes both ClientId and ClientSecret fields for FMI chain (MSI in prod, secret as local-dev fallback)",
         "Phase 6: appsettings.Development.json updated with EnableAgent365Exporter: false",
         "Phase 7: dotnet build is run and succeeds",
-        "Phase 8: Final summary lists agent kind (System Agent), authMode (S2S), scaffold files created, packages installed",
+        "Phase 8: Final summary lists agent kind (Non-DW agent), authMode (S2S), scaffold files created, packages installed",
         "Phase 8: User is reminded to populate Agent365Observability:ClientId and ClientSecret in appsettings"
       ]
     }
