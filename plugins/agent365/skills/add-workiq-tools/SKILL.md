@@ -40,12 +40,15 @@ hooks:
 # Add WorkIQ Tools (A365 CLI + SDK)
 
 > **Trigger phrases** — any of these will activate this skill automatically:
-> - "add workiq tools"
-> - "add a365 tools"
+> - "add workiq tools to this agent"
 > - "add work intelligence tools"
-> - "add microsoft 365 tools"
-> - "wire up workiq"
-> - "add mcp tools to this agent"
+> - "give this agent access to m365 data"
+> - "give my agent access to email and calendar"
+> - "add sharepoint access to this agent"
+> - "add work iq mail to this agent"
+> - "add work iq calendar to this agent"
+> - "let this agent read emails and calendar events"
+> - "wire up workiq mcp tools"
 
 ---
 

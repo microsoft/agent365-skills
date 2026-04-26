@@ -40,11 +40,13 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill automatically:
 > - "test this agent locally"
-> - "run agent locally"
+> - "run my agent locally"
 > - "open agentsplayground"
-> - "launch local test session"
-> - "local test this agent"
-> - "test without deploying"
+> - "launch agentsplayground"
+> - "start a local test session"
+> - "debug this agent locally"
+> - "test my agent without deploying to teams"
+> - "spin up a local test"
 
 ---
 

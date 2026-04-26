@@ -39,9 +39,14 @@ hooks:
 # Make A365 Agent
 
 > **Trigger phrases** — any of these will activate this skill:
-> "provision agent with a365", "run a365 setup all", "create a365 blueprint",
-> "discoverability setup", "observability setup", "register agent for discoverability",
-> "set up agent for observability", "add workiq to this agent", "make this a custom engine agent"
+> - "provision this agent with agent 365"
+> - "register this agent for discoverability"
+> - "make this agent findable in the m365 catalog"
+> - "discoverability setup for this agent"
+> - "make this a custom engine agent"
+> - "run a365 setup all"
+> - "create a365 blueprint for this agent"
+> - "set up this agent for observability only"
 
 > **What this skill does:** Provisions your agent with Agent 365 — creates the Blueprint
 > and Entra ID permissions. After setup, always offers observability

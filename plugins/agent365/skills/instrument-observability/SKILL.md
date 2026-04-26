@@ -45,12 +45,15 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill automatically:
 > - "instrument observability for this agent"
-> - "add a365 observability"
-> - "enable tracing"
-> - "add otel"
-> - "observe this agent"
-> - "add observability to my python agent"
-> - "instrument for store publishing"
+> - "add a365 observability to this agent"
+> - "add observability to this agent"
+> - "set up tracing for this agent"
+> - "make this agent visible in microsoft defender"
+> - "enable agent 365 telemetry"
+> - "wire up opentelemetry for this agent"
+> - "add observability to this .net agent"
+> - "add observability to this node.js agent"
+> - "add a365 observability to this python agent"
 
 ---
 

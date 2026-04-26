@@ -62,13 +62,14 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill:
 > - "make this agent an ai teammate"
-> - "transform agent to ai teammate"
-> - "add ai teammate hosting"
-> - "wire up m365 hosting"
-> - "add agent365 hosting layer"
-> - "convert agent to teams agent"
-> - "add cloudadapter to this agent"
-> - "make this agent work with teams"
+> - "transform this agent into an ai teammate"
+> - "publish this agent to teams"
+> - "make this agent available in microsoft teams"
+> - "publish this agent to microsoft copilot"
+> - "add teams support to this agent"
+> - "set up ai teammate hosting for this agent"
+> - "convert this agent to a teams agent"
+> - "make this agent work with microsoft 365"
 
 > **What this skill does:** It wraps your existing LLM logic with the Microsoft Agent 365
 > AI Teammate layer — hosting, routing, and notifications. Your existing LLM code (models,

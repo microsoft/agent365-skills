@@ -13,11 +13,26 @@
  *   2  → block (Claude is told the reason and must stop the tool call)
  */
 
+const fs   = require('fs');
 const path = require('path');
 
-const cwd        = process.cwd();
+// Resolve symlinks and get the OS-canonical path (handles Windows case-insensitivity).
+// For new files that don't exist yet, resolve the parent directory instead.
+function safeRealpath(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    try {
+      return path.join(fs.realpathSync.native(path.dirname(p)), path.basename(p));
+    } catch {
+      return p;
+    }
+  }
+}
+
+const cwd        = safeRealpath(process.cwd());
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT
-  ? path.resolve(process.env.CLAUDE_PLUGIN_ROOT)
+  ? safeRealpath(path.resolve(process.env.CLAUDE_PLUGIN_ROOT))
   : null;
 
 let raw = '';
@@ -35,7 +50,7 @@ process.stdin.on('end', () => {
   const filePath = tool_input && (tool_input.file_path || tool_input.path);
   if (!filePath) process.exit(0);
 
-  const resolved = path.resolve(filePath);
+  const resolved = safeRealpath(path.resolve(filePath));
 
   // Block writes into the plugin directory
   if (pluginRoot && resolved.startsWith(pluginRoot + path.sep)) {
