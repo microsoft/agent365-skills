@@ -177,7 +177,7 @@ None during code generation — all automatic
 
 #### Phase 7: Manifest Creation
 **System Actions:**
-- Creates empty `ToolingManifest.json`
+- Creates `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers
 - Notifies user that WorkIQ tools can be added via `add-workiq-tools` skill
 
 #### Phase 8-9: Build Validation
@@ -500,7 +500,7 @@ To configure observability correctly, I need to know:
 
 1. What kind of agent is this?
    • AI Teammate — works with Teams/Copilot, has Teams UI
-   • System Agent — backend service, no Teams UI
+   • Standard Agent (Non Digital Worker) — backend service, no Teams UI
 
 2. How does this agent authenticate? (based on your choice above)
    
@@ -508,7 +508,7 @@ To configure observability correctly, I need to know:
      • user-delegated — uses signed-in user's identity (OBO)
      • agentic-identity — agent has its own Azure AD user account
    
-   For System Agent:
+   For Standard Agent (Non Digital Worker):
      • agentic-identity — agent as assistive service with user context
      • S2S — autonomous service, no user token
 ```
@@ -772,7 +772,7 @@ Reply **yes** to confirm, or describe corrections.
 ```
 1. Agent kind?
    • AI Teammate
-   • System Agent
+   • Standard Agent (Non Digital Worker)
 
 2. Auth mode? (based on agent kind)
    • user-delegated / agentic-identity / S2S
@@ -1238,7 +1238,7 @@ To test again:
 
 **Result:** Fully instrumented AI Teammate ready for Teams deployment
 
-### Journey 2: System Agent with Observability Only
+### Journey 2: Standard Agent (Non Digital Worker) with Observability Only
 1. User: "run a365 setup"
 2. System detects agent
 3. User selects "2. Observability"

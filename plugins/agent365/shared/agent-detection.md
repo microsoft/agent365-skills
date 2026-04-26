@@ -20,8 +20,8 @@ The skill MUST detect and store these three variables before asking ANY question
 3. **`usesTeamsOrCopilot`** — Does this agent have M365 / Teams / Copilot integration markers?
    - Possible values: `1` (M365 CEA detected) or `0` (no M365 integration detected)
    - Detection: Check for CEA signals across file presence, packages, and config (see below)
-   - Note: `0` does not mean the agent is not a Non-DW — it may be a non-M365 CEA, a background
-     automation agent, Agent Builder agent, SharePoint agent, or other Non-DW type. It simply means
+   - Note: `0` does not mean the agent is not a Standard Agent (Non Digital Worker) — it may be a non-M365 CEA, a background
+     automation agent, Agent Builder agent, SharePoint agent, or other Standard Agent (Non Digital Worker) type. It simply means
      no Teams/Copilot markers were detected, so the M365 CEA registration path is not triggered.
 
 ### Agent Stack Detection Logic
@@ -126,7 +126,7 @@ explicitly listed CEA markers above are sufficient exceptions: the structural fi
 Teams AI SDK package references (`@microsoft/teams-ai`, `Microsoft.Teams.AI`, `teams-ai`).
 Do not treat generic Bot Framework packages as standalone CEA markers.
 
-- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent (Non-DW). **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
+- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent (Standard Agent / Non Digital Worker). **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
 - **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms CEA or AI Teammate intent.
 
 > Tell the user (STOP case only):
