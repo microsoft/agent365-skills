@@ -1,6 +1,6 @@
 {
   "skill_name": "instrument-observability",
-  "eval_instructions": "When running these evals, test against real .NET AgentFramework, Node.js LangChain, and Python agent projects. The agent MUST save a workflow-log.md file documenting all phases attempted. Verify that all instrumented code includes the marker comment appropriate for the language: '// A365 Observability — best-effort instrumentation (verify against official sample)' for .NET and Node.js, or '# A365 Observability — best-effort instrumentation (verify against official sample)' for Python.",
+  "eval_instructions": "When running these evals, test against real .NET AgentFramework, Node.js LangChain, and Python agent projects. Verify that all instrumented code includes the marker comment appropriate for the language: '// A365 Observability — best-effort instrumentation (verify against official sample)' for .NET and Node.js, or '# A365 Observability — best-effort instrumentation (verify against official sample)' for Python.",
   "evals": [
     {
       "id": 1,
@@ -9,7 +9,6 @@
       "expected_output": "The skill detects .NET AgentFramework, determines agentType and authMode via two-stage question (AI Teammate, then user-delegated or agentic-identity), installs Microsoft.Agents.A365.Observability.Runtime and Microsoft.Agents.A365.Observability.Hosting, wires AddAgenticTracingExporter() and AddA365Tracing() in Program.cs, adds BaggageBuilder or BaggageTurnMiddleware context to the message handler with authMode recorded as inline comment, registers AgenticTokenStruct using the constructor syntax with authHandlerName: \"AGENTIC\", updates appsettings.json with EnableAgent365Exporter: true and appsettings.Development.json with EnableAgent365Exporter: false, and validates the build passes.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 1: Agent detection identifies .NET AgentFramework correctly",
         "Phase 1: shared/agent-detection.md is read for detection heuristics",
         "Phase 1: references/dotnet-observability.md is read for patterns",
@@ -54,7 +53,6 @@
       "expected_output": "The skill detects Node.js LangChain, determines agentType and authMode via two-stage question, installs @microsoft/agents-a365-observability, @microsoft/agents-a365-observability-hosting, and @microsoft/agents-a365-runtime, wires ObservabilityManager.configure() with AgenticTokenCacheInstance in the entry point, adds BaggageBuilder or BaggageMiddleware context to the message handler with authMode recorded as inline comment, updates .env with observability variables, and validates the build.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 1: Agent detection identifies Node.js LangChain correctly",
         "Phase 1: shared/agent-detection.md is read for detection heuristics",
         "Phase 1: references/nodejs-observability.md is read for patterns",
@@ -100,7 +98,6 @@
       "expected_output": "The skill detects .NET AgentFramework, recognizes that observability packages are already installed, detects existing instrumentation via marker comments, skips redundant edits, validates configuration is present, re-validates the build, and confirms the agent is already instrumented.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 0: .a365-workspace-detection.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
         "Phase 1: Agent detection identifies .NET AgentFramework",
         "Phase 2: Packages are already present — installation is skipped or succeeds",
@@ -122,7 +119,6 @@
       "expected_output": "The skill detects Node.js LangChain, recognizes packages are installed, detects existing instrumentation, skips redundant edits, validates .env has observability variables, re-validates the build, and confirms the agent is already instrumented.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 0: .a365-workspace-detection.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
         "Phase 1: Agent detection identifies Node.js LangChain",
         "Phase 2: Packages are already in package.json — installation succeeds quickly",
@@ -143,7 +139,6 @@
       "expected_output": "The skill attempts agent detection, fails to identify .NET AgentFramework, Node.js, or Python, writes marker .a365setup-unknown-agent, exits early with clear error message.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting the detection attempt",
         "Phase 1: Agent detection heuristics are run",
         "Phase 1: Neither .NET AgentFramework, Node.js, nor Python is detected",
         "Phase 1: Marker file .a365setup-unknown-agent is written",
@@ -160,7 +155,6 @@
       "expected_output": "The skill detects Python, determines agentType and authMode via two-stage question, installs microsoft-agents-a365-observability-core, microsoft-agents-a365-runtime, and microsoft-agents-a365-observability-hosting, wires configure() in the entry point with AgenticTokenCache as token resolver, adds BaggageMiddleware or BaggageBuilder context to the message handler with authMode recorded as inline comment, updates .env with ENABLE_A365_OBSERVABILITY_EXPORTER, and validates via import check.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 1: Agent detection identifies Python correctly",
         "Phase 1: shared/agent-detection.md is read for detection heuristics",
         "Phase 1: references/python-observability.md is read for patterns",
@@ -204,7 +198,6 @@
       "expected_output": "The skill detects Python, recognizes that observability packages are already installed, detects existing instrumentation via marker comments, skips redundant edits, validates .env has observability variables, re-validates via import check, and confirms the agent is already instrumented.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 0: .a365-workspace-detection.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
         "Phase 1: Agent detection identifies Python",
         "Phase 2: Packages are already in requirements.txt — installation is skipped or succeeds",
@@ -226,7 +219,6 @@
       "expected_output": "The skill detects .NET, determines agentType as system-agent and authMode as S2S, installs Microsoft.Agents.A365.Observability.Runtime plus Azure.Identity and Microsoft.Identity.Client, creates Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs scaffold files, wires AddAgent365Observability() and AddA365Tracing() in Program.cs (NOT AddAgenticTracingExporter), injects Agent365ObservabilityContext into the agent class with no per-turn RegisterObservability() call, uses InvokeAgentScope.Start().FromTurnContext() for baggage, updates appsettings.json with EnableAgent365Exporter: true including ClientId, and validates the build passes.",
       "files": [],
       "expectations": [
-        "A workflow-log.md file is saved documenting all phases attempted",
         "Phase 0.5: authMode determined as S2S",
         "Phase 0.5: agentType determined as system-agent",
         "Phase 1: Agent detection identifies .NET",

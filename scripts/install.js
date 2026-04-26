@@ -74,29 +74,13 @@ function detectA365() {
 function installClaudeCode() {
   header('Claude Code');
 
-  // Register marketplace
-  log('Registering marketplace...');
-  const addResult = run(`claude /plugin marketplace add ${MARKETPLACE_REPO}`);
-  if (addResult !== null) {
-    ok(`Marketplace registered: ${MARKETPLACE_REPO}`);
-  } else {
-    warn('Could not register marketplace via CLI — patching config directly');
-    enableAutoUpdateClaude();
-  }
-
-  // Install plugin from official marketplace
-  log(`Installing plugin: ${PLUGIN_NAME}...`);
-  const installResult = run(`claude /plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  if (installResult !== null) {
-    ok(`Plugin installed: ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  } else {
-    warn('Could not install via CLI — try manually:');
-    log(`  /plugin marketplace add ${MARKETPLACE_REPO}`);
-    log(`  /plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  }
-
-  // Patch auto-update
+  // /plugin commands are slash commands inside an active Claude Code session,
+  // not CLI arguments. Patch the marketplace config for auto-update directly.
   enableAutoUpdateClaude();
+
+  log('To complete installation, run these inside a Claude Code session:');
+  log(`  /plugin marketplace add ${MARKETPLACE_REPO}`);
+  log(`  /plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
 }
 
 function enableAutoUpdateClaude() {
@@ -160,19 +144,12 @@ function showCopilotCLINote() {
 
 function showManualInstructions() {
   header('Manual Installation');
-  log('Claude Code:\n');
+  log('Claude Code (run inside a Claude Code session):\n');
   log(`  /plugin marketplace add ${MARKETPLACE_REPO}`);
   log(`  /plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
   log('');
   log('Or launch Claude Code with the plugin directory directly:');
   log(`  claude --plugin-dir /path/to/agent365-skills/plugins/agent365`);
-  log('');
-  log('GitHub Copilot:\n');
-  log(`  copilot plugin marketplace add ${MARKETPLACE_REPO}`);
-  log(`  copilot plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME}`);
-  log('');
-  log('Or install from a local clone:');
-  log(`  copilot plugin install /path/to/agent365-skills/plugins/agent365`);
 }
 
 // ── Prerequisites ────────────────────────────────────────────────────────────
