@@ -31,7 +31,7 @@ hooks:
         1. src/index.ts has Express + CloudAdapter + /api/health + /api/messages pattern.
         2. src/agent.ts has AgentApplication subclass with message, notification, InstallationUpdate handlers.
         3. src/client.ts has getClient() factory wrapping the user's LLM code.
-        4. ToolingManifest.json exists (even if empty mcpServers array).
+        4. ToolingManifest.json exists with Calendar and Mail MCP servers pre-populated.
         5. .env / .env.example has all required A365 variables.
         6. tsconfig.json has module: "node16" and moduleResolution: "node16".
         7. All required @microsoft/agents-* packages are in package.json.
@@ -387,16 +387,33 @@ Agent calls `self._agent.run()` directly in `process_user_message()`. No changes
 
 **Mark task in progress: "Add ToolingManifest.json"**
 
-**Glob** `ToolingManifest.json`. If it does not exist, **Write** an empty manifest:
+**Glob** `ToolingManifest.json`. If it does not exist, **Write** it pre-populated with the Calendar and Mail WorkIQ servers:
 
 ```json
 {
-  "mcpServers": []
+  "mcpServers": [
+    {
+      "mcpServerName": "mcp_CalendarTools",
+      "mcpServerUniqueName": "mcp_CalendarTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
+      "scope": "Tools.ListInvoke.All",
+      "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
+      "publisher": "Microsoft"
+    },
+    {
+      "mcpServerName": "mcp_MailTools",
+      "mcpServerUniqueName": "mcp_MailTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
+      "scope": "Tools.ListInvoke.All",
+      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
+      "publisher": "Microsoft"
+    }
+  ]
 }
 ```
 
 Tell the user:
-> "ToolingManifest.json created. To add WorkIQ tools (Mail, Calendar, Teams, etc.), run the `add-workiq-tools` skill."
+> "ToolingManifest.json created with Calendar and Mail WorkIQ servers. To add more WorkIQ tools or wire them into agent code, run the `add-workiq-tools` skill."
 
 If it already exists, leave it unchanged.
 
@@ -532,7 +549,7 @@ Your agent now has:
   • Hosting layer         (/api/health + /api/messages)
   • Agent routing         (message, notification, InstallationUpdate handlers)
   • Email notifications + install/uninstall lifecycle
-  • ToolingManifest.json  (empty — add WorkIQ tools with add-workiq-tools skill)
+  • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
   [• Observability:        OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 
