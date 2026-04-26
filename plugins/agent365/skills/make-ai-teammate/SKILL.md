@@ -53,8 +53,12 @@ hooks:
         5. ToolingManifest.json exists.
         6. .env / .env.template has all required A365 variables.
 
-        If any item failed or was skipped, return {"ok": false, "reason": "<specific item>"}.
-        If all items completed successfully, return {"ok": true}.
+        Also verify for all languages:
+        - instrument-observability was offered and either invoked or explicitly skipped by user.
+        - add-workiq-tools was offered and either invoked or explicitly skipped by user.
+
+        If any item failed or was incomplete, return {"ok": false, "reason": "<specific item>"}.
+        If all items completed (or were explicitly skipped by the user), return {"ok": true}.
       timeout: 45000
 ---
 
@@ -160,6 +164,8 @@ TaskCreate: "Add src/client.ts — LLM client factory"               [skip if ex
 TaskCreate: "Add ToolingManifest.json"                              [skip if hasManifest]
 TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
+TaskCreate: "Add Observability (optional)"
+TaskCreate: "Add WorkIQ Tools (optional)"
 ```
 
 **.NET tasks (only create if not already present):**
@@ -170,6 +176,8 @@ TaskCreate: "Add Agent/MyAgent.cs — AgentApplication subclass"                
 TaskCreate: "Update appsettings.json with A365 auth and connection config"
 TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Validate build (dotnet build)"
+TaskCreate: "Add Observability (optional)"
+TaskCreate: "Add WorkIQ Tools (optional)"
 ```
 
 **Python tasks (only create if not already present):**
@@ -181,6 +189,8 @@ TaskCreate: "Update agent.py — AgentInterface implementation"                 
 TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
+TaskCreate: "Add Observability (optional)"
+TaskCreate: "Add WorkIQ Tools (optional)"
 ```
 
 ---
@@ -463,6 +473,54 @@ Do NOT revert changes on build failure — fix forward.
 
 ---
 
+## Phase 9.5 — Offer Observability (Optional)
+
+**Mark task in progress: "Add Observability (optional)"**
+
+Ask the user:
+
+```
+Your AI Teammate code is ready. Observability lets you track every message, LLM call,
+and tool invocation in the Agent 365 portal and Microsoft Defender.
+
+  Would you like to add observability now?
+    • yes  — I'll run the instrument-observability skill now
+    • skip — you can add it later by running the instrument-observability skill
+```
+
+**If yes:** **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it.
+
+**If skip:** Note that the user can run the `instrument-observability` skill at any time.
+
+**Mark task complete: "Add Observability (optional)"**
+
+---
+
+## Phase 9.6 — Offer WorkIQ Tools (Optional)
+
+**Mark task in progress: "Add WorkIQ Tools (optional)"**
+
+Ask the user:
+
+```
+Would you like to add WorkIQ tools? These give your agent access to Microsoft 365 data —
+email, calendar, Teams messages, SharePoint files, OneDrive, and more.
+
+Note: WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens. Users will be prompted to
+consent the first time the agent accesses their data.
+
+  • yes  — I'll run the add-workiq-tools skill now
+  • skip — you can add it later by running the add-workiq-tools skill
+```
+
+**If yes:** **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it.
+
+**If skip:** Note that the user can run the `add-workiq-tools` skill at any time.
+
+**Mark task complete: "Add WorkIQ Tools (optional)"**
+
+---
+
 ## Phase 10 — Final Summary and Next Steps
 
 **TaskList** — show all completed tasks, then tell the user:
@@ -471,15 +529,17 @@ Do NOT revert changes on build failure — fix forward.
 ✅ AI Teammate code is ready!
 
 Your agent now has:
-  • Hosting layer       (/api/health + /api/messages)
-  • Agent routing       (message, notification, InstallationUpdate handlers)
+  • Hosting layer         (/api/health + /api/messages)
+  • Agent routing         (message, notification, InstallationUpdate handlers)
   • Email notifications + install/uninstall lifecycle
-  • ToolingManifest.json (empty — add WorkIQ tools with add-workiq-tools skill)
+  • ToolingManifest.json  (empty — add WorkIQ tools with add-workiq-tools skill)
+  [• Observability:        OpenTelemetry + A365 tracing exporter wired]  (if added)
+  [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 
-Suggested next steps:
-  1. Test locally:       run the test-local skill
-  2. Add WorkIQ tools:   run the add-workiq-tools skill
-  3. Add observability:  run the instrument-observability skill
+Next steps:
+  1. Test locally: run the test-local skill
+  2. Add observability:  run the instrument-observability skill  (if not done)
+  3. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
 ```
 
 ---

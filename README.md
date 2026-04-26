@@ -40,48 +40,46 @@ Or manually copy `.github/copilot-instructions.md` to your workspace's `.github/
 
 ## Recommended Workflow
 
-Three entry points — choose the one that fits your goal:
+**Start with `a365-setup`** — it verifies CLI and Azure prerequisites, asks which capabilities you want, then delegates to the right skill:
 
 ```
-        make-ai-teammate          make-a365-agent          a365-setup
-        (AI Teammate path)        (Standard / CEA)    (verifies CLI + Azure,
-               ↓                        ↓               then delegates to one
-         a365 setup all           a365 setup all          of the two above)
-          + publish + Teams
-               ↓                        ↓
-    ┌──────────┴────────┐   ┌───────────┴───────────┐
-    │                   │   │                       │
-instrument-         add-workiq-tools     instrument-      add-workiq-tools
-observability       (optional)           observability    (optional)
-(strongly rec.)                          (optional)
+a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
+│
+├─ AI Teammate (Digital Worker)  → make-ai-teammate  (adds hosting layer + DW identity)
+│                                      ├─ instrument-observability  (optional, offered automatically)
+│                                      └─ add-workiq-tools          (optional, offered automatically)
+│
+└─ Non-Digital Worker (Non-DW)   → make-a365-agent  (Blueprint + Entra permissions)
+      Assistive (OBO) or                  ├─ instrument-observability  (optional, offered automatically)
+      Autonomous (S2S)                    └─ add-workiq-tools          (optional, Assistive only)
 
-test-local   ← no prerequisite; can run after any step
+test-local  ← standalone; run at any point to test your agent locally
 ```
 
-`a365-setup` writes `.a365-workspace-detection.json`. The `add-workiq-tools` and
-`instrument-observability` skills read that file to skip re-detection and to confirm
-the agent is registered before they run.
+`a365-setup` writes `.a365-workspace-detection.json`. All downstream skills read this file to skip re-detection.
 
-**Already have a registered Standard Agent?** You can add WorkIQ and Observability at any time without re-running setup:
+**Already registered? Run skills directly:**
 
 ```
-"Add WorkIQ tools to this agent"          → add-workiq-tools
-"Add observability to this agent"         → instrument-observability
+"Make this agent an AI Teammate"    → make-ai-teammate       (Blueprint must exist)
+"Add observability to this agent"   → instrument-observability
+"Add WorkIQ tools to this agent"    → add-workiq-tools
+"Test this agent locally"           → test-local
 ```
-
-Both skills detect the existing registration from `.a365-workspace-detection.json` and run standalone.
 
 ---
 
 ## Skills
 
-### `make-ai-teammate` — Transform Any Agent into an AI Teammate
+### `make-ai-teammate` — Transform Any Agent into an AI Teammate (Digital Worker)
 
-An **AI Teammate** is an agent registered with Microsoft Agent 365 that can receive direct messages in Microsoft Teams, respond to email notifications, and access Microsoft 365 data through WorkIQ tools — all authenticated through your tenant's Entra ID.
+An **AI Teammate** is a **Digital Worker (DW)** — an agent with a first-class M365 identity. It has an Agentic User with a UPN, mailbox, and presence in your tenant, and behaves like a real colleague inside Teams, Outlook, and other Microsoft 365 apps. It is designed for ongoing, human-like teamwork.
 
 **Before this skill:** Your agent is a standalone script or HTTP server with no Teams presence.
 
-**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, ToolingManifest.json, and all required packages. Ready to register with `a365-setup`.
+**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, and ToolingManifest.json. Then offers Observability and WorkIQ tools as optional add-ons.
+
+**Prerequisite:** `a365-setup` must create the Blueprint and Agentic User identity first. This skill is normally invoked automatically from `a365-setup` after prerequisites are confirmed; it can also be run directly against an already-registered agent.
 
 **Trigger phrases:**
 ```
@@ -99,8 +97,8 @@ Detects your agent stack and asks which capabilities you want, then delegates to
 
 | Path | Delegated to |
 |------|-------------|
-| **AI Teammate** | `make-ai-teammate` — full code generation + registration + publish |
-| **Discoverability / Observability / WorkIQ** | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
+| **AI Teammate (Digital Worker)** | `make-ai-teammate` — adds A365 hosting layer + DW identity (Blueprint created by a365-setup) |
+| **Non-Digital Worker (Non-DW)** — Discoverability / Observability / WorkIQ | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
 
 Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azure CLI login, checks Entra ID roles, and confirms language-specific build tools. After prerequisites are confirmed, all remaining work is handed off.
 
@@ -114,9 +112,14 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 ---
 
-### `make-a365-agent` — Provision Non-AI Teammate Agents
+### `make-a365-agent` — Provision Non-Digital Worker (Non-DW) Agents
 
-Provisions a non-AI Teammate agent with Agent 365 — for Discoverability, Observability, and WorkIQ paths. Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirmed, but can also be called directly.
+Provisions a **Non-Digital Worker (Non-DW)** agent with Agent 365. A Non-DW agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
+
+- **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
+- **Autonomous (S2S / Service Principal)** — runs independently, no user required
+
+Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirmed, but can also be called directly.
 
 | Capability | What it does |
 |-----------|-------------|
@@ -140,6 +143,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
 
 > **Prerequisite:** `a365-setup` must be run first.
+> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates (DW) and Non-DW Assistive (OBO) agents. Not available for Non-DW Autonomous (S2S) agents.
 
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
@@ -163,12 +167,15 @@ Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilo
 > **Prerequisite:** `a365-setup` must be run first.
 
 Instruments OpenTelemetry-based tracing, context propagation, and the A365 exporter. Before
-wiring any code, asks a two-stage question to determine **agent kind** (AI Teammate or System
-Agent) and **auth mode** (`user-delegated`, `agentic-identity`, or `S2S`) — the answers drive
-which token path is wired:
+wiring any code, asks a two-stage question to determine **agent kind** and **auth mode** — the answers drive which token path is wired:
 
-- **user-delegated / agentic-identity** (OBO): `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
-- **S2S** (.NET only): creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds (3-hop FMI token chain) + `AddAgent365Observability()` — no per-turn token call
+**Stage 1 — Agent kind:**
+- **AI Teammate (Digital Worker)**: has Agentic User with UPN; then asks whether it uses `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity). **Both support Observability and WorkIQ.**
+- **Non-Digital Worker (Non-DW)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
+
+**Wiring by auth mode:**
+- **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
+- **Autonomous S2S** (.NET only): creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds (3-hop FMI token chain) + `AddAgent365Observability()` — no per-turn token call
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 

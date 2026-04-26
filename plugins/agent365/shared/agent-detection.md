@@ -436,22 +436,26 @@ Write marker: `.a365obs-appid-warned` to avoid repeating the warning.
 ### Stage 1 — What kind of agent is this?
 
 Pre-fill from cache if `usesTeamsOrCopilot` is already known:
-- `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate**, ask to confirm
-- `usesTeamsOrCopilot = 0` → suggest **B — System Agent**, ask to confirm
+- `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate (Digital Worker)**, ask to confirm
+- `usesTeamsOrCopilot = 0` → suggest **B — Non-Digital Worker (Non-DW)**, ask to confirm
 
 ```
 AskUserQuestion:
   question: |
     🤖 First — what kind of agent is this?
 
-    A — AI Teammate
-        Works alongside a user in Teams, Outlook, or other Microsoft 365 apps
+    A — AI Teammate (Digital Worker / DW)
+        Has a first-class M365 identity — an Agentic User with a UPN, mailbox, and
+        presence in your tenant. Behaves like a real colleague inside Teams and Outlook.
+        Designed for ongoing, human-like teamwork.
 
-    B — System Agent
-        Runs on its own, no user actively in the loop
+    B — Non-Digital Worker (Non-DW) agent
+        No Agentic User identity (no UPN). Task-oriented, system-oriented, or assistive.
+        Uses an Entra App ID or Agent Blueprint + Agent Identity.
+        Appears as a system or service agent, not as a virtual teammate.
   options:
-    - "A — AI Teammate"
-    - "B — System Agent"
+    - "A — AI Teammate (Digital Worker)"
+    - "B — Non-Digital Worker (Non-DW) agent"
 ```
 
 Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
@@ -486,53 +490,55 @@ AskUserQuestion:
 
 ---
 
-### Stage 2b — If System Agent
+### Stage 2b — If Non-Digital Worker (Non-DW)
 
 ```
 AskUserQuestion:
   question: |
-    What does your agent need?
+    How does this Non-DW agent execute?
 
-    1 — Runs autonomously
-        Agent authenticates as itself, no user required
+    1 — Autonomous (S2S / Service Principal)
+        Agent runs independently as itself — no signed-in user required.
+        Authenticates with Entra App ID or Agent Blueprint credentials.
         → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/authentication-flow
 
-    2 — Assistive
-        Agent acts on behalf of the user triggering it
+    2 — Assistive (OBO)
+        Agent acts on behalf of the signed-in user via On-Behalf-Of flow.
         → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 
-    ✅ Both options work with Observability
-    ⚠️  "Runs autonomously" is not supported by WorkIQ tools (WorkIQ requires a user in the loop)
+    ✅ Both modes work with Observability
+    ⚠️  Autonomous (S2S) is not supported by WorkIQ tools — WorkIQ requires a user in the loop
   options:
-    - "1 — Runs autonomously"
-    - "2 — Assistive"
+    - "1 — Autonomous (S2S / Service Principal)"
+    - "2 — Assistive (OBO)"
 ```
 
 | Choice | `authMode` |
 |--------|-----------|
-| Runs autonomously | `S2S` |
-| Assistive | `agentic-identity` |
+| Autonomous (S2S / Service Principal) | `S2S` |
+| Assistive (OBO) | `agentic-identity` |
 
 ---
 
 ### Full result mapping
 
-| `agentType` | Choice | `authMode` |
-|------------|--------|-----------|
-| `ai-teammate` | Access data as the signed-in user | `user-delegated` |
-| `ai-teammate` | Its own persistent identity in your org | `agentic-identity` |
-| `system-agent` | Runs autonomously | `S2S` |
-| `system-agent` | Assistive | `agentic-identity` |
+| `agentType` | Label | `authMode` |
+|------------|-------|-----------|
+| `ai-teammate` (Digital Worker) | Access data as the signed-in user | `user-delegated` |
+| `ai-teammate` (Digital Worker) | Its own persistent identity in your org | `agentic-identity` |
+| `system-agent` (Non-DW) | Autonomous (S2S / Service Principal) | `S2S` |
+| `system-agent` (Non-DW) | Assistive (OBO) | `agentic-identity` |
 
 ---
 
 ### Compatibility table
 
-| `authMode` | Observability | WorkIQ tools |
-|-----------|---------------|-------------|
-| `user-delegated` | ✅ Traces attributed to the signed-in user | ✅ M365 data scoped to the signed-in user |
-| `agentic-identity` | ✅ Traces attributed to agent's own identity | ✅ M365 data scoped to agent identity |
-| `S2S` | ✅ Traces attributed to agent (no user context) | ⚠️ Not supported — WorkIQ requires a user in the loop |
+| Agent kind | `authMode` | Observability | WorkIQ tools |
+|-----------|-----------|---------------|-------------|
+| AI Teammate (DW) | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
+| AI Teammate (DW) | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
+| Non-DW | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
+| Non-DW | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
 
 ---
 
@@ -550,13 +556,16 @@ Add this inline comment wherever the auth handler is wired:
 
 ### Prerequisite for `agentic-identity`
 
-An **agentic user** must be provisioned in Azure AD — a real user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet done, remind the user:
+The `agentic-identity` authMode is used in two distinct contexts:
 
-> "Agentic identity requires an agentic user provisioned in Azure AD.
-> Follow the identity setup guide:
-> https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
+- **AI Teammate (Digital Worker)** — The agentic user IS the DW's identity: a real Azure AD user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
+  > "An AI Teammate requires an agentic user provisioned in Azure AD.
+  > Follow the identity setup guide:
+  > https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
 
-`user-delegated` has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `S2S` uses the agent blueprint's own credentials.
+- **Non-DW agent (Assistive OBO)** — No agentic user (no UPN). The agent uses its own Entra App ID or Agent Blueprint identity to facilitate the OBO flow on behalf of the signed-in user.
+
+`user-delegated` has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `S2S` authenticates with the agent blueprint's own credentials (service principal).
 
 ---
 
