@@ -46,12 +46,12 @@ Or manually copy `.github/copilot-instructions.md` to your workspace's `.github/
 a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 │
 ├─ AI Teammate (Digital Worker)  → make-ai-teammate  (adds hosting layer + DW identity)
-│                                      ├─ instrument-observability  (optional, offered automatically)
-│                                      └─ add-workiq-tools          (optional, offered automatically)
+│     user OBO or OBO Agent Identity                ├─ instrument-observability  (optional, offered automatically)
+│     (always OBO-based)                            └─ add-workiq-tools          (optional, offered automatically)
 │
-└─ Non-Digital Worker (Non-DW)   → make-a365-agent  (Blueprint + Entra permissions)
-      Assistive (OBO) or                  ├─ instrument-observability  (optional, offered automatically)
-      Autonomous (S2S)                    └─ add-workiq-tools          (optional, Assistive only)
+└─ Standard Agent (Non Digital Worker) → make-a365-agent  (Blueprint + Entra permissions)
+      Assistive (OBO) or                       ├─ instrument-observability  (optional, offered automatically)
+      Autonomous (S2S)                         └─ add-workiq-tools          (optional, Assistive only)
 
 test-local  ← standalone; run at any point to test your agent locally
 ```
@@ -98,7 +98,7 @@ Detects your agent stack and asks which capabilities you want, then delegates to
 | Path | Delegated to |
 |------|-------------|
 | **AI Teammate (Digital Worker)** | `make-ai-teammate` — adds A365 hosting layer + DW identity (Blueprint created by a365-setup) |
-| **Non-Digital Worker (Non-DW)** — Discoverability / Observability / WorkIQ | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
+| **Standard Agent (Non Digital Worker)** — Discoverability / Observability / WorkIQ | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
 
 Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azure CLI login, checks Entra ID roles, and confirms language-specific build tools. After prerequisites are confirmed, all remaining work is handed off.
 
@@ -112,13 +112,13 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 ---
 
-### `make-a365-agent` — Provision Non-Digital Worker (Non-DW) Agents
+### `make-a365-agent` — Provision Standard Agent (Non Digital Worker) Agents
 
-Provisions a **Non-Digital Worker (Non-DW)** agent with Agent 365. A Non-DW agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
+Provisions a **Standard Agent (Non Digital Worker)** with Agent 365. A Standard Agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
-> **Taxonomy:** Non-DW is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Non-DW, but not all Non-DW agents are CEAs. Other Non-DW types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
+> **Taxonomy:** Standard Agent (Non Digital Worker) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Standard Agent (Non Digital Worker), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
 >
-> **At GA:** CEA is the primary supported Non-DW path. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
+> **At GA:** CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
 
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required
@@ -129,7 +129,7 @@ Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirm
 |-----------|-------------|
 | **Discoverability** | Blueprint + Entra permissions. Agent appears in the M365 catalog. |
 | **Discoverability + Observability** | Same, then invokes `instrument-observability`. |
-| **Observability** (Custom Engine Agent / Non-DW) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
+| **Observability** (Custom Engine Agent / Standard Agent) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
 | **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
 
 Always shows a dry-run preview before applying anything. `a365 setup all` is idempotent — safe to re-run. WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens; users consent on first data access.
@@ -147,7 +147,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 ### `add-workiq-tools` — Add WorkIQ MCP Tools
 
 > **Prerequisite:** `a365-setup` must be run first.
-> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates (DW) and Non-DW Assistive (OBO) agents. Not available for Non-DW Autonomous (S2S) agents.
+> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates (Digital Worker) and Standard Agent (Non Digital Worker) Assistive (OBO). Not available for Standard Agent Autonomous (S2S).
 
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
@@ -175,7 +175,7 @@ wiring any code, asks a two-stage question to determine **agent kind** and **aut
 
 **Stage 1 — Agent kind:**
 - **AI Teammate (Digital Worker)**: has Agentic User with UPN; then asks whether it uses `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity). **Both support Observability and WorkIQ.**
-- **Non-Digital Worker (Non-DW)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
+- **Standard Agent (Non Digital Worker)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
 
 **Wiring by auth mode:**
 - **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
@@ -268,10 +268,10 @@ Register this agent for discoverability and add A365 observability so I can
 track LLM calls and tool invocations in Microsoft Defender.
 ```
 
-**Custom Engine Agent (Non-DW) — add observability and WorkIQ:**
+**Custom Engine Agent (Standard Agent / Non Digital Worker) — add observability and WorkIQ:**
 ```
 This is a Custom Engine Agent already available in Microsoft Teams and Copilot.
-It is a Non-Digital Worker (Non-DW) agent — not an AI Teammate.
+It is a Standard Agent (Non Digital Worker) — not an AI Teammate.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 
@@ -281,9 +281,9 @@ Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — tell me what to give our Global Administrator.
 ```
 
-**System Agent with S2S observability (.NET):**
+**Standard Agent (Non Digital Worker) with S2S observability (.NET):**
 ```
-This is a .NET System Agent that runs autonomously — no signed-in user.
+This is a .NET Standard Agent (Non Digital Worker) that runs autonomously — no signed-in user.
 Add A365 observability with S2S auth (FMI token chain).
 ```
 
