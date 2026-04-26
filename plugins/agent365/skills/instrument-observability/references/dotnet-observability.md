@@ -46,7 +46,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
 
 ## Program.cs — S2S Path (`authMode: S2S`)
 
-Use this pattern for System Agents that run without a signed-in user (autonomous / S2S).
+Use this pattern for Non-DW agents that run without a signed-in user (Autonomous / S2S).
 Requires two scaffold files in `Observability/` — create these before wiring Program.cs.
 
 ### Scaffold: `Observability/ObservabilityServiceExtensions.cs`

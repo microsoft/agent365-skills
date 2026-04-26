@@ -58,7 +58,7 @@ plugins/agent365/
 │   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
 │   ├── make-ai-teammate/
-│   │   ├── SKILL.md              # Hosting layer, agent class, notifications, empty ToolingManifest.json
+│   │   ├── SKILL.md              # Hosting layer, agent class, notifications, pre-populated ToolingManifest.json
 │   │   └── references/
 │   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (Node.js LangChain/OpenAI/Claude)
 │   │       ├── nodejs-notifications.md  # Notification + lifecycle event patterns (Node.js)
@@ -220,10 +220,10 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 
 `shared/agent-detection.md` contains the **Agent Type and Auth Mode Detection** section used by both `instrument-observability` and `add-workiq-tools`. It implements a two-stage question flow:
 
-- **Stage 1 — Agent kind:** AI Teammate or System Agent (pre-filled from `usesTeamsOrCopilot` cache if available).
+- **Stage 1 — Agent kind:** AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker) (pre-filled from `usesTeamsOrCopilot` cache if available).
 - **Stage 2 — Auth mode:** depends on agent kind:
-  - AI Teammate → `user-delegated` (signed-in user OBO) or `agentic-identity` (agent's own Azure AD user)
-  - System Agent → `agentic-identity` (assistive) or `S2S` (autonomous, no user token)
+  - AI Teammate (Digital Worker) → `user-delegated` (signed-in user OBO) or `agentic-identity` (agent's own Azure AD user)
+  - Standard Agent (Non Digital Worker) → `agentic-identity` (Assistive / OBO) or `S2S` (Autonomous / Service Principal, no user token)
 
 All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = S2S` and the skill is `add-workiq-tools`, a compatibility warning is surfaced before Phase 4 (WorkIQ requires a user token).
 

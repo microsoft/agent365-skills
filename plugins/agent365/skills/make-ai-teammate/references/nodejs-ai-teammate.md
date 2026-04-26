@@ -415,13 +415,20 @@ Same structure as LangChain variant — replace `createAgent` / `ReactAgent` wit
       "scope": "Tools.ListInvoke.All",
       "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
       "publisher": "Microsoft"
+    },
+    {
+      "mcpServerName": "mcp_MailTools",
+      "mcpServerUniqueName": "mcp_MailTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
+      "scope": "Tools.ListInvoke.All",
+      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
+      "publisher": "Microsoft"
     }
   ]
 }
 ```
 
-Start with an empty array `{ "mcpServers": [] }` if no WorkIQ tools are needed yet.
-Use `a365 develop add-mcp-servers` to add servers — never hand-edit this file.
+Use `a365 develop add-mcp-servers` to add more servers — never hand-edit this file.
 
 ---
 
@@ -493,7 +500,7 @@ connectionsMap__0__connection=service_connection
 |------|-----|
 | `configDotenv()` first line of `index.ts` and `client.ts` | Env vars must be set before any import that reads `process.env` at load time |
 | `/api/health` before `authorizeJWT` | Azure health probes don't carry JWT tokens |
-| `ToolingManifest.json` created empty | Populated later by the `add-workiq-tools` skill |
+| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
 | `onAgentNotification` registered BEFORE `onActivity(Message)` | Notification routing must take priority |
 | `onAgentNotification` called with priority `1` and `[authHandlerName]` | Ensures agentic auth is required for notifications |
 | Side-effect import `import '@microsoft/agents-a365-notifications'` | Registers activity deserializers — omitting it silently breaks notification routing |

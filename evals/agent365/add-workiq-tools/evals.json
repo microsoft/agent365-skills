@@ -6,10 +6,10 @@
       "id": 1,
       "prompt": "Add workiq tools to this agent",
       "description": "Full flow on a .NET AgentFramework project — a365 setup not yet run",
-      "expected_output": "The skill detects .NET AgentFramework, determines agentType and authMode via two-stage question (AI Teammate vs System Agent, then auth mode — with S2S warning if selected), runs a365 develop list-available, asks the user which servers to add, runs a365 develop add-mcp-servers, installs the tooling NuGet package, wires GetMcpToolsAsync in the agent class, registers IMcpToolRegistrationService in Program.cs, explains that a365 setup all will apply permissions, shows how to get a dev token, and validates the build.",
+      "expected_output": "The skill detects .NET AgentFramework, determines agentType and authMode via two-stage question (AI Teammate (Digital Worker) vs Standard Agent (Non Digital Worker), then auth mode — with S2S warning if selected), runs a365 develop list-available, asks the user which servers to add, runs a365 develop add-mcp-servers, installs the tooling NuGet package, wires GetMcpToolsAsync in the agent class, registers IMcpToolRegistrationService in Program.cs, explains that a365 setup all will apply permissions, shows how to get a dev token, and validates the build.",
       "files": [],
       "expectations": [
-        "Phase 0B: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0B: Agent type question presented — AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)",
         "Phase 0B: Auth mode question presented based on agent type selection",
         "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
         "Phase 0B: If authMode is S2S, WorkIQ compatibility warning is shown before proceeding to Phase 4",
@@ -42,7 +42,7 @@
       "expected_output": "The skill detects Node.js LangChain, determines agentType and authMode via two-stage question (with S2S warning if selected), runs a365 develop list-available, adds selected servers via CLI, installs @microsoft/agents-a365-tooling, wires A365McpToolClient.getToolsAsync in the agent, adds env vars to .env, explains that a Global Administrator must run a365 setup permissions mcp since blueprint already exists, shows a365 develop get-token, and validates the build.",
       "files": [],
       "expectations": [
-        "Phase 0B: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0B: Agent type question presented — AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)",
         "Phase 0B: Auth mode question presented based on agent type selection",
         "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
         "Phase 0B: If authMode is S2S, WorkIQ compatibility warning is shown before proceeding to Phase 4",
@@ -118,7 +118,7 @@
       "expected_output": "The skill detects Python AgentFramework, determines agentType and authMode via two-stage question, runs a365 develop list-available, adds the two servers via CLI, installs microsoft-agents-a365-tooling and the agent-framework extension, wires McpToolRegistrationService and get_mcp_tools_async in the agent class, adds BEARER_TOKEN and ENV=development to .env, explains that a Global Administrator must run a365 setup permissions mcp since blueprint already exists, shows a365 develop get-token, and validates imports.",
       "files": [],
       "expectations": [
-        "Phase 0B: Agent type question presented — AI Teammate or System Agent",
+        "Phase 0B: Agent type question presented — AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)",
         "Phase 0B: Auth mode question presented based on agent type selection",
         "Phase 0B: agentType and authMode stored in .a365-workspace-detection.json",
         "Phase 1: Agent type is detected as Python",

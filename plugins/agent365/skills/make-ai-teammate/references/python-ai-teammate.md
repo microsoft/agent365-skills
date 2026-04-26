@@ -396,6 +396,6 @@ LOG_LEVEL=INFO
 | `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
-| `ToolingManifest.json` created empty | Populated later by the `add-workiq-tools` skill |
+| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
 | `/api/health` returns 200 without auth | Load balancers and A365 infrastructure require unauthenticated health probes |
 

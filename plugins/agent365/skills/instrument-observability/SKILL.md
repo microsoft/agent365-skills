@@ -4,10 +4,10 @@ description: >
   Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
   instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — required for
-  store publishing), and updates configuration files. Asks a two-stage question (agent kind +
-  auth mode) to determine the correct token path: OBO (user-delegated / agentic-identity) or
-  S2S (FMI token chain, .NET with ObservabilityTokenService scaffold files). Non-destructive
-  and idempotent.
+  store publishing), and updates configuration files. Asks a two-stage question — agent kind
+  (AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)) and auth mode — to determine
+  the correct token path: OBO (user-delegated / agentic-identity / Assistive) or Autonomous S2S
+  (FMI token chain, .NET with ObservabilityTokenService scaffold files). Non-destructive and idempotent.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -28,7 +28,7 @@ hooks:
       prompt: |
         Before ending, verify ALL of the following:
         1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. agentType (ai-teammate or system-agent) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
+        2. agentType (ai-teammate/AI Teammate (Digital Worker) or system-agent/Standard Agent (Non Digital Worker)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
         3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
         4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
         5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered). For S2S path (.NET): InvokeAgentScope.Start().FromTurnContext() used; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist; no per-turn RegisterObservability call.
@@ -106,15 +106,17 @@ Reply **yes** to confirm, or describe any corrections.
 
 ---
 
-## Phase 0.5: Agent Type and Authentication Mode
+## Phase 0.5: Agent Kind and Authentication Mode
 
-**TaskCreate** — "Determine agent type and authentication mode"
+**TaskCreate** — "Determine agent kind and authentication mode"
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
 If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
 
-Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
+Store `agentType` (`ai-teammate` = AI Teammate (Digital Worker), or `system-agent` = Standard Agent (Non Digital Worker)) and `authMode`:
+- **AI Teammate (Digital Worker):** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
+- **Standard Agent (Non Digital Worker):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
 
 The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry point wiring (Phase 3), message handler pattern (Phase 4), and token resolver (Phase 5). **Phases 2, 6, 7, and 8 are identical regardless of `authMode`.**
 
@@ -589,7 +591,7 @@ If yes, invoke the `test-local` skill.
    ✅ A365 observability instrumented successfully!
 
    **Agent type:** [.NET AgentFramework | Node.js | Python]
-   **Agent kind:** [AI Teammate | System Agent]
+   **Agent kind:** [AI Teammate (Digital Worker) | Standard Agent (Non Digital Worker)]
    **Auth mode:** [Access data as signed-in user | Its own persistent identity | Runs autonomously]
    **Packages installed:** [list packages]
    **Files modified:** [list files]
