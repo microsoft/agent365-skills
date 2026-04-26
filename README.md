@@ -116,6 +116,8 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 Provisions a **Non-Digital Worker (Non-DW)** agent with Agent 365. A Non-DW agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
+> **Custom Engine Agents (CEA)** are supported as Non-DW agents at GA. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
+
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required
 
@@ -125,7 +127,7 @@ Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirm
 |-----------|-------------|
 | **Discoverability** | Blueprint + Entra permissions. Agent appears in the M365 catalog. |
 | **Discoverability + Observability** | Same, then invokes `instrument-observability`. |
-| **Observability** (Custom Engine Agent) | Blueprint + permissions, then invokes `instrument-observability`. |
+| **Observability** (Custom Engine Agent / Non-DW) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
 | **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
 
 Always shows a dry-run preview before applying anything. `a365 setup all` is idempotent — safe to re-run. WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens; users consent on first data access.
@@ -264,9 +266,10 @@ Register this agent for discoverability and add A365 observability so I can
 track LLM calls and tool invocations in Microsoft Defender.
 ```
 
-**Custom Engine Agent — add observability and WorkIQ:**
+**Custom Engine Agent (Non-DW) — add observability and WorkIQ:**
 ```
 This is a Custom Engine Agent already available in Microsoft Teams and Copilot.
+It is a Non-Digital Worker (Non-DW) agent — not an AI Teammate.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 

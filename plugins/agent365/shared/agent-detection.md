@@ -123,14 +123,14 @@ explicitly listed CEA markers above are sufficient exceptions: the structural fi
 Teams AI SDK package references (`@microsoft/teams-ai`, `Microsoft.Teams.AI`, `teams-ai`).
 Do not treat generic Bot Framework packages as standalone CEA markers.
 
-- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent. **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
-- **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms AI Teammate intent.
+- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent (Non-DW). **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
+- **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms CEA or AI Teammate intent.
 
 > Tell the user (STOP case only):
 > "This agent is configured for Teams channels, BizChat, or Microsoft Copilot.
 > Non-AI-teammate channel bots cannot be registered as A365 blueprints.
-> Only AI Teammate agents and M365 custom engine agents are supported.
-> If this detection is wrong (e.g., this is an M365 custom engine agent), confirm explicitly."
+> Only AI Teammate (Digital Worker) agents and Custom Engine Agents (as Non-DW) are supported.
+> If this detection is wrong (e.g., this is a Custom Engine Agent), confirm explicitly."
 
 Write marker: `.a365setup-m365-blocked` (setup) or skip instrumentation (observability).
 
