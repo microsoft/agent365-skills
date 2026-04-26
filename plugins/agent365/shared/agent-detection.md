@@ -17,9 +17,12 @@ The skill MUST detect and store these three variables before asking ANY question
    - Possible values: `DotNet`, `Python`, `NodeJS`
    - Detection: File extension analysis
 
-3. **`usesTeamsOrCopilot`** — Is this a Custom Engine Agent?
-   - Possible values: `1` (true) or `0` (false)
+3. **`usesTeamsOrCopilot`** — Does this agent have M365 / Teams / Copilot integration markers?
+   - Possible values: `1` (M365 CEA detected) or `0` (no M365 integration detected)
    - Detection: Check for CEA signals across file presence, packages, and config (see below)
+   - Note: `0` does not mean the agent is not a Non-DW — it may be a non-M365 CEA, a background
+     automation agent, Agent Builder agent, SharePoint agent, or other Non-DW type. It simply means
+     no Teams/Copilot markers were detected, so the M365 CEA registration path is not triggered.
 
 ### Agent Stack Detection Logic
 

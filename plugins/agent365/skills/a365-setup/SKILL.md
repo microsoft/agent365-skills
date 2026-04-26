@@ -93,7 +93,7 @@ Check the following signals **in parallel** (Glob + Grep).
 - `botbuilder-core` in requirements.txt or pyproject.toml + structural marker → CEA
 - `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` in .env/appsettings.json + structural marker → CEA
 
-If no strong standalone signal and no valid pairing → `0` (Standard Agent / Non-M365 Agent)
+If no strong standalone signal and no valid pairing → `0` (Non-DW, no M365 integration detected — may be a non-M365 CEA or other Non-DW type)
 
 ### Phase 1B: User Validation Questions
 
@@ -104,8 +104,8 @@ Here's what we detected about your agent:
   • Stack:         {agentStack}
   • Language:      {programmingLanguage}
   • Agent type:    {usesTeamsOrCopilot == 1
-                     ? "Custom Engine Agent (CEA) — Non-Digital Worker (Non-DW) with Teams/Copilot integration"
-                     : "Standard Agent — no Teams/Copilot integration (Non-M365)"}
+                     ? "M365 Custom Engine Agent (CEA) — Non-DW with Teams/Copilot integration"
+                     : "Non-DW agent — no Teams/Copilot markers detected (may be a non-M365 CEA, background agent, or other Non-DW type)"}
 
 Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
@@ -113,7 +113,7 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 
 - If the user replies **yes / y**: accept all values and proceed to the final capabilities question below.
 - If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the final capabilities question below.
-- If the user says it's Standard / Non-M365: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
+- If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Non-DW type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
 - If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
 After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
@@ -148,7 +148,7 @@ After the capabilities question is answered (and the detection/confirmation abov
      Set `isAITeammate = false` and route to the Standard/CEA path.
 2. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
-   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard agent path)
+   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Non-DW / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
 
 Then create all todos for the path and mark Todo 1 in-progress:

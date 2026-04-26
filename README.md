@@ -116,7 +116,9 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 Provisions a **Non-Digital Worker (Non-DW)** agent with Agent 365. A Non-DW agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
-> **Custom Engine Agents (CEA)** are supported as Non-DW agents at GA. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
+> **Taxonomy:** Non-DW is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Non-DW, but not all Non-DW agents are CEAs. Other Non-DW types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
+>
+> **At GA:** CEA is the primary supported Non-DW path. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
 
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required
