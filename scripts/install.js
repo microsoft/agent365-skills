@@ -94,20 +94,20 @@ function enableAutoUpdateClaude() {
   ok('Auto-update enabled for Claude Code');
 }
 
-// ── GitHub Copilot Chat (VS Code) installation ───────────────────────────────
-// gh copilot CLI is a command-suggestion tool and has no plugin system.
-// The integration point for Copilot Chat is .github/copilot-instructions.md,
-// which VS Code Copilot Chat automatically picks up from the workspace root.
+// ── GitHub Copilot installation (Chat + CLI) ─────────────────────────────────
+// Both GitHub Copilot Chat (VS Code) and GitHub Copilot CLI (gh copilot) read
+// .github/copilot-instructions.md from the workspace root automatically.
+// Installing this file enables skills for both surfaces.
 
-function installCopilotChat() {
-  header('GitHub Copilot Chat (VS Code)');
+function installCopilotInstructions() {
+  header('GitHub Copilot (Chat + CLI)');
 
   const srcInstructions = path.join(__dirname, '..', '.github', 'copilot-instructions.md');
   const destDir         = path.join(process.cwd(), '.github');
   const destFile        = path.join(destDir, 'copilot-instructions.md');
 
   if (!fs.existsSync(srcInstructions)) {
-    warn('copilot-instructions.md not found in this installation — skipping Copilot Chat setup');
+    warn('copilot-instructions.md not found in this installation — skipping Copilot setup');
     return;
   }
 
@@ -124,20 +124,12 @@ function installCopilotChat() {
   } else {
     fs.mkdirSync(destDir, { recursive: true });
     fs.copyFileSync(srcInstructions, destFile);
-    ok('Created .github/copilot-instructions.md — Copilot Chat will use these skill instructions');
+    ok('Created .github/copilot-instructions.md — Copilot Chat and gh copilot CLI will use these skill instructions');
   }
 
-  log('Copilot Chat will trigger skills when you type phrases like:');
-  log('  "Instrument observability for this agent"');
-  log('  "Run a365 setup"');
-}
-
-function showCopilotCLINote() {
-  header('GitHub Copilot CLI (gh copilot)');
-  log('gh copilot is a command-suggestion tool and does not support plugins.');
-  log('Use GitHub Copilot Chat in VS Code for full skill support.');
-  log('Or use Claude Code:');
-  log(`  claude --plugin-dir /path/to/agent365-skills/plugins/agent365`);
+  log('Skills trigger when you type phrases like:');
+  log('  Copilot Chat: "Make this agent an AI Teammate"');
+  log('  gh copilot:   gh copilot suggest "Instrument observability for this agent"');
 }
 
 // ── Manual fallback ──────────────────────────────────────────────────────────
@@ -181,13 +173,12 @@ const hasClaude  = detectClaude();
 const hasCopilot = detectCopilot();
 const hasVSCode  = detectVSCode();
 
-if (!hasClaude && !hasVSCode) {
-  warn('Neither Claude Code nor VS Code detected.');
+if (!hasClaude && !hasVSCode && !hasCopilot) {
+  warn('Neither Claude Code, VS Code, nor gh copilot detected.');
   showManualInstructions();
 } else {
-  if (hasClaude)  installClaudeCode();
-  if (hasVSCode)  installCopilotChat();
-  if (hasCopilot) showCopilotCLINote();
+  if (hasClaude)              installClaudeCode();
+  if (hasVSCode || hasCopilot) installCopilotInstructions();
 }
 
 checkA365();

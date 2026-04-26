@@ -11,20 +11,24 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Trigger phrases:**
 - "make this agent an ai teammate"
-- "transform agent to ai teammate"
-- "add ai teammate hosting"
-- "wire up m365 hosting"
-- "add agent365 hosting layer"
-- "convert agent to teams agent"
-- "add cloudadapter to this agent"
-- "make this agent work with teams"
+- "transform this agent into an ai teammate"
+- "publish this agent to teams"
+- "make this agent available in microsoft teams"
+- "publish this agent to microsoft copilot"
+- "add teams support to this agent"
+- "set up ai teammate hosting for this agent"
+- "convert this agent to a teams agent"
+- "make this agent work with microsoft 365"
 
 **Summary of what this skill does:**
 1. Detects the agent language/framework (Node.js LangChain/OpenAI/Claude SDK, .NET AgentFramework, Python AgentFramework)
 2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python)
 3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
-4. Writes an empty `ToolingManifest.json` and all required environment variables
-5. Offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps
+4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables
+5. Runs `a365 setup all` — creates the Blueprint and Agentic User identity in Entra ID
+6. Offers `instrument-observability` (Strongly Recommended) — if yes, reads and follows instrument-observability/SKILL.md
+7. Offers `add-workiq-tools` (Optional) — if yes, reads and follows add-workiq-tools/SKILL.md
+   Both offers are mandatory checkpoints: skill does not end until each is either invoked or explicitly skipped by the user.
 
 **Reference patterns:**
 - Node.js: [plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md)
