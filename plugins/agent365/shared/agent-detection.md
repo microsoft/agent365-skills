@@ -440,25 +440,25 @@ Write marker: `.a365obs-appid-warned` to avoid repeating the warning.
 
 Pre-fill from cache if `usesTeamsOrCopilot` is already known:
 - `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate (Digital Worker)**, ask to confirm
-- `usesTeamsOrCopilot = 0` → suggest **B — Non-Digital Worker (Non-DW)**, ask to confirm
+- `usesTeamsOrCopilot = 0` → suggest **B — Standard Agent (Non Digital Worker)**, ask to confirm
 
 ```
 AskUserQuestion:
   question: |
     🤖 First — what kind of agent is this?
 
-    A — AI Teammate (Digital Worker / DW)
+    A — AI Teammate (Digital Worker)
         Has a first-class M365 identity — an Agentic User with a UPN, mailbox, and
         presence in your tenant. Behaves like a real colleague inside Teams and Outlook.
         Designed for ongoing, human-like teamwork.
 
-    B — Non-Digital Worker (Non-DW) agent
+    B — Standard Agent (Non Digital Worker)
         No Agentic User identity (no UPN). Task-oriented, system-oriented, or assistive.
         Uses an Entra App ID or Agent Blueprint + Agent Identity.
         Appears as a system or service agent, not as a virtual teammate.
   options:
     - "A — AI Teammate (Digital Worker)"
-    - "B — Non-Digital Worker (Non-DW) agent"
+    - "B — Standard Agent (Non Digital Worker)"
 ```
 
 Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
@@ -493,12 +493,12 @@ AskUserQuestion:
 
 ---
 
-### Stage 2b — If Non-Digital Worker (Non-DW)
+### Stage 2b — If Standard Agent (Non Digital Worker)
 
 ```
 AskUserQuestion:
   question: |
-    How does this Non-DW agent execute?
+    How does this Standard Agent (Non Digital Worker) execute?
 
     1 — Autonomous (S2S / Service Principal)
         Agent runs independently as itself — no signed-in user required.
@@ -529,8 +529,8 @@ AskUserQuestion:
 |------------|-------|-----------|
 | `ai-teammate` (Digital Worker) | Access data as the signed-in user | `user-delegated` |
 | `ai-teammate` (Digital Worker) | Its own persistent identity in your org | `agentic-identity` |
-| `system-agent` (Non-DW) | Autonomous (S2S / Service Principal) | `S2S` |
-| `system-agent` (Non-DW) | Assistive (OBO) | `agentic-identity` |
+| `system-agent` (Standard Agent / Non Digital Worker) | Autonomous (S2S / Service Principal) | `S2S` |
+| `system-agent` (Standard Agent / Non Digital Worker) | Assistive (OBO) | `agentic-identity` |
 
 ---
 
@@ -540,8 +540,8 @@ AskUserQuestion:
 |-----------|-----------|---------------|-------------|
 | AI Teammate (DW) | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
 | AI Teammate (DW) | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
-| Non-DW | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Non-DW | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
+| Standard Agent (Non Digital Worker) | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
+| Standard Agent (Non Digital Worker) | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
 
 ---
 
