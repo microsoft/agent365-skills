@@ -84,13 +84,16 @@ plugins/agent365/
 │       └── SKILL.md              # AgentsPlayground local testing
 ├── shared/
 │   └── agent-detection.md        # Shared heuristics for detecting agent type
-├── scripts/
-│   ├── validate-make-ai-teammate.js  # Stop hook validator for make-ai-teammate
-│   ├── validate-setup.js             # Stop hook validator for a365-setup
-│   ├── validate-make-a365-agent.js   # Stop hook validator for make-a365-agent
-│   ├── validate-observability.js     # Stop hook validator for instrument-observability
-│   ├── validate-add-workiq-tools.js
-│   └── validate-test-local.js
+├── hooks/
+│   ├── preToolUse/
+│   │   └── path-guard.js         # Blocks Write/Edit outside the agent project directory
+│   └── stop/
+│       ├── validate-make-ai-teammate.js  # Stop hook validator — build check included
+│       ├── validate-setup.js             # Stop hook validator for a365-setup
+│       ├── validate-make-a365-agent.js   # Stop hook validator for make-a365-agent
+│       ├── validate-observability.js     # Stop hook validator — build check included
+│       ├── validate-add-workiq-tools.js  # Stop hook validator — build check included
+│       └── validate-test-local.js
 └── AGENTS.md                     # This file
 ```
 
@@ -188,13 +191,23 @@ When the A365 SDK releases new versions:
 
 ---
 
-## Validator Scripts
+## Hooks
 
-Validators are run by the stop hook before the session ends. They must:
+All hooks live in `hooks/` under two subfolders by event type.
+
+### `hooks/preToolUse/path-guard.js`
+
+Runs before every `Write` or `Edit` tool call. Reads the pending tool payload from stdin (JSON) and exits `2` (block) if the target path is outside the agent project directory or inside `CLAUDE_PLUGIN_ROOT`. Exits `0` (allow) for all other tools and safe paths. Must complete within 5 seconds.
+
+### `hooks/stop/validate-*.js`
+
+Run by each skill's stop hook before the session ends. They must:
 - Exit `0` and print `{"ok": true}` on success.
 - Exit `1` and print `{"ok": false, "reason": "..."}` on failure.
-- Complete within the timeout (15 seconds).
+- Complete within the timeout (15–30 seconds depending on skill).
 - Never block on network I/O — check local files only.
+
+`validate-observability.js`, `validate-make-ai-teammate.js`, and `validate-add-workiq-tools.js` also run a lightweight build check (`dotnet build --no-restore` for .NET, `tsc --noEmit` for Node.js) and block the session if compilation fails.
 
 ---
 

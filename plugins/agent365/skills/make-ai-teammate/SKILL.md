@@ -15,10 +15,14 @@ argument-hint: "Optional: language/framework override (langchain | openai | clau
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-make-ai-teammate.js
-      timeout: 15000
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-make-ai-teammate.js
+      timeout: 30000
     - type: prompt
       prompt: |
         Before ending, verify based on the detected language:

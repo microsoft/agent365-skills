@@ -16,9 +16,13 @@ argument-hint: "Optional: port number (default: 3978 for Node.js/Python, 5000 fo
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: haiku
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-test-local.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-test-local.js
       timeout: 15000
     - type: prompt
       prompt: |
