@@ -26,12 +26,15 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 /plugin install agent365@agent365-skills
 ```
 
-### GitHub Copilot
+### GitHub Copilot Chat (VS Code)
 
+Run the installer to copy skill instructions into your workspace:
+
+```bash
+node install.js
 ```
-copilot plugin marketplace add microsoft/agent365-skills
-copilot plugin install agent365@agent365-skills
-```
+
+Or manually copy `.github/copilot-instructions.md` to your workspace's `.github/` folder. Copilot Chat picks it up automatically and will trigger the skills when you use any of the phrases below.
 
 ---
 
@@ -82,9 +85,10 @@ An **AI Teammate** is an agent registered with Microsoft Agent 365 that can rece
 
 **Trigger phrases:**
 ```
-"Make this agent an AI Teammate"      "Transform agent to AI Teammate"
-"Add AI Teammate hosting"             "Wire up M365 hosting"
-"Convert agent to Teams agent"        "Add CloudAdapter to this agent"
+"Make this agent an AI Teammate"         "Transform this agent into an AI Teammate"
+"Publish this agent to Teams"            "Make this agent available in Microsoft Teams"
+"Add Teams support to this agent"        "Convert this agent to a Teams agent"
+"Publish this agent to Microsoft Copilot"
 ```
 
 ---
@@ -102,9 +106,10 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 **Trigger phrases:**
 ```
-"Run a365 setup"         "Create blueprint"
-"Register agent"         "Onboard agent"
-"Provision agent"        "Publish agent"
+"Set up Agent 365 for this agent"    "Run a365 setup"
+"Register this agent with Agent 365" "Onboard this agent to Agent 365"
+"Make this agent an A365 agent"      "Make this agent discoverable in M365"
+"Connect this agent to Agent 365"    "Create A365 blueprint"
 ```
 
 ---
@@ -124,9 +129,10 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 
 **Trigger phrases:**
 ```
-"Discoverability setup"                "Observability setup"
-"Provision agent with a365"            "Register agent for discoverability"
-"Create a365 blueprint"                "Make this a custom engine agent"
+"Register this agent for discoverability"    "Discoverability setup for this agent"
+"Make this agent findable in the M365 catalog"
+"Make this a custom engine agent"            "Run a365 setup all"
+"Create A365 blueprint for this agent"
 ```
 
 ---
@@ -144,8 +150,10 @@ Available tools: Mail, Calendar, Teams, SharePoint, OneDrive, Word, User, Copilo
 
 **Trigger phrases:**
 ```
-"Add workiq tools"                   "Add Work IQ Mail"
-"Add work intelligence tools"        "Add MCP tools to this agent"
+"Add WorkIQ tools to this agent"          "Add Work Intelligence tools"
+"Give this agent access to M365 data"     "Add Work IQ Mail to this agent"
+"Give my agent access to email and calendar"
+"Add SharePoint access to this agent"     "Add Work IQ Calendar to this agent"
 ```
 
 ---
@@ -166,10 +174,11 @@ All new code is marked `// A365 Observability — best-effort instrumentation` a
 
 **Trigger phrases:**
 ```
-"Instrument observability"              "Add A365 observability"
-"Enable tracing"                        "Add OTel"
-"Instrument for Defender"               "Add telemetry"
-"Add A365 observability to this Python agent"
+"Instrument observability for this agent"   "Add A365 observability to this agent"
+"Add observability to this agent"           "Set up tracing for this agent"
+"Make this agent visible in Microsoft Defender"
+"Wire up OpenTelemetry for this agent"      "Enable Agent 365 telemetry"
+"Add observability to this .NET agent"      "Add A365 observability to this Python agent"
 ```
 
 ---
@@ -183,49 +192,46 @@ auth required.
 
 **Trigger phrases:**
 ```
-"Test this agent locally"        "Run agent locally"
-"Open AgentsPlayground"          "Launch local test session"
-"Local test this agent"          "Test without deploying"
+"Test this agent locally"               "Run my agent locally"
+"Open AgentsPlayground"                 "Launch AgentsPlayground"
+"Start a local test session"            "Debug this agent locally"
+"Test my agent without deploying to Teams"
 ```
 
 ---
 
 ## Starter Prompts
 
-**Step 1 — Transform your agent code:**
+**New agent — full AI Teammate setup in one prompt:**
 ```
-Make this agent an AI Teammate.
-```
-
-**Step 2 — Register with Agent 365:**
-```
-Register this agent as an AI Teammate — create the blueprint, grant permissions,
-and register my messaging endpoint.
+This is a new Node.js LangChain agent. Register it with Agent 365, transform it
+into an AI Teammate so it can receive messages in Teams, add Work IQ Mail and
+Calendar tools, instrument observability, and test it locally.
 ```
 
-**Step 3a — Add WorkIQ tools:**
+**Already have agent code — step by step:**
+
+Step 1 — register and transform:
 ```
-Add Work IQ Mail and Work IQ Calendar to this agent.
+Set up Agent 365 for this agent and make it an AI Teammate available in Microsoft Teams.
 ```
 
-**Step 3b — Add observability:**
+Step 2 — add M365 data access:
 ```
-Instrument observability for this agent.
+Give this agent access to email and calendar through WorkIQ tools.
 ```
 
-**Step 4 — Test locally:**
+Step 3 — add observability:
+```
+Add A365 observability to this agent so I can track LLM calls and tool invocations in Microsoft Defender.
+```
+
+Step 4 — test locally:
 ```
 Test this agent locally without deploying to Teams.
 ```
 
 ---
-
-**Full flow in one prompt:**
-```
-This agent has never been registered with Agent 365. Walk me through the full AI
-Teammate setup: transform the code, register a blueprint, add WorkIQ Mail and
-Calendar tools, instrument observability, and test it locally.
-```
 
 **Transform a .NET AgentFramework agent:**
 ```
@@ -235,14 +241,14 @@ with Teams hosting and email notification handling.
 
 **Transform a Python agent:**
 ```
-I have a Python agent using agent-framework-azure-ai. Make it a Microsoft Agent 365
+I have a Python agent using AgentFramework. Make it a Microsoft Agent 365
 AI Teammate with aiohttp hosting and email notification handling.
 ```
 
-**Register for Discoverability only:**
+**Register for Discoverability only (no Teams hosting):**
 ```
-I want to register this agent so it shows up in the M365 catalog.
-Set up Discoverability — I'll handle hosting myself.
+Register this agent so it shows up in the M365 catalog.
+I'll handle hosting myself — Discoverability setup only.
 ```
 
 **Discoverability + Observability:**
@@ -253,14 +259,14 @@ track LLM calls and tool invocations in Microsoft Defender.
 
 **Custom Engine Agent — add observability and WorkIQ:**
 ```
-This is a Custom Engine Agent available in Microsoft Teams and Copilot.
+This is a Custom Engine Agent already available in Microsoft Teams and Copilot.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 
 **Add specific WorkIQ tools to an already-registered agent:**
 ```
 Add Work IQ Mail and Work IQ Calendar to this agent.
-Our blueprint already exists — I'll need to know what to give our Global Administrator.
+Our blueprint already exists — tell me what to give our Global Administrator.
 ```
 
 **System Agent with S2S observability (.NET):**
@@ -271,7 +277,7 @@ Add A365 observability with S2S auth (FMI token chain).
 
 **Check what's already configured:**
 ```
-Check which Agent 365 skills have already been applied to this agent and tell me what's missing.
+Check which Agent 365 capabilities have already been applied to this agent and tell me what's still missing.
 ```
 
 ---
@@ -310,19 +316,17 @@ claude --plugin-dir "/path/to/agent365-skills/plugins/agent365"
 
 The `--plugin-dir` path must be in double quotes if it contains spaces. Use the absolute path.
 
-### Testing with GitHub Copilot
+### Testing with GitHub Copilot Chat
 
 ```bash
-copilot plugin marketplace add /path/to/agent365-skills
-copilot plugin install agent365@agent365-skills
+# From your local clone, run the installer against a test agent project
+cd my-agent-project
+node /path/to/agent365-skills/scripts/install.js
 ```
 
-To reinstall after pulling or making local changes:
+This copies `.github/copilot-instructions.md` into the test project. Copilot Chat in VS Code will automatically use those instructions.
 
-```bash
-copilot plugin uninstall agent365@agent365-skills
-copilot plugin install agent365@agent365-skills
-```
+To update after pulling changes, re-run `install.js` — it appends only if the Agent 365 block is not already present.
 
 ---
 
@@ -335,6 +339,7 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 - **No automatic permission grants** — Permissions are always explained and require either `a365 setup all` (developer-run) or `a365 setup permissions mcp` (Global Administrator); the plugin never silently grants access
 - **ToolingManifest.json is CLI-managed** — WorkIQ servers are added only via `a365 develop add-mcp-servers`; the plugin never hand-edits the manifest
 - **Additive changes only** — Skills never delete or restructure existing agent code; all added code is marked with a comment identifying the skill that added it
+- **Path guard hook** — A `preToolUse` hook blocks every Write and Edit call that targets a file outside the agent project directory or inside the plugin directory itself; symlinks are resolved and Windows path casing is normalized before the check
 - **No plugin telemetry** — The plugin does not collect or transmit usage analytics; data flows only to your Azure tenant and to the AI host (Claude or Copilot) as part of normal operation
 
 ---

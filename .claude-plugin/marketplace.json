@@ -1,6 +1,6 @@
 {
   "name": "agent365-skills",
-  "description": "Production-ready skills for Microsoft Agent 365 — blueprint setup, WorkIQ MCP tools, OTel observability, and local CLI runners. Works with Claude Code.",
+  "description": "Production-ready skills for Microsoft Agent 365 — AI Teammate transformation, Blueprint provisioning, WorkIQ MCP tools, OTel observability, and local testing. Supports .NET, Node.js, and Python. Works with Claude Code and GitHub Copilot Chat.",
   "version": "1.0.0",
   "owner": {
     "name": "Microsoft",
@@ -12,7 +12,7 @@
   "plugins": [
     {
       "name": "agent365",
-      "description": "Instrument observability and create agent blueprints — for .NET AgentFramework and Node.js LangChain agents.",
+      "description": "Six skills covering the full Agent 365 lifecycle: AI Teammate transformation, Blueprint provisioning (Discoverability / Observability paths), WorkIQ MCP tools (M365 data access), OTel observability instrumentation, and local testing with AgentsPlayground. Supports .NET AgentFramework, Node.js (LangChain, OpenAI, Claude SDK, Semantic Kernel, Google ADK), and Python.",
       "source": "./plugins/agent365"
     }
   ]

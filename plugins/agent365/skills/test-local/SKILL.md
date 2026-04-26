@@ -16,9 +16,13 @@ argument-hint: "Optional: port number (default: 3978 for Node.js/Python, 5000 fo
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: haiku
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-test-local.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-test-local.js
       timeout: 15000
     - type: prompt
       prompt: |
@@ -36,11 +40,13 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill automatically:
 > - "test this agent locally"
-> - "run agent locally"
+> - "run my agent locally"
 > - "open agentsplayground"
-> - "launch local test session"
-> - "local test this agent"
-> - "test without deploying"
+> - "launch agentsplayground"
+> - "start a local test session"
+> - "debug this agent locally"
+> - "test my agent without deploying to teams"
+> - "spin up a local test"
 
 ---
 

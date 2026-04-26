@@ -15,9 +15,13 @@ argument-hint: "Optional: agent project path"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-setup.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-setup.js
       timeout: 15000
     - type: prompt
       prompt: |
@@ -34,11 +38,18 @@ hooks:
 # Agent 365 CLI Setup
 
 > **Trigger phrases** — any of these will activate this skill automatically:
-> "run a365 setup", "create blueprint", "register agent", "setup agent blueprint",
-> "onboard agent", "provision agent", "deploy agent", "publish agent", "a365 full setup",
-> "make this an a365 agent", "make this agent an a365 agent", "set up a365",
-> "add a365", "configure a365", "a365 setup", "connect to a365", "integrate with a365",
-> "make this agent work with a365", "set up agent 365", "agent 365 setup"
+> - "set up agent 365 for this agent"
+> - "run a365 setup"
+> - "onboard this agent to agent 365"
+> - "register this agent with agent 365"
+> - "provision this agent with agent 365"
+> - "add agent 365 to this agent"
+> - "connect this agent to agent 365"
+> - "make this agent an a365 agent"
+> - "make this agent an ai teammate"
+> - "make this agent discoverable in m365"
+> - "create a365 blueprint"
+> - "start agent 365 setup"
 
 ---
 

@@ -13,10 +13,14 @@ argument-hint: "Optional: WorkIQ tool names to add (e.g. 'Work IQ Mail Work IQ C
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-add-workiq-tools.js
-      timeout: 15000
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-add-workiq-tools.js
+      timeout: 30000
     - type: prompt
       prompt: |
         Before ending, verify ALL of the following:
@@ -36,12 +40,15 @@ hooks:
 # Add WorkIQ Tools (A365 CLI + SDK)
 
 > **Trigger phrases** — any of these will activate this skill automatically:
-> - "add workiq tools"
-> - "add a365 tools"
+> - "add workiq tools to this agent"
 > - "add work intelligence tools"
-> - "add microsoft 365 tools"
-> - "wire up workiq"
-> - "add mcp tools to this agent"
+> - "give this agent access to m365 data"
+> - "give my agent access to email and calendar"
+> - "add sharepoint access to this agent"
+> - "add work iq mail to this agent"
+> - "add work iq calendar to this agent"
+> - "let this agent read emails and calendar events"
+> - "wire up workiq mcp tools"
 
 ---
 

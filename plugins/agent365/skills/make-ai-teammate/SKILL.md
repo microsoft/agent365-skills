@@ -15,10 +15,14 @@ argument-hint: "Optional: language/framework override (langchain | openai | clau
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
+  preToolUse:
+    - type: command
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/preToolUse/path-guard.js
+      timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/scripts/validate-make-ai-teammate.js
-      timeout: 15000
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-make-ai-teammate.js
+      timeout: 30000
     - type: prompt
       prompt: |
         Before ending, verify based on the detected language:
@@ -58,13 +62,14 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill:
 > - "make this agent an ai teammate"
-> - "transform agent to ai teammate"
-> - "add ai teammate hosting"
-> - "wire up m365 hosting"
-> - "add agent365 hosting layer"
-> - "convert agent to teams agent"
-> - "add cloudadapter to this agent"
-> - "make this agent work with teams"
+> - "transform this agent into an ai teammate"
+> - "publish this agent to teams"
+> - "make this agent available in microsoft teams"
+> - "publish this agent to microsoft copilot"
+> - "add teams support to this agent"
+> - "set up ai teammate hosting for this agent"
+> - "convert this agent to a teams agent"
+> - "make this agent work with microsoft 365"
 
 > **What this skill does:** It wraps your existing LLM logic with the Microsoft Agent 365
 > AI Teammate layer — hosting, routing, and notifications. Your existing LLM code (models,
