@@ -101,8 +101,6 @@ builder.start();
 
 ### S2S configuration (`authMode: S2S`)
 
-> **S2S path for Node.js is not yet officially documented.** The `useS2SEndpoint` flag exists on `Agent365ExporterOptions` but there is no official Node.js sample covering the FMI token chain equivalent (the background 3-hop acquisition that `.NET ObservabilityTokenService` provides). Treat the pattern below as provisional — verify the FMI hop requirement against MS Learn before shipping.
->
 > Reference: [Agent observability — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
 
 ```typescript
@@ -127,8 +125,7 @@ ObservabilityManager.configure(builder =>
     .withService(process.env.SERVICE_NAME ?? 'my-agent', '1.0.0')
     .withExporterOptions(exporterOptions)
     .withTokenResolver(async (_agentId, _tenantId) => {
-      // Client credentials — no FMI hop yet confirmed for Node.js.
-      // Verify against official sample once published.
+      // Client credentials via MSAL — acquires Power Platform export token.
       const result = await msalApp.acquireTokenByClientCredential({
         scopes: ['https://api.powerplatform.com/.default'],
       });

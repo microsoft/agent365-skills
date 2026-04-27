@@ -1,0 +1,41 @@
+name: Sync version badge in README
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/agent365/.claude-plugin/plugin.json"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version from plugin.json
+        id: version
+        run: |
+          VERSION=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update README badge
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          sed -i "s|Agent%20365%20Skills-[0-9][0-9.]*-blue|Agent%20365%20Skills-${VERSION}-blue|g" README.md
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet README.md || (
+            git add README.md &&
+            git commit -m "chore: sync README version badge to ${{ steps.version.outputs.value }}"
+          )
+
+      - name: Push
+        run: git push

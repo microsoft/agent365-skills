@@ -1,7 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmicrosoft%2Fagent365-skills%2Fmain%2Fplugins%2Fagent365%2F.claude-plugin%2Fplugin.json&query=%24.version&label=Agent%20365%20Skills&color=blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Agent 365 Skills version](https://img.shields.io/badge/Agent%20365%20Skills-1.4.1-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for Discoverability or Observability paths, wiring WorkIQ MCP tools, instrumenting observability, and local testing with AgentsPlayground.
 
@@ -205,7 +205,7 @@ wiring any code, asks a two-stage question to determine **agent kind** and **aut
 
 **Wiring by auth mode:**
 - **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
-- **Autonomous S2S** (.NET only): creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds (3-hop FMI token chain) + `AddAgent365Observability()` — no per-turn token call
+- **Autonomous S2S**: no per-turn token call — token is acquired once via a resolver. .NET creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds with a `BackgroundService` that runs the 3-hop Federated Managed Identity (FMI) token chain (Managed Identity → Entra app → Power Platform export token); Node.js and Python use `useS2SEndpoint`/`withTokenResolver` (or `use_s2s_endpoint`/`token_resolver` in Python) with a client-credentials token callback
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 
@@ -310,7 +310,7 @@ Our blueprint already exists — tell me what to give our Global Administrator.
 **Standard Agent (Non Digital Worker) with S2S observability (.NET):**
 ```
 This is a .NET Standard Agent (Non Digital Worker) that runs autonomously — no signed-in user.
-Add A365 observability with S2S auth (FMI token chain).
+Add A365 observability with S2S auth (Federated Managed Identity token chain).
 ```
 
 **Check what's already configured:**

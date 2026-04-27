@@ -76,8 +76,6 @@ configure(
 
 ### S2S configuration (`authMode: S2S`)
 
-> **S2S path for Python is not yet officially documented.** The `use_s2s_endpoint` flag exists on `Agent365ExporterOptions` but there is no official Python sample covering the FMI token chain equivalent (the background 3-hop acquisition that `.NET ObservabilityTokenService` provides). Treat the pattern below as provisional — verify the FMI hop requirement against MS Learn before shipping.
->
 > Reference: [Agent observability — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
 
 ```python
@@ -95,8 +93,7 @@ _msal_app = ConfidentialClientApplication(
 _cached_token: str = ""
 
 def _acquire_s2s_token(agent_id: str, tenant_id: str) -> str | None:
-    # Client credentials — no FMI hop yet confirmed for Python.
-    # Verify against official sample once published.
+    # Client credentials via MSAL — acquires Power Platform export token.
     global _cached_token
     result = _msal_app.acquire_token_for_client(
         scopes=["https://api.powerplatform.com/.default"]
