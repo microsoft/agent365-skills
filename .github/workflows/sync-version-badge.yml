@@ -27,8 +27,20 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.value }}"
           SHIELDS_VERSION="${VERSION//-/--}"
+          EXPECTED_BADGE="Agent%20365%20Skills-${SHIELDS_VERSION}-blue"
+          BEFORE_HASH=$(sha256sum README.md | cut -d' ' -f1)
           sed -E -i "s|(Agent%20365%20Skills-)[^-]+(--?[^-]+)*(-blue)|\1${SHIELDS_VERSION}\4|g" README.md
+          AFTER_HASH=$(sha256sum README.md | cut -d' ' -f1)
 
+          if ! grep -Fq "$EXPECTED_BADGE" README.md; then
+            echo "Expected README badge URL fragment not found after update: $EXPECTED_BADGE" >&2
+            exit 1
+          fi
+
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "README.md was not modified while syncing the version badge. The badge format may have drifted." >&2
+            exit 1
+          fi
       - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"
