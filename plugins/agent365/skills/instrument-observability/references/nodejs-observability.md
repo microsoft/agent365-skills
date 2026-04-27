@@ -231,8 +231,8 @@ const agentDetails: AgentDetails = {
   agentId: 'agent-456',
   agentName: 'Email Assistant',
   agentDescription: 'An AI agent powered by Azure OpenAI',
-  agentAuid: 'auid-123',
-  agentEmail: 'agent@contoso.com',
+  agentAUID: 'auid-123',
+  agentEmail: 'agent@contoso.com',  // note: interface field is agentAUID (uppercase UID)
   agentBlueprintId: 'blueprint-789',
   tenantId: 'tenant-123',
 };
@@ -488,6 +488,14 @@ builder.start();
 
 ### OpenAI Agents SDK
 
+> **Peer dependency:** `@microsoft/agents-a365-observability-extensions-openai` requires
+> `@openai/agents ^0.7.0` (the **OpenAI Agents SDK**) — this is NOT the `openai` npm package
+> and NOT `@azure/openai`. Install the peer dep first:
+> ```bash
+> npm install @openai/agents@^0.7.0
+> npm install @microsoft/agents-a365-observability-extensions-openai
+> ```
+
 ```typescript
 import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { OpenAIAgentsTraceInstrumentor } from '@microsoft/agents-a365-observability-extensions-openai';
@@ -615,7 +623,7 @@ setLogger({
 | `ScopeUtils.populateInferenceScopeFromTurnContext` | `@microsoft/agents-a365-observability-hosting` | Creates `InferenceScope` from `TurnContext` |
 | `AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId)` | `@microsoft/agents-a365-observability-hosting` | Retrieve cached observability token |
 | `AgenticTokenCacheInstance.RefreshObservabilityToken(...)` | `@microsoft/agents-a365-observability-hosting` | Refresh and cache token for the current turn |
-| `getObservabilityAuthenticationScope()` | `@microsoft/agents-a365-runtime` | Returns the OAuth2 scope string for the observability API |
+| `getObservabilityAuthenticationScope()` | `@microsoft/agents-a365-runtime` | Returns the OAuth2 scope string for the observability API. **Deprecated** in v0.2.0-preview.5 — still functional; modern replacement is `defaultObservabilityConfigurationProvider.getConfiguration().observabilityAuthenticationScopes` |
 | `InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails)` | `@microsoft/agents-a365-observability` | Start agent invocation telemetry scope |
 | `ExecuteToolScope.start(request, toolDetails, agentDetails)` | `@microsoft/agents-a365-observability` | Start tool execution telemetry scope |
 | `InferenceScope.start(request, inferenceDetails, agentDetails)` | `@microsoft/agents-a365-observability` | Start LLM inference telemetry scope |
@@ -654,3 +662,7 @@ setLogger({
 | Traces not in Admin Center | Exporter env var not set | Set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in production |
 | 401 on export | Missing permission | Check if upgrading past `0.2.0-preview.1` (requires new `Agent365.Observability.OtelWrite` permission) |
 | Spans dropped silently | Missing tenant/agent ID | Ensure `BaggageBuilder` (or `BaggageMiddleware`) populates tenant/agent ID before creating spans |
+| TypeScript error on `agentAuid` in `AgentDetails` | Interface field is `agentAUID` (uppercase UID), not `agentAuid` | Change to `agentAUID: '...'` |
+| `extensions-openai` install fails / peer dep error | Missing `@openai/agents` peer dep | Run `npm install @openai/agents@^0.7.0` first; this is the OpenAI Agents SDK, not the `openai` package |
+| S2S: token resolver never called | `RefreshObservabilityToken` called for S2S | Remove `AgenticTokenCacheInstance.RefreshObservabilityToken` — not used in S2S; token comes from `withTokenResolver` in `ObservabilityManager.configure()` |
+| `fromTurnContext` not found on `BaggageBuilder` | Static method is on `BaggageBuilderUtils`, not `BaggageBuilder` | Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context)` |

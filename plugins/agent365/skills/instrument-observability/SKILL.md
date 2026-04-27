@@ -31,7 +31,7 @@ hooks:
         2. agentType (ai-teammate/AI Teammate (Digital Worker) or system-agent/Standard Agent (Non Digital Worker)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
         3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
         4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
-        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered). For S2S path (.NET): InvokeAgentScope.Start().FromTurnContext() used; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist; no per-turn RegisterObservability call.
+        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); RegisterObservability called per-turn with (agentId, tenantId, AgenticTokenStruct, scopes). For S2S path (.NET): baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist; no per-turn RegisterObservability call.
         6. Agentic token resolver with caching is implemented.
         7. Configuration files (appsettings.json or .env) include observability variables.
         8. Build/compile succeeds (dotnet build, npm run build, or python import check).
@@ -194,9 +194,19 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    npm install @microsoft/agents-a365-observability-hosting
    ```
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
+
+   **If the user selects `extensions-openai` — pre-flight check (do this first):**
+   The extension requires `@openai/agents ^0.7.0` as a peer dependency — this is the **OpenAI Agents SDK**, NOT the `openai` npm package and NOT `@azure/openai`. Check and install the peer dep first:
    ```bash
-   # OpenAI Agents SDK
+   npm list @openai/agents
+   # If missing or below 0.7.0:
+   npm install @openai/agents@^0.7.0
+   ```
+
+   Then install the selected extension(s):
+   ```bash
+   # OpenAI Agents SDK (requires @openai/agents ^0.7.0 — checked above)
    npm install @microsoft/agents-a365-observability-extensions-openai
    # LangChain
    npm install @microsoft/agents-a365-observability-extensions-langchain
@@ -206,14 +216,24 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 ### For Python
 
-1. **Bash** — Run package installation (core + hosting):
+1. **Version pre-flight (critical — do this first):** The stable PyPI release of `microsoft-agents-a365-observability-core` (v0.1.0) has a **completely different and incompatible API** from what this skill instruments. The correct API is in the 0.3.x prerelease. Check the installed version before proceeding:
    ```bash
-   pip install microsoft-agents-a365-observability-core
-   pip install microsoft-agents-a365-runtime
-   pip install microsoft-agents-a365-observability-hosting
+   pip show microsoft-agents-a365-observability-core 2>/dev/null | grep Version
+   ```
+   If missing or below `0.3.0.dev1`, install with `--pre`:
+   ```bash
+   pip install --pre microsoft-agents-a365-observability-core
+   pip install --pre microsoft-agents-a365-observability-hosting
    ```
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+2. **Bash** — Run package installation (core + hosting):
+   ```bash
+   pip install --pre microsoft-agents-a365-observability-core
+   pip install --pre microsoft-agents-a365-runtime
+   pip install --pre microsoft-agents-a365-observability-hosting
+   ```
+
+4. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
    ```bash
    # Semantic Kernel
    pip install microsoft-agents-a365-observability-extensions-semantic-kernel
@@ -225,13 +245,13 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    pip install microsoft-agents-a365-observability-extensions-langchain
    ```
 
-3. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or `pyproject.toml` automatically. Explicitly add the installed packages:
-   - `requirements.txt` project: append each package name (e.g. `microsoft-agents-a365-observability`)
+5. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or `pyproject.toml` automatically. Explicitly add the installed packages:
+   - `requirements.txt` project: append each package name with `>=0.3.0.dev1` version constraint
    - `pyproject.toml` project: add under `[project] dependencies` or run `uv add <package> --prerelease` / `poetry add <package>`
 
-4. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
+6. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
 
-5. **TaskUpdate** — Mark complete.
+7. **TaskUpdate** — Mark complete.
 
 ---
 
@@ -301,8 +321,19 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
    **OBO path** (`user-delegated` or `agentic-identity`):
    - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor
-   - Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` — `Build()` returns `IDisposable`, use `using var`
-   - Call `_agentTokenCache.RegisterObservability(new AgenticTokenStruct(userAuthorization: UserAuthorization, turnContext: turnContext, authHandlerName: "AGENTIC"))` per turn
+   - Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` — requires `using Microsoft.Agents.A365.Observability.Hosting.Extensions;`; `Build()` returns `IDisposable`, use `using var`
+   - Call `RegisterObservability` with all four arguments per turn (wrap in try/catch — non-fatal):
+     ```csharp
+     _agentTokenCache.RegisterObservability(
+         turnContext.Activity.Recipient.AgenticAppId,
+         turnContext.Activity.Recipient.TenantId,
+         new AgenticTokenStruct(
+             userAuthorization: UserAuthorization,
+             turnContext: turnContext,
+             authHandlerName: "AGENTIC"),
+         EnvironmentUtils.GetObservabilityAuthenticationScope()
+     );
+     ```
      - `user-delegated`: token exchange resolves to the **signed-in user's** identity → traces attributed to the user
      - `agentic-identity`: token exchange resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
@@ -326,10 +357,10 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
    - Import `AgenticTokenCacheInstance`, `BaggageBuilderUtils` from `@microsoft/agents-a365-observability-hosting`
    - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
-   - Call `AgenticTokenCacheInstance.RefreshObservabilityToken(agentId, tenantId, context, authorization, scopes)` first (non-fatal, catch errors):
+   - **OBO paths only** (`user-delegated` / `agentic-identity`): Call `AgenticTokenCacheInstance.RefreshObservabilityToken(agentId, tenantId, context, authorization, scopes)` at the start of each turn (non-fatal, wrap in try/catch):
      - `user-delegated`: `authorization` is the **user's** delegated token → traces attributed to the user
      - `agentic-identity`: `authorization` resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
-     - `S2S`: agent uses its own service identity — no user authorization token available
+   - **S2S path**: Do **NOT** call `AgenticTokenCacheInstance.RefreshObservabilityToken` — there is no user authorization token. The `withTokenResolver` in `ObservabilityManager.configure()` (set up in Phase 3) handles authentication via MSAL client credentials.
    - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context).build()` to build baggage automatically from TurnContext
    - Wrap the handler body in `await baggageScope.run(async () => { ... })`
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`

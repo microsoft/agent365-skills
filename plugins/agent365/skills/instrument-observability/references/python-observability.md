@@ -18,13 +18,16 @@ into a Python agent. All samples mirror the official Microsoft Learn docs (updat
 | `microsoft-agents-a365-observability-extensions-langchain` | LangChain auto-instrumentation (optional) |
 
 Install commands:
+
+> **Critical — version mismatch:** The stable PyPI release (`pip install microsoft-agents-a365-observability-core`) installs **v0.1.0**, which has a completely different and incompatible API (different `InvokeAgentScope.start()` signature, no `InvokeAgentScopeDetails`, no `UserDetails`, no `BaggageMiddleware`). Always install with `--pre` to get the 0.3.x API that these patterns document.
+
 ```bash
-# Required for all agents
-pip install microsoft-agents-a365-observability-core
-pip install microsoft-agents-a365-runtime
+# Required for all agents (--pre required for 0.3.x API)
+pip install --pre microsoft-agents-a365-observability-core
+pip install --pre microsoft-agents-a365-runtime
 
 # Required for AI Teammate agents (hosting path)
-pip install microsoft-agents-a365-observability-hosting
+pip install --pre microsoft-agents-a365-observability-hosting
 
 # Optional auto-instrumentation extensions
 pip install microsoft-agents-a365-observability-extensions-semantic-kernel
@@ -527,3 +530,8 @@ python -c "from microsoft_agents_a365.observability.core import configure; from 
 | Traces not in Admin Center | Exporter env var not set | Set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in production |
 | 401 on export | Missing permission | Check if upgrading past `0.3.0` (requires new `Agent365.Observability.OtelWrite` permission) |
 | Spans dropped silently | Missing tenant/agent ID | Ensure `BaggageBuilder` (or `BaggageMiddleware`) populates tenant/agent ID before creating spans |
+| `TypeError` on `InvokeAgentScope.start()` — wrong number of args | Installed v0.1.0 (stable) instead of 0.3.x (prerelease) | Run `pip install --pre microsoft-agents-a365-observability-core` to get the 0.3.x API |
+| `ImportError: cannot import name 'InvokeAgentScopeDetails'` | Using v0.1.0 which has `InvokeAgentDetails` instead | Upgrade with `pip install --pre microsoft-agents-a365-observability-core` |
+| `ImportError: cannot import name 'BaggageMiddleware'` | `BaggageMiddleware` only exists in v0.3.x hosting | Run `pip install --pre microsoft-agents-a365-observability-hosting` |
+| `ImportError: cannot import name 'UserDetails'` | v0.1.0 has no `UserDetails` type | Upgrade to 0.3.x with `--pre` |
+| S2S: `register_observability` called for S2S agent | S2S does not use per-turn token registration | Remove `token_cache.register_observability()` from the handler; token comes from `_acquire_s2s_token` resolver in `configure()` |
