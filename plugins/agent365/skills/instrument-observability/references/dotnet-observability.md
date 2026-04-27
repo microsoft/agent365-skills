@@ -31,7 +31,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Runtime
 # Required for OBO agents (authMode: user-delegated or agentic-identity)
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
 
-# Required for S2S agents (authMode: S2S) — FMI token chain
+# Required for S2S agents (authMode: S2S) — Federated Managed Identity (FMI) token chain
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
 dotnet add package Azure.Identity
 dotnet add package Microsoft.Identity.Client
@@ -111,16 +111,16 @@ using System.Threading.Tasks;
 
 namespace <ProjectNamespace>;
 
-// Background service that acquires a Power Platform export token via a 3-hop FMI chain
+// Background service that acquires an Observability API token via a 3-hop Federated Managed Identity (FMI) chain
 // and refreshes it every 50 minutes (tokens typically last 60–75 min).
 //
 // Hop 1+2: Blueprint → Agent identity token (T1) via WithFmiPath(agentId)
 //   MSI in prod (ManagedIdentityCredential), client secret locally (fallback).
-// Hop 3:   Agent identity uses T1 as assertion → Power Platform token.
+// Hop 3:   Agent identity uses T1 as assertion → Observability API token.
 internal sealed class ObservabilityTokenService : BackgroundService
 {
     private static readonly string[] FmiScopes = ["api://AzureADTokenExchange/.default"];
-    private static readonly string[] PowerPlatformScopes = ["https://api.powerplatform.com/.default"];
+    private static readonly string[] ObservabilityScopes = ["api://9b975845-388f-4429-889e-eab1ef63949c/.default"];
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(50);
 
     private readonly IExporterTokenCache<string> _tokenCache;
@@ -185,15 +185,15 @@ internal sealed class ObservabilityTokenService : BackgroundService
                 .ExecuteAsync(ct)).AccessToken;
         }
 
-        // Hop 3: Agent identity uses T1 → Power Platform token
-        var ppResult = await ConfidentialClientApplicationBuilder
+        // Hop 3: Agent identity uses T1 → Observability API token
+        var obsResult = await ConfidentialClientApplicationBuilder
             .Create(_agentId)
             .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult(t1Token))
             .WithAuthority(new Uri(authority)).Build()
-            .AcquireTokenForClient(PowerPlatformScopes)
+            .AcquireTokenForClient(ObservabilityScopes)
             .ExecuteAsync(ct);
 
-        _tokenCache.RegisterObservability(_agentId, _tenantId, ppResult.AccessToken, PowerPlatformScopes);
+        _tokenCache.RegisterObservability(_agentId, _tenantId, obsResult.AccessToken, ObservabilityScopes);
         _logger.LogInformation("Observability token registered for agent {AgentId}.", _agentId);
     }
 }
@@ -641,7 +641,7 @@ Or set environment variables:
 ```bash
 EnableAgent365Exporter=True
 A365_OBSERVABILITY_DOMAIN_OVERRIDE=https://your-test-endpoint.example.com
-A365_OBSERVABILITY_SCOPE_OVERRIDE=https://api.powerplatform.com/.default
+A365_OBSERVABILITY_SCOPE_OVERRIDE=api://9b975845-388f-4429-889e-eab1ef63949c/.default
 ```
 
 Key log messages:
@@ -671,7 +671,7 @@ warn: Agent365ExporterCore: No token obtained for agent {agentId} tenant {tenant
 | `AddAgenticTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for OBO token caching (`IExporterTokenCache<AgenticTokenStruct>`) — user-delegated / agentic-identity |
 | `AddServiceTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for S2S token cache (`IExporterTokenCache<string>`) — used by `AddAgent365Observability()` |
 | `Agent365ObservabilityContext` | Scaffold (`Observability/`) | Singleton wrapping `AgentDetails` for S2S agents — inject instead of per-turn `RegisterObservability` |
-| `ObservabilityTokenService` | Scaffold (`Observability/`) | `BackgroundService` — 3-hop FMI token acquisition; refreshes every 50 min |
+| `ObservabilityTokenService` | Scaffold (`Observability/`) | `BackgroundService` — 3-hop Federated Managed Identity (FMI) token acquisition; refreshes every 50 min |
 | `AddAgent365Observability()` | Scaffold (`Observability/`) | Registers `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext` in one call |
 | `AddA365Tracing()` | `Microsoft.Agents.A365.Observability.Runtime` | Registers OTel TracerProvider with A365 exporter |
 | `BaggageTurnMiddleware` | `Microsoft.Agents.A365.Observability.Hosting.Middleware` | Adapter middleware — auto-populates baggage from every `ITurnContext` |
