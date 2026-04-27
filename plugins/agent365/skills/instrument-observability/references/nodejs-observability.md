@@ -125,7 +125,7 @@ ObservabilityManager.configure(builder =>
     .withService(process.env.SERVICE_NAME ?? 'my-agent', '1.0.0')
     .withExporterOptions(exporterOptions)
     .withTokenResolver(async (_agentId, _tenantId) => {
-      // Client credentials via MSAL — acquires Power Platform export token.
+      // Client credentials via MSAL — acquires Observability API token.
       const result = await msalApp.acquireTokenByClientCredential({
         scopes: ['api://9b975845-388f-4429-889e-eab1ef63949c/.default'],
       });

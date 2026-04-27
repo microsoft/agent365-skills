@@ -93,7 +93,7 @@ _msal_app = ConfidentialClientApplication(
 _cached_token: str = ""
 
 def _acquire_s2s_token(agent_id: str, tenant_id: str) -> str | None:
-    # Client credentials via MSAL — acquires Power Platform export token.
+    # Client credentials via MSAL — acquires Observability API token.
     global _cached_token
     result = _msal_app.acquire_token_for_client(
         scopes=["api://9b975845-388f-4429-889e-eab1ef63949c/.default"]

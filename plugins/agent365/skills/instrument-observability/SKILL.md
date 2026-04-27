@@ -406,11 +406,11 @@ For AI Teammate agents using the hosting packages, the built-in token cache (`Ad
 
 ### For .NET AgentFramework (S2S path)
 
-The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Power Platform token automatically via the Federated Managed Identity (FMI) 3-hop chain — no manual `TokenResolver` delegate needed.
+The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Observability API token automatically via the Federated Managed Identity (FMI) 3-hop chain — no manual `TokenResolver` delegate needed.
 
 1. **Check** if `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` exist. If yes, **skip** — they were already created in Phase 3.
 
-2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Power Platform token every 50 minutes).
+2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Observability API token every 50 minutes).
 
 ### For Node.js
 

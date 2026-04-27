@@ -205,7 +205,7 @@ wiring any code, asks a two-stage question to determine **agent kind** and **aut
 
 **Wiring by auth mode:**
 - **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
-- **Autonomous S2S**: no per-turn token call — token is acquired once via a resolver. .NET creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds with a `BackgroundService` that runs the 3-hop Federated Managed Identity (FMI) token chain (Managed Identity → Entra app → Power Platform export token); Node.js and Python use `useS2SEndpoint`/`withTokenResolver` (or `use_s2s_endpoint`/`token_resolver` in Python) with a client-credentials token callback
+- **Autonomous S2S**: no per-turn token call — token is acquired once via a resolver. .NET creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds with a `BackgroundService` that runs the 3-hop Federated Managed Identity (FMI) token chain (Managed Identity → Entra app → Observability API token); Node.js and Python use `useS2SEndpoint`/`withTokenResolver` (or `use_s2s_endpoint`/`token_resolver` in Python) with a client-credentials token callback
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 
