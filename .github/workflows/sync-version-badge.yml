@@ -26,7 +26,8 @@ jobs:
       - name: Update README badge
         run: |
           VERSION="${{ steps.version.outputs.value }}"
-          sed -i "s|Agent%20365%20Skills-[0-9][0-9.]*-blue|Agent%20365%20Skills-${VERSION}-blue|g" README.md
+          SHIELDS_VERSION="${VERSION//-/--}"
+          sed -E -i "s|(Agent%20365%20Skills-)[^-]+(--?[^-]+)*(-blue)|\1${SHIELDS_VERSION}\4|g" README.md
 
       - name: Commit if changed
         run: |
