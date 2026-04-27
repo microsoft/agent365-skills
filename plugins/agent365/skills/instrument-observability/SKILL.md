@@ -161,11 +161,23 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    dotnet add package Microsoft.Agents.A365.Observability.Hosting
    ```
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
+
+   **If the user selects `Extensions.OpenAI` — pre-flight check (do this first, as a named step):**
+   ```bash
+   dotnet list package | grep Azure.AI.OpenAI
+   ```
+   If the installed version is below `2.7.0-beta.2`, upgrade it **before** installing the extension:
+   ```bash
+   dotnet add package Azure.AI.OpenAI --version 2.7.0-beta.2
+   ```
+   Do this proactively — do not wait for a build failure to discover the version conflict.
+
+   Then install the selected extension(s):
    ```bash
    # Semantic Kernel
    dotnet add package Microsoft.Agents.A365.Observability.Extensions.SemanticKernel
-   # OpenAI
+   # OpenAI (requires Azure.AI.OpenAI >= 2.7.0-beta.2 — checked above)
    dotnet add package Microsoft.Agents.A365.Observability.Extensions.OpenAI
    # Agent Framework
    dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
@@ -297,7 +309,9 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
    **S2S path**:
    - Inject `Agent365ObservabilityContext` (singleton registered by `AddAgent365Observability()`) in the constructor — **not** `IExporterTokenCache<AgenticTokenStruct>`
-   - Use `InvokeAgentScope.Start(new Request(...), new InvokeAgentScopeDetails(), _obs.AgentDetails).FromTurnContext(turnContext)` — **no** per-turn `RegisterObservability()` call
+   - **Baggage:** Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` as a separate `using var baggageScope` — `FromTurnContext()` is an extension on `BaggageBuilder` **only**; it does not exist on `InvokeAgentScope` or any scope type
+   - **Scope:** Use `InvokeAgentScope.Start(new Request(...), new InvokeAgentScopeDetails(endpoint: new Uri("...")), _obs.AgentDetails)` as a separate `using var scope` — `InvokeAgentScopeDetails` has **no parameterless constructor**; always pass at least `endpoint`
+   - **No** per-turn `RegisterObservability()` call; **no** `.FromTurnContext()` chaining on the scope
    - Add inline comment: `// A365 auth mode: S2S — FMI token chain via ObservabilityTokenService`
 
    Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -429,7 +443,12 @@ All new lines marked with the language-appropriate comment:
 
 ### For .NET AgentFramework
 
-1. **Read** `appsettings.json` (or `appsettings.Development.json`).
+1. **Read** `appsettings.json` fully — **before writing anything** — and identify:
+   - Whether a `Logging` section already exists anywhere in the file
+   - Whether `Logging.LogLevel` already exists
+   - The existing `EnableAgent365Exporter`, `AgentBlueprintId`, and `TenantId` values
+
+   > **Merge safety rule (enforce without exception):** A JSON file may only have one `Logging` section. If `Logging` or `Logging.LogLevel` already exists, **merge** the new log level keys into that block. Never append a second `Logging` section — this produces silently invalid config where only the last block wins.
 
 2. **Check for existing `a365 setup` configuration:**
    - `EnableAgent365Exporter` — always set to `true` in `appsettings.json` (the Development override sets it to `false`; `a365 setup` may have written `false` here, which this skill corrects)
@@ -472,7 +491,7 @@ All new lines marked with the language-appropriate comment:
 
 5. **If `appsettings.json` does not exist**, create it with the complete structure above.
 
-6. **If `Logging.LogLevel` already exists**, merge the new entries preserving existing log levels.
+6. **If `Logging` or `Logging.LogLevel` already exists**, merge the new entries into that existing block. Do **not** create a second `Logging` section — only one is allowed in a JSON config file.
 
 7. **Inform user:**
    - "Observability exporter is enabled by default (`EnableAgent365Exporter: true` in `appsettings.json`). For local development, `appsettings.Development.json` overrides this to `false` so traces go to console only."
