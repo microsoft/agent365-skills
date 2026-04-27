@@ -142,10 +142,10 @@ Wait for the answer. Store as `capabilities`.
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isOwnIdentity = true` if the user selected **AI Teammate (Digital Worker)**, else `isOwnIdentity = false`.
-   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isOwnIdentity = true`:** This combination is not supported at GA.
+1. Set `isAITeammate = true` if the user selected **AI Teammate (Digital Worker)**, else `isAITeammate = false`.
+   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported at GA.
      Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) at GA — AI Teammate (Digital Worker) is not available for CEA."
-     Set `isOwnIdentity = false` and route to the Standard/CEA path.
+     Set `isAITeammate = false` and route to the Standard/CEA path.
 2. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
    - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard Agent (Non Digital Worker) / no M365 integration path)
@@ -153,22 +153,22 @@ After the capabilities question is answered (and the detection/confirmation abov
 
 Then create all todos for the path and mark Todo 1 in-progress:
 
-**AI Teammate path** — `isOwnIdentity = true` (3 todos total):
+**AI Teammate path** — `isAITeammate = true` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-ai-teammate skill`
 
-**Standard path** — `registrationType = 3, isOwnIdentity = false` (3 todos total):
+**Standard path** — `registrationType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**Entra app ID path** — `registrationType = 1, isOwnIdentity = false` (3 todos total):
+**Entra app ID path** — `registrationType = 1, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**RULE 2 — ALWAYS BEGIN FROM STEP 1.** No step is optional within your path. Even if the CLI appears installed or Azure appears logged in, you MUST run the validation commands in each step. Step 3 is always the final step — it delegates to the appropriate skill based on `isOwnIdentity`.
+**RULE 2 — ALWAYS BEGIN FROM STEP 1.** No step is optional within your path. Even if the CLI appears installed or Azure appears logged in, you MUST run the validation commands in each step. Step 3 is always the final step — it delegates to the appropriate skill based on `isAITeammate`.
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
@@ -177,8 +177,8 @@ Then create all todos for the path and mark Todo 1 in-progress:
 **RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
 
 **RULE 6 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
-- **AI Teammate path** (`isOwnIdentity = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
-- **Standard paths** (`isOwnIdentity = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
+- **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
+- **Standard paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 
 ---
 
@@ -310,7 +310,7 @@ Confirm Python 3.10 or later and pip are available.
 
 The CLI is verified and Azure prerequisites are confirmed. All remaining work is handled by a specialized skill.
 
-**AI Teammate path** (`isOwnIdentity = true`):
+**AI Teammate path** (`isAITeammate = true`):
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and follow it from the beginning.
 
@@ -320,7 +320,7 @@ The `make-ai-teammate` skill handles everything: code generation, a365.config.js
 
 ---
 
-**Standard paths** (`isOwnIdentity = false` — Discoverability, Observability, WorkIQ):
+**Standard paths** (`isAITeammate = false` — Discoverability, Observability, WorkIQ):
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-a365-agent/SKILL.md` and follow it from the beginning.
 

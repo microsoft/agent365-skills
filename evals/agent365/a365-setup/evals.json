@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. a365-setup detects agentStack (Agent Framework/LangChain/OpenAI), programmingLanguage, and usesTeamsOrCopilot (CEA=1, Non-DW=0), asks the final capabilities question, then verifies CLI (Step 1) and Azure prerequisites (Step 2), and delegates to the right skill at Step 3. For the AI Teammate path (isOwnIdentity=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Capabilities menu: Discoverability, Observability, Tools (WorkIQ), AI Teammate — combinable. Phase 1B shows agent type as 'Custom Engine Agent (CEA)' or 'Non-DW agent — no Teams/Copilot markers detected'. CEA detection uses multi-signal check: strong standalone signals (teamsapp.yml, Teams app manifests, teams-ai SDK packages, existing a365 configs) or paired signals (generic botbuilder packages + structural marker, env vars + structural marker). Phase 1C derives registrationType from usesTeamsOrCopilot: usesTeamsOrCopilot=1 → registrationType=1 (CEA/Entra app ID path); usesTeamsOrCopilot=0 → registrationType=3 (Standard path). registrationType is derived, never asked.",
+  "eval_instructions": "Test against real agent projects in clean state. a365-setup detects agentStack (Agent Framework/LangChain/OpenAI), programmingLanguage, and usesTeamsOrCopilot (CEA=1, Non-DW=0), asks the final capabilities question, then verifies CLI (Step 1) and Azure prerequisites (Step 2), and delegates to the right skill at Step 3. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Capabilities menu: Discoverability, Observability, Tools (WorkIQ), AI Teammate — combinable. Phase 1B shows agent type as 'Custom Engine Agent (CEA)' or 'Non-DW agent — no Teams/Copilot markers detected'. CEA detection uses multi-signal check: strong standalone signals (teamsapp.yml, Teams app manifests, teams-ai SDK packages, existing a365 configs) or paired signals (generic botbuilder packages + structural marker, env vars + structural marker). Phase 1C derives registrationType from usesTeamsOrCopilot: usesTeamsOrCopilot=1 → registrationType=1 (CEA/Entra app ID path); usesTeamsOrCopilot=0 → registrationType=3 (Standard path). registrationType is derived, never asked.",
   "evals": [
     {
       "id": 1,
@@ -13,7 +13,7 @@
         "Phase 1B: Detection summary shows Stack, Language, and Agent type (human-readable CEA or Standard Agent (Non Digital Worker) label)",
         "Phase 1B: Capabilities menu shows all 4 options: Discoverability, Observability, Tools (WorkIQ), AI Teammate",
         "Phase 1B: User is told options can be combined",
-        "Phase 1C: isOwnIdentity = false (Discoverability path selected)",
+        "Phase 1C: isAITeammate = false (Discoverability path selected)",
         "Phase 1C: registrationType = 3 (derived from usesTeamsOrCopilot=0 — Standard path)",
         "Phase 1C: 3 todos created: Step 1 (CLI), Step 2 (Prerequisites), Step 3 (Run the make-a365-agent skill)",
         "Step 1: dotnet --version is checked",
@@ -120,7 +120,7 @@
       "expectations": [
         "Phase 1B: 4-option capabilities menu shown: Discoverability, Observability, Tools (WorkIQ), AI Teammate",
         "Phase 1B: User selects option 4 (AI Teammate)",
-        "Phase 1C: isOwnIdentity = true",
+        "Phase 1C: isAITeammate = true",
         "Phase 1C: 3 todos created: Step 1, Step 2, Step 3 = invoke make-ai-teammate",
         "Step 1: a365 CLI is verified and installed if needed",
         "Step 2: Azure CLI login confirmed, custom client app validated, build tools verified",
@@ -134,14 +134,14 @@
       "id": 8,
       "prompt": "Make this agent an AI Teammate",
       "description": "CEA guard — CEA detected (usesTeamsOrCopilot=1) and user selects AI Teammate (option 4); skill must block and re-present options 1-3",
-      "expected_output": "The skill detects CEA (usesTeamsOrCopilot=1) from Phase 1A. User selects option 4 (AI Teammate). The CEA guard fires: skill responds with the blocking message, sets isOwnIdentity=false, and re-presents options 1-3. User selects a valid option (e.g. Discoverability). Skill proceeds with the Standard Agent path.",
+      "expected_output": "The skill detects CEA (usesTeamsOrCopilot=1) from Phase 1A. User selects option 4 (AI Teammate). The CEA guard fires: skill responds with the blocking message, sets isAITeammate=false, and re-presents options 1-3. User selects a valid option (e.g. Discoverability). Skill proceeds with the Standard Agent path.",
       "files": [],
       "expectations": [
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA)",
         "Phase 1B: Capabilities menu shown — option 4 includes ⚠️ note about CEA not supported as AI Teammate at GA",
         "Phase 1B: User selects option 4 (AI Teammate)",
         "Phase 1C: CEA guard fires — skill responds: 'Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents at GA. AI Teammate (Digital Worker) is not available for CEA at GA.'",
-        "Phase 1C: isOwnIdentity is forced to false",
+        "Phase 1C: isAITeammate is forced to false",
         "Phase 1C: Options 1-3 are re-presented to the user",
         "Phase 1C: User selects a valid option — skill continues with Standard Agent (Non Digital Worker) path",
         "make-ai-teammate is NOT invoked",

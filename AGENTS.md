@@ -29,7 +29,7 @@ This plugin instruments and configures A365 agents. It contains six skills:
 make-ai-teammate  ─────────────────────────────────→  add-workiq-tools
       │                                            →  instrument-observability
       └→  a365-setup (CLI install + Azure prereqs
-            when isOwnIdentity = true, delegates back to make-ai-teammate)
+            when isAITeammate = true, delegates back to make-ai-teammate)
 
 a365-setup  →  make-ai-teammate    (AI Teammate path)
             →  make-a365-agent     (Discoverability / Observability / WorkIQ paths)
