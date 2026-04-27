@@ -101,7 +101,13 @@ public static class ObservabilityServiceExtensions
 using Azure.Core;
 using Azure.Identity;
 using Microsoft.Agents.A365.Observability.Hosting.Caching;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Client;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace <ProjectNamespace>;
 
@@ -282,6 +288,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Agents.A365.Observability.Hosting.Caching;
 using Microsoft.Agents.A365.Observability.Runtime.Common;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 public class MyAgent : AgentApplication
@@ -349,6 +356,7 @@ Inject `Agent365ObservabilityContext` instead of `IExporterTokenCache<AgenticTok
 
 ```csharp
 using Microsoft.Agents.Builder;
+using Microsoft.Agents.A365.Observability.Hosting.Extensions;
 using Microsoft.Agents.A365.Observability.Runtime.Common;
 using Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts;
 using Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes;
@@ -538,6 +546,8 @@ using var scope = OutputScope.Start(
 > `appsettings.json`: `EnableAgent365Exporter: false`, `Agent365Observability.AgentBlueprintId`,
 > and `Agent365Observability.TenantId`. Preserve these existing values when instrumenting.
 
+**OBO path (`authMode: user-delegated` or `agentic-identity`):**
+
 ```json
 {
   "EnableAgent365Exporter": true,
@@ -556,6 +566,34 @@ using var scope = OutputScope.Start(
   }
 }
 ```
+
+**S2S path (`authMode: S2S`):**
+
+`ObservabilityTokenService` reads `AgentId`, `ClientId`, and `ClientSecret` at startup and throws `InvalidOperationException` if any are missing.
+
+```json
+{
+  "EnableAgent365Exporter": true,
+  "Agent365Observability": {
+    "AgentBlueprintId": "your-blueprint-id",
+    "TenantId": "your-tenant-id",
+    "AgentId": "your-agent-entra-app-id",
+    "AgentName": "My Agent",
+    "AgentDescription": "Description of what this agent does",
+    "ClientId": "your-blueprint-client-id",
+    "ClientSecret": "your-blueprint-client-secret"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.Agents.A365.Observability": "Information",
+      "OpenTelemetry": "Warning"
+    }
+  }
+}
+```
+
+> **S2S secret note:** `ClientSecret` is required in local dev. In production, MSI is tried first and the secret is used as fallback — populate it regardless. Do **not** commit the real secret; use User Secrets or environment variable overrides.
 
 > **Critical:** The `Logging.LogLevel` section is **required** for observability events to be
 > captured in console output and forwarded to Microsoft Defender. Without this, the SDK is
