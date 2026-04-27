@@ -96,7 +96,7 @@ def _acquire_s2s_token(agent_id: str, tenant_id: str) -> str | None:
     # Client credentials via MSAL — acquires Power Platform export token.
     global _cached_token
     result = _msal_app.acquire_token_for_client(
-        scopes=["https://api.powerplatform.com/.default"]
+        scopes=["api://9b975845-388f-4429-889e-eab1ef63949c/.default"]
     )
     _cached_token = result.get("access_token", "")
     return _cached_token or None
