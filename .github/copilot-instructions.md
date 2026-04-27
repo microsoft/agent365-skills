@@ -146,13 +146,13 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Asks a two-stage question: agent kind (AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)) then auth mode (`user-delegated`, `agentic-identity`, or `S2S`)
-2. Installs the observability package (`Microsoft.Agents.A365.Observability.Runtime` + `Microsoft.Agents.A365.Observability.Hosting` for .NET; `@microsoft/agents-a365-observability` + `@microsoft/agents-a365-observability-hosting` for Node.js; `microsoft-agents-a365-observability-core` + `microsoft-agents-a365-observability-hosting` for Python)
-3. **OBO path** (user-delegated / agentic-identity): wires `AddAgenticTracingExporter()` and per-turn `RegisterObservability(new AgenticTokenStruct(..., "AGENTIC"))`
-4. **S2S path (.NET only)**: creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds; wires `AddAgent365Observability()` and `InvokeAgentScope.Start().FromTurnContext()`
-5. Updates `appsettings.json` with `Agent365Observability` section (S2S: adds `ClientId` + `ClientSecret` for FMI token chain); creates `appsettings.Development.json` with exporter disabled
+2. Installs the observability package (`Microsoft.Agents.A365.Observability.Runtime` + `Microsoft.Agents.A365.Observability.Hosting` for .NET; `@microsoft/agents-a365-observability` + `@microsoft/agents-a365-observability-hosting` for Node.js; `microsoft-agents-a365-observability-core` + `microsoft-agents-a365-observability-hosting` for Python — **Python requires `--pre` flag for 0.3.x API**)
+3. **OBO path** (user-delegated / agentic-identity): wires `AddAgenticTracingExporter()` and per-turn `RegisterObservability(agentId, tenantId, new AgenticTokenStruct(userAuthorization, turnContext, "AGENTIC"), scopes)` — four arguments required
+4. **S2S path (.NET only)**: creates `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` scaffolds; wires `AddAgent365Observability()`; in the message handler uses `new BaggageBuilder().FromTurnContext(turnContext).Build()` for baggage propagation and `InvokeAgentScope.Start(request, new InvokeAgentScopeDetails(endpoint: ...), agentDetails)` for the scope — **these are two separate `using var` statements, NOT chained; `FromTurnContext()` is a `BaggageBuilder` extension and does not exist on `InvokeAgentScope`**
+5. Updates `appsettings.json` with `Agent365Observability` section and merges into the existing `Logging.LogLevel` block (never appends a second `Logging` section); S2S adds `ClientId` + `ClientSecret` for FMI token chain; creates `appsettings.Development.json` with exporter disabled
 6. Validates the build passes
 
-**Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning, not code structure. S2S is .NET-only.
+**Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning, not code structure. S2S is .NET-only at GA.
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.json` to skip re-detection.
 
@@ -206,6 +206,14 @@ Key rules:
 All code added by observability instrumentation must be marked with the language-appropriate comment form:
 - C# / JavaScript / TypeScript: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 - Python: `# A365 Observability — best-effort instrumentation (verify against official sample)`
+
+**Observability API correctness rules (do not deviate):**
+- Node.js `AgentDetails`: field is `agentAUID` (uppercase UID) — `agentAuid` causes a TypeScript compile error
+- Node.js `extensions-openai`: requires `@openai/agents ^0.7.0` peer dep — NOT the `openai` npm package or `@azure/openai`
+- Python: always `pip install --pre` for `microsoft-agents-a365-observability-core` — stable v0.1.0 has an incompatible API
+- .NET S2S: `FromTurnContext()` is only on `BaggageBuilder` — never chain it on `InvokeAgentScope.Start()`
+- .NET S2S: `InvokeAgentScopeDetails` has no parameterless constructor — always pass `endpoint: new Uri(...)`
+- .NET OBO: `RegisterObservability` takes four args: `agentId, tenantId, AgenticTokenStruct, scopes`
 
 All code added by WorkIQ wiring must be marked with the language-appropriate comment form:
 - C# / JavaScript / TypeScript: `// A365 WorkIQ — added by add-workiq-tools skill`
