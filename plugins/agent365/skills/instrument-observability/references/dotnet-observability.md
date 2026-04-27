@@ -369,13 +369,22 @@ public class MyAgent : AgentApplication
         CancellationToken cancellationToken)
     {
         // No RegisterObservability() call — ObservabilityTokenService holds the token.
-        // Chain .FromTurnContext() on the scope (not on BaggageBuilder) to propagate baggage.
+        // IMPORTANT: FromTurnContext() is an extension on BaggageBuilder only — it does NOT
+        // exist on InvokeAgentScope. InvokeAgentScopeDetails has no parameterless constructor;
+        // pass at least `endpoint`. Keep baggage and scope as two separate using statements.
         // authMode: S2S
+
+        // Step 1: propagate baggage from the incoming turn.
+        // Requires: using Microsoft.Agents.A365.Observability.Hosting.Extensions;
+        using var baggageScope = new BaggageBuilder()
+            .FromTurnContext(turnContext)
+            .Build();
+
+        // Step 2: start the invoke scope (no .FromTurnContext chaining here).
         using var scope = InvokeAgentScope.Start(
             new Request(turnContext.Activity.Text),
-            new InvokeAgentScopeDetails(),
-            _obs.AgentDetails)
-            .FromTurnContext(turnContext);
+            new InvokeAgentScopeDetails(endpoint: new Uri("https://your-agent-endpoint")),
+            _obs.AgentDetails);
 
         // ... existing agent message handling logic ...
     }
@@ -628,7 +637,7 @@ warn: Agent365ExporterCore: No token obtained for agent {agentId} tenant {tenant
 | `AddAgent365Observability()` | Scaffold (`Observability/`) | Registers `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext` in one call |
 | `AddA365Tracing()` | `Microsoft.Agents.A365.Observability.Runtime` | Registers OTel TracerProvider with A365 exporter |
 | `BaggageTurnMiddleware` | `Microsoft.Agents.A365.Observability.Hosting.Middleware` | Adapter middleware — auto-populates baggage from every `ITurnContext` |
-| `FromTurnContext()` | `Microsoft.Agents.A365.Observability.Hosting.Extensions` | Extension on `BaggageBuilder` — auto-populates from activity |
+| `FromTurnContext()` | `Microsoft.Agents.A365.Observability.Hosting.Extensions` | Extension on **`BaggageBuilder` only** — auto-populates from activity. Does NOT exist on `InvokeAgentScope` or any scope type. |
 | `InvokeAgentScope` | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes` | Required for store publishing — wrap top-level message handler |
 | `ExecuteToolScope` | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes` | Required for store publishing — wrap each tool call |
 | `InferenceScope` | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes` | Required for store publishing — wrap each LLM call |
@@ -698,3 +707,6 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | S2S: Token never registered | MSI and client secret both failed | Check `ObservabilityTokenService` logs; ensure MSI is assigned in prod or `ClientSecret` is set for local dev |
 | S2S: 401 on export | FMI chain not completing | Verify `AgentId` in appsettings matches the agent's Entra app ID; check `WithFmiPath` is supported in current MSAL version |
 | S2S: `AddServiceTracingExporter` not found | Hosting package not installed | Run `dotnet add package Microsoft.Agents.A365.Observability.Hosting` |
+| S2S: `InvokeAgentScopeDetails` constructor error | No parameterless constructor exists | Pass at least `endpoint`: `new InvokeAgentScopeDetails(endpoint: new Uri("..."))` |
+| S2S: `InvokeAgentScope` has no `FromTurnContext` | `FromTurnContext` is a `BaggageBuilder` extension only | Create `BaggageBuilder` separately: `new BaggageBuilder().FromTurnContext(tc).Build()` |
+| Build error: `Azure.AI.OpenAI` version conflict with `Extensions.OpenAI` | Package requires `Azure.AI.OpenAI >= 2.7.0-beta.2` | Run `dotnet add package Azure.AI.OpenAI --version 2.7.0-beta.2` before adding the extension |
