@@ -1,6 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmicrosoft%2Fagent365-skills%2Fmain%2Fplugins%2Fagent365%2F.claude-plugin%2Fplugin.json&query=%24.version&label=Agent%20365%20Skills&color=blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for Discoverability or Observability paths, wiring WorkIQ MCP tools, instrumenting observability, and local testing with AgentsPlayground.
 
