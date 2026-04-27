@@ -152,7 +152,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 5. Updates `appsettings.json` with `Agent365Observability` section and merges into the existing `Logging.LogLevel` block (never appends a second `Logging` section); S2S adds `ClientId` + `ClientSecret` for FMI token chain; creates `appsettings.Development.json` with exporter disabled
 6. Validates the build passes
 
-**Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning, not code structure. S2S is .NET-only at GA.
+**Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning, not code structure. S2S is .NET-only.
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.json` to skip re-detection.
 
