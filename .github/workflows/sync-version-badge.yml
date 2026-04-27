@@ -1,0 +1,54 @@
+name: Sync version badge in README
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/agent365/.claude-plugin/plugin.json"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version from plugin.json
+        id: version
+        run: |
+          VERSION=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update README badge
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          SHIELDS_VERSION="${VERSION//-/--}"
+          EXPECTED_BADGE="Agent%20365%20Skills-${SHIELDS_VERSION}-blue"
+          BEFORE_HASH=$(sha256sum README.md | cut -d' ' -f1)
+          sed -E -i "s|(Agent%20365%20Skills-)[^-]+(--?[^-]+)*(-blue)|\1${SHIELDS_VERSION}\4|g" README.md
+          AFTER_HASH=$(sha256sum README.md | cut -d' ' -f1)
+
+          if ! grep -Fq "$EXPECTED_BADGE" README.md; then
+            echo "Expected README badge URL fragment not found after update: $EXPECTED_BADGE" >&2
+            exit 1
+          fi
+
+          if [ "$BEFORE_HASH" = "$AFTER_HASH" ]; then
+            echo "README.md was not modified while syncing the version badge. The badge format may have drifted." >&2
+            exit 1
+          fi
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet README.md || (
+            git add README.md &&
+            git commit -m "chore: sync README version badge to ${{ steps.version.outputs.value }}"
+          )
+
+      - name: Push
+        run: git push
