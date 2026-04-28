@@ -18,7 +18,7 @@ This plugin instruments and configures A365 agents. It contains six skills:
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
-**Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
+**Supported languages for `make-ai-teammate`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI Agents SDK · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
 **Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
@@ -39,9 +39,9 @@ make-a365-agent  →  instrument-observability  (Observability paths)
 
 test-local  (no prerequisite)
 ```
-`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all`, reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
+`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all --aiteammate` (add `--m365` for M365-registered AI Teammates), reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
 `a365-setup` verifies the CLI and Azure prerequisites (Steps 1–2), then delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
-`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ), then conditionally invokes `instrument-observability` and `add-workiq-tools`.
+`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ); add `--m365` for CEA agents and follow with `a365 setup permissions bot`. Admin consent handoff: `a365 setup admin --blueprint-id <id>`. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
 `add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.json` to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
@@ -227,7 +227,7 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 
 All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = S2S` and the skill is `add-workiq-tools`, a compatibility warning is surfaced before Phase 4 (WorkIQ requires a user token).
 
-**S2S .NET scaffold requirement:** When `authMode = S2S` and the language is .NET, `instrument-observability` must create two scaffold files (`Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs`) before wiring `Program.cs`. These files provide the 3-hop Federated Managed Identity (FMI) token chain (`ObservabilityTokenService`) and the `AddAgent365Observability()` / `Agent365ObservabilityContext` DI extensions that replace `AddAgenticTracingExporter()` and per-turn `RegisterObservability()` in the OBO path. The validator (`validate-observability.js`) accepts either the OBO signal (`BaggageBuilder` / `BaggageTurnMiddleware`) or the S2S signal (`ObservabilityTokenService` / `Agent365ObservabilityContext`) to pass the context check.
+**S2S scaffold requirement:** When `authMode = S2S`, `instrument-observability` creates a scaffold token-service file per language: .NET creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`, Node.js creates `observability/observability-token-service.ts`, Python creates `observability/observability_token_service.py`. Each acquires and refreshes the Observability API token via MSAL client credentials targeting `api://9b975845-388f-4429-889e-eab1ef63949c/.default`. The .NET files additionally provide the `AddAgent365Observability()` / `Agent365ObservabilityContext` DI extensions that replace `AddAgenticTracingExporter()` and per-turn `RegisterObservability()`. The validator (`validate-observability.js`) accepts either the OBO signal (`BaggageBuilder` / `BaggageTurnMiddleware`) or the S2S signal to pass the context check.
 
 ---
 

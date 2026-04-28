@@ -143,6 +143,25 @@
         "Phase 7: pip install check and Python import check succeed",
         "Phase 8: Summary includes agent kind, authMode, MCP servers added (Mail + Calendar), and Global Administrator permissions requirement"
       ]
+    },
+    {
+      "id": 7,
+      "prompt": "Add WorkIQ tools to this agent",
+      "description": "S2S auth mode compatibility warning — user selects S2S in Phase 0B; skill must warn before proceeding",
+      "expected_output": "The skill detects Node.js or Python project. In Phase 0B the user selects Standard Agent (Non Digital Worker) with S2S auth mode. The skill shows a compatibility warning explaining that WorkIQ tools require a user delegation (OBO) token at runtime — S2S client credentials cannot be used for WorkIQ API calls. The skill asks the user whether to proceed (best-effort, no OBO token) or abort. If the user proceeds, the skill continues with a best-effort marker and a reminder in the summary. If the user aborts, the skill exits cleanly.",
+      "files": [],
+      "expectations": [
+        "Phase 0B: Agent type question presented — AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)",
+        "Phase 0B: Auth mode question presented — user selects S2S",
+        "Phase 0B: S2S WorkIQ compatibility warning shown BEFORE proceeding to Phase 1 — warning explains OBO token is required for WorkIQ API calls at runtime",
+        "Phase 0B: User is asked to confirm (proceed anyway) or abort",
+        "Phase 0B (abort path): If user aborts — skill exits cleanly with message explaining WorkIQ requires OBO, no further steps taken",
+        "Phase 0B (proceed path): If user proceeds — .a365obs-best-effort marker note recorded, skill continues",
+        "Phase 1 (proceed path): Normal a365 develop list-available, server selection, and code wiring proceed",
+        "Phase 4 (proceed path): GetMcpToolsAsync / get_mcp_tools_async wired with placeholder userToken — comment notes token must be supplied at runtime",
+        "Phase 8 (proceed path): Summary includes explicit warning that WorkIQ tool calls will fail at runtime until a valid OBO user token is provided",
+        "Phase 8 (proceed path): Summary instructs user to obtain an OBO token via agentApplication.authorization.exchangeToken() (Node.js) or equivalent (Python)"
+      ]
     }
   ]
 }

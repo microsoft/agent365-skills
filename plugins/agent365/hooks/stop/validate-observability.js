@@ -44,12 +44,19 @@ function fileContains(filePath, ...patterns) {
   } catch { return false; }
 }
 
+function readJson(filePath) {
+  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+}
+
 function anyFileContains(files, ...patterns) {
   return files.some(f => fileContains(f, ...patterns));
 }
 
 const cwd = process.cwd();
 const issues = [];
+
+const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.json')) || {};
+const authMode = workspaceDetection.authMode || '';
 
 // ── Detect project type ─────────────────────────────────────────────────────
 
@@ -152,12 +159,26 @@ if (isNodejs) {
     issues.push('No TypeScript/JS file uses BaggageBuilder or BaggageMiddleware — baggage context missing');
   }
 
-  // 4. Token caching wired (AgenticTokenCacheInstance or custom resolver)
+  // 4. Token caching wired (AgenticTokenCacheInstance, custom resolver, or S2S token service)
   const hasTokenCache = anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
                         anyFileContains(tsFiles, 'RefreshObservabilityToken') ||
-                        anyFileContains(tsFiles, 'withTokenResolver');
+                        anyFileContains(tsFiles, 'withTokenResolver') ||
+                        anyFileContains(tsFiles, 'getS2SObservabilityToken');
   if (!hasTokenCache) {
     issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
+  }
+
+  // 4a. S2S scaffold: token service file must exist when authMode is S2S
+  if (authMode === 'S2S') {
+    const hasS2SScaffold = anyFileContains(tsFiles, 'observability-token-service') ||
+                           anyFileContains(tsFiles, 'startObservabilityTokenService');
+    if (!hasS2SScaffold) {
+      issues.push('S2S: observability/observability-token-service.ts scaffold or startObservabilityTokenService() not found');
+    }
+    const hasS2SEndpoint = anyFileContains(tsFiles, 'useS2SEndpoint');
+    if (!hasS2SEndpoint) {
+      issues.push('S2S: useS2SEndpoint not set to true in observability configuration');
+    }
   }
 
   // 5. .env has observability vars
@@ -202,12 +223,26 @@ if (isPython) {
     issues.push('No Python file uses BaggageBuilder, BaggageMiddleware, or populate_baggage — baggage context missing');
   }
 
-  // 4. Token cache wired (AgenticTokenCache or manual token_resolver)
+  // 4. Token cache wired (AgenticTokenCache, manual token_resolver, or S2S token service)
   const hasTokenCache = anyFileContains(pyFiles, 'AgenticTokenCache') ||
                         anyFileContains(pyFiles, 'token_resolver') ||
-                        anyFileContains(pyFiles, 'get_observability_authentication_scope');
+                        anyFileContains(pyFiles, 'get_observability_authentication_scope') ||
+                        anyFileContains(pyFiles, 'get_s2s_observability_token');
   if (!hasTokenCache) {
     issues.push('No Python file wires a token resolver — observability exports will fail');
+  }
+
+  // 4a. S2S scaffold: token service file must exist when authMode is S2S
+  if (authMode === 'S2S') {
+    const hasS2SScaffold = anyFileContains(pyFiles, 'observability_token_service') ||
+                           anyFileContains(pyFiles, 'start_observability_token_service');
+    if (!hasS2SScaffold) {
+      issues.push('S2S: observability/observability_token_service.py scaffold or start_observability_token_service() not found');
+    }
+    const hasS2SEndpoint = anyFileContains(pyFiles, 'use_s2s_endpoint');
+    if (!hasS2SEndpoint) {
+      issues.push('S2S: use_s2s_endpoint not set to True in observability configuration');
+    }
   }
 
   // 5. .env has observability vars

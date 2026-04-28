@@ -109,6 +109,8 @@ If `agentType` and `authMode` are already present in the detection cache (from a
 
 Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
 
+**Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
+
 The `authMode` value is used in Phase 4 to annotate which identity is used for M365 tool access. **If `authMode = S2S`, the WorkIQ guard in the shared section must be surfaced before proceeding to Phase 4.**
 
 ---
@@ -357,19 +359,19 @@ Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
 
 **Grep** `microsoft-agents-a365-tooling` in `requirements.txt` or `pyproject.toml`. If missing:
 ```bash
-pip install microsoft-agents-a365-tooling
+pip3 install microsoft-agents-a365-tooling 2>/dev/null || pip install microsoft-agents-a365-tooling
 ```
 
 Then install the extension for the detected framework:
 ```bash
 # AgentFramework
-pip install microsoft-agents-a365-tooling-extensions-agent-framework
+pip3 install microsoft-agents-a365-tooling-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-agent-framework
 # LangChain
-pip install microsoft-agents-a365-tooling-extensions-langchain
+pip3 install microsoft-agents-a365-tooling-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-langchain
 # OpenAI Agents SDK
-pip install microsoft-agents-a365-tooling-extensions-openai
+pip3 install microsoft-agents-a365-tooling-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-openai
 # Semantic Kernel
-pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
+pip3 install microsoft-agents-a365-tooling-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
 ```
 
 Update `requirements.txt` or `pyproject.toml` to record the installed packages.
@@ -524,8 +526,8 @@ npm run build || npm run compile || echo "No build script — skipping compile c
 ### For Python
 
 ```bash
-pip install -r requirements.txt || pip install .
-python -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')"
+pip3 install -r requirements.txt 2>/dev/null || pip install -r requirements.txt || pip install .
+python3 -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')" 2>/dev/null || python -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')"
 ```
 
 Adjust the import path to match the installed framework extension (e.g. `.langchain`, `.openai`).
@@ -578,6 +580,7 @@ If yes, invoke the `test-local` skill.
 |-----------|--------|
 | `a365` CLI not installed | Install with `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease` |
 | `a365 develop list-available` fails | Check a365 CLI authentication; run `a365 auth login` |
+| Need to manage MCP servers in Dataverse | Use `a365 develop-mcp` (not `a365 develop`) — separate command for Dataverse-hosted MCP server management |
 | Server name not found in catalog | Show user the `list-available` output and ask to re-select |
 | `add-mcp-servers` fails | Run `a365 develop list-available` again to verify exact server name spelling |
 | Tooling package install fails | Check NuGet/npm/pip registry access; verify runtime is installed |

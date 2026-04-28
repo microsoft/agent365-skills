@@ -26,10 +26,12 @@ hooks:
     - type: prompt
       prompt: |
         Before ending, verify ALL of the following:
-        1. a365 CLI is installed and the version was confirmed.
-        2. Azure CLI login was validated.
-        3. a365 setup all completed without fatal errors (or was confirmed skipped/cancelled).
-        4. User was shown the blueprint ID or setup summary.
+        1. All required system prerequisites were checked: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
+        2. a365 CLI is installed and confirmed with a365 -h.
+        3. a365 setup requirements was run and any reported issues were resolved.
+        4. Azure CLI login was validated (az account show confirmed correct account and tenant).
+        5. a365 setup all completed without fatal errors (or was confirmed skipped/cancelled).
+        6. User was shown the blueprint ID or setup summary.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
       timeout: 30000
@@ -116,8 +118,6 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 - If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Standard Agent (Non Digital Worker) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
 - If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
-After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
-
 **Final question: What capabilities do you want to enable?**
 
 Present these options (omit or note option 4 if CEA was detected — see below):
@@ -126,11 +126,11 @@ Present these options (omit or note option 4 if CEA was detected — see below):
   2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
   4. AI Teammate (Digital Worker) — agent gets a first-class M365 identity (Agentic User with UPN)
-     ⚠️  NOT available for Custom Engine Agents at GA — CEA is supported as Standard Agent (Non Digital Worker) only
+     ⚠️  NOT available for Custom Engine Agents — CEA is supported as Standard Agent (Non Digital Worker) only
 
 > **CEA guard:** If `usesTeamsOrCopilot = 1` (CEA detected) and the user selects option 4, respond:
-> "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents at GA.
->  AI Teammate (Digital Worker) is not available for CEA at GA.
+> "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents.
+>  AI Teammate (Digital Worker) is not supported for CEA.
 >  Please choose from options 1–3."
 > Then re-present options 1–3 and wait for a new answer.
 
@@ -143,10 +143,16 @@ Wait for the answer. Store as `capabilities`.
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
 1. Set `isAITeammate = true` if the user selected **AI Teammate (Digital Worker)**, else `isAITeammate = false`.
-   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported at GA.
-     Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) at GA — AI Teammate (Digital Worker) is not available for CEA."
+   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported.
+     Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) — AI Teammate (Digital Worker) is not supported for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
-2. Derive `registrationType` from Phase 1A signals (do not ask the user):
+
+2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate`:
+   - `isAITeammate = true` → `agentType: "ai-teammate"`
+   - `isAITeammate = false` → `agentType: "system-agent"`
+   - Leave `authMode` as `""` — it is determined later by `instrument-observability`.
+
+3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
    - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard Agent (Non Digital Worker) / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
@@ -154,17 +160,17 @@ After the capabilities question is answered (and the detection/confirmation abov
 Then create all todos for the path and mark Todo 1 in-progress:
 
 **AI Teammate path** — `isAITeammate = true` (3 todos total):
-- Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
+- Todo 1: `Step 1: Install and Verify All Prerequisites`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-ai-teammate skill`
 
 **Standard path** — `registrationType = 3, isAITeammate = false` (3 todos total):
-- Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
+- Todo 1: `Step 1: Install and Verify All Prerequisites`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
 **Entra app ID path** — `registrationType = 1, isAITeammate = false` (3 todos total):
-- Todo 1: `Step 1: Verify and Install/Update the Agent 365 CLI`
+- Todo 1: `Step 1: Install and Verify All Prerequisites`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
@@ -190,67 +196,300 @@ You are an AI coding agent with access to execute shell commands, read the Agent
 
 ---
 
-## Step 1: Verify and Install/Update the Agent 365 CLI
+## Step 1: Install and Verify All Prerequisites
 
-> **DO NOT SKIP THIS STEP.** Even if you believe the CLI is already installed, you MUST run the version check and validate. Mark this todo in-progress now.
+> **DO NOT SKIP THIS STEP.** Run all checks even on a machine that seems configured — a fresh laptop may be missing several tools. Mark this todo in-progress now.
 
-Check if the Agent 365 CLI is installed and up-to-date:
-
-- Run a version check (e.g. `a365 --version` or `a365 -h`).
-- If the CLI is not installed or the command is not found, install it. If installed but outdated, update to the latest preview version.
-
-### Check .NET and CLI in one step
+### Quick scan — run all version checks in one pass
 
 ```bash
-dotnet --version; a365 --version 2>/dev/null || echo "a365 CLI not found"
+echo "--- .NET SDK ---"    && dotnet --version       2>/dev/null || echo "NOT FOUND"
+echo "--- a365 CLI ---"    && a365 --version          2>/dev/null || echo "NOT FOUND"
+echo "--- PowerShell ---"  && pwsh --version          2>/dev/null || echo "NOT FOUND"
+echo "--- Azure CLI ---"   && az version              2>/dev/null | head -2 || echo "NOT FOUND"
+echo "--- Git ---"         && git --version           2>/dev/null || echo "NOT FOUND"
+echo "--- GitHub CLI ---"  && gh --version            2>/dev/null | head -1 || echo "NOT FOUND"
+echo "--- Node.js ---"     && node --version          2>/dev/null || echo "NOT FOUND"
+echo "--- npm ---"         && npm --version           2>/dev/null || echo "NOT FOUND"
+echo "--- Python ---"      && python --version        2>/dev/null || echo "NOT FOUND"
+echo "--- uv ---"          && uv --version            2>/dev/null || echo "NOT FOUND"
 ```
 
-- If `dotnet` is missing: instruct the user to install .NET 8.0 from https://dotnet.microsoft.com/download.
-- If `a365` is not found: install or update in one command:
+Also check the Az PowerShell module (requires pwsh to be installed):
+
+```powershell
+pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 -ExpandProperty Version"
+```
+
+Present the results to the user as a summary table showing ✅ (found) or ❌ (missing) for each tool, then proceed through each missing item below. **Prompt the user before each install** — do not install silently.
+
+---
+
+### 1.1 — .NET SDK 8+
+
+**Required by:** a365 CLI install, all .NET agent builds.
 
 ```bash
-dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease || dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet --version
+dotnet --list-sdks
 ```
 
-On Windows, if the above fails, use `scripts/cli/install-cli.ps1` from the devTools repository (after `dotnet tool uninstall -g Microsoft.Agents.A365.DevTools.Cli`).
+If missing or below 8.0:
 
-### Verify installation
+> "**.NET SDK 8.0 or later** is required. Install it now?"
+>
+> - **Windows:** `winget install Microsoft.DotNet.SDK.8`
+> - **macOS:** `brew install --cask dotnet-sdk` or download from https://dotnet.microsoft.com/download
+> - **Linux:** follow https://learn.microsoft.com/en-us/dotnet/core/install/linux
+
+After install, open a new terminal and run `dotnet --version` to confirm. Report back when ready.
+
+---
+
+### 1.2 — Agent 365 CLI
+
+**Required by:** all `a365` commands.
+
+```bash
+a365 --version 2>/dev/null || echo "NOT FOUND"
+```
+
+If missing or outdated, install or update:
+
+```bash
+dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease \
+  || dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+```
+
+If `a365` is still not found after install, the dotnet tools directory is not on PATH:
+
+- **Windows:** add `%USERPROFILE%\.dotnet\tools` to the system PATH, then restart the terminal.
+- **macOS/Linux:** add `$HOME/.dotnet/tools` to `$PATH` in `.bashrc` / `.zshrc`, then `source` it.
+
+Verify:
 
 ```bash
 a365 -h
 ```
 
-This must show usage information, not an error. Confirms the CLI is on PATH.
-
-### Adapt to CLI version differences
-
-The CLI is under active development. If a command referenced later is not recognized, upgrade the CLI. Using the latest version is essential — newer versions include important fixes and new commands (e.g. `create-instance`, `publish`).
-
-> **BEFORE MOVING ON:** Mark Todo 1 (Step 1) as **completed**. Then mark Todo 2 (Step 2) as **in-progress**. Only then proceed to Step 2.
+This must show usage information, not an error.
 
 ---
 
-## Step 2: Ensure Prerequisites and Environment Configuration
+### 1.3 — PowerShell 7+ (pwsh)
 
-> **DO NOT SKIP THIS STEP.** You MUST validate Azure CLI login, Entra ID roles, the custom client app registration, and language-specific build tools before any `a365` commands will work. Mark this todo in-progress now.
-
-### Azure CLI & Authentication
+**Required by:** `a365 setup requirements`, Az module, admin consent scripts.
 
 ```bash
-az --version
+pwsh --version 2>/dev/null || echo "NOT FOUND"
 ```
 
-If not installed, direct the user to https://learn.microsoft.com/en-us/cli/azure/install-azure-cli.
+If missing:
 
-Ensure you are logged in to the correct Azure account and tenant:
+> "**PowerShell 7+** is required for `a365 setup requirements` and the Az module. Install it now?"
+>
+> - **Windows:** `winget install Microsoft.PowerShell`  (or download MSI from https://aka.ms/PSWindows)
+> - **macOS:** `brew install --cask powershell`
+> - **Linux:** follow https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux
+
+After install, verify with `pwsh --version`.
+
+---
+
+### 1.4 — Azure CLI
+
+**Required by:** `az login`, Entra ID queries, subscription management.
+
+```bash
+az version 2>/dev/null | head -2 || echo "NOT FOUND"
+```
+
+If missing:
+
+> "**Azure CLI** is required. Install it now?"
+>
+> - **Windows:** `winget install Microsoft.AzureCLI`  (or download from https://aka.ms/installazurecliwindows)
+> - **macOS:** `brew update && brew install azure-cli`
+> - **Linux:** `curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash`
+
+After install, verify with `az --version`.
+
+---
+
+### 1.5 — Az PowerShell Module
+
+**Required by:** `a365 setup requirements --category PowerShell`, admin consent scripts that use `Connect-AzAccount`.
+
+```powershell
+pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 -ExpandProperty Version"
+```
+
+If missing or below version 2.x:
+
+> "**Az PowerShell module** is required. Install it now? (This may take a few minutes.)"
+
+```powershell
+pwsh -Command "Install-Module -Name Az -AllowClobber -Scope CurrentUser -Force -Repository PSGallery"
+```
+
+If the PSGallery is untrusted, run first:
+
+```powershell
+pwsh -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted"
+```
+
+Verify:
+
+```powershell
+pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 Version"
+```
+
+---
+
+### 1.6 — Git
+
+**Required by:** cloning Agent365-Samples when creating a new AI Teammate agent from scratch.
+
+```bash
+git --version 2>/dev/null || echo "NOT FOUND"
+```
+
+If missing:
+
+> "**Git** is required. Install it now?"
+>
+> - **Windows:** `winget install Git.Git`  (or download from https://git-scm.com/downloads)
+> - **macOS:** `brew install git`  (or `xcode-select --install` for the system git)
+> - **Linux:** `sudo apt install git` / `sudo dnf install git`
+
+Verify with `git --version`.
+
+---
+
+### 1.7 — GitHub CLI (gh)
+
+**Required by:** AI Teammate new-agent path (cloning a sample from Agent365-Samples with `gh auth login`). Skip this check if the user is working with an existing agent and does not need a new-agent clone.
+
+```bash
+gh --version 2>/dev/null | head -1 || echo "NOT FOUND"
+```
+
+If missing and the user may need it:
+
+> "**GitHub CLI** is needed if you want to clone a sample agent to start from. Install it now?"
+>
+> - **Windows:** `winget install GitHub.cli`
+> - **macOS:** `brew install gh`
+> - **Linux:** follow https://cli.github.com/manual/installation
+
+After install, authenticate:
+
+```bash
+gh auth login
+```
+
+Select "GitHub.com" → "HTTPS" → "Login with a web browser".
+
+Verify: `gh auth status`
+
+---
+
+### 1.8 — Language-specific build tools
+
+Check the tools required for the **detected project type** (`programmingLanguage` from Phase 1A).
+
+#### Node.js agents
+
+```bash
+node --version
+npm --version
+```
+
+Requires Node.js **18.x or later** and npm.
+
+If missing:
+
+> "**Node.js 18+** is required. Install it now?"
+>
+> - **Windows:** `winget install OpenJS.NodeJS.LTS`
+> - **macOS:** `brew install node`
+> - **Linux/all:** download from https://nodejs.org (LTS recommended)
+
+#### Python agents
+
+```bash
+python3 --version 2>/dev/null || python --version
+uv --version 2>/dev/null || echo "uv not found (optional but recommended)"
+```
+
+Requires Python **3.11 or later**. `uv` is the recommended package manager for Python A365 agents.
+
+If Python is missing:
+
+> "**Python 3.11+** is required. Install it now?"
+>
+> - **Windows:** `winget install Python.Python.3.11`
+> - **macOS:** `brew install python@3.11`
+> - **Linux:** `sudo apt install python3.11 python3.11-venv python3.11-pip`
+
+If `uv` is missing:
+
+> "**uv** (Python package manager) is recommended for A365 Python agents. Install it now?"
+>
+> - **Windows (PowerShell):** `pwsh -Command "irm https://astral.sh/uv/install.ps1 | iex"`
+> - **macOS/Linux:** `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+#### .NET agents
+
+.NET SDK was already verified in section 1.1.
+
+```bash
+dotnet --list-sdks
+```
+
+Confirm at least one SDK entry at 8.0 or above is listed.
+
+---
+
+### 1.9 — Run built-in requirements validator
+
+Once all tools above are confirmed installed, run the Agent 365 CLI's built-in checker:
+
+```bash
+a365 setup requirements
+```
+
+This validates Azure connectivity, Authentication, PowerShell version, and Tenant Enrollment in one pass. Fix any reported issues before proceeding. To check a single category:
+
+```bash
+a365 setup requirements --category Azure
+a365 setup requirements --category Authentication
+a365 setup requirements --category PowerShell
+```
+
+> **BEFORE MOVING ON:** Mark Todo 1 (Step 1) as **completed**. Mark Todo 2 (Step 2) as **in-progress**. Only then proceed to Step 2.
+
+---
+
+## Step 2: Configure Azure Identity and Validate Access
+
+> **DO NOT SKIP THIS STEP.** You MUST validate Azure CLI login, Entra ID roles, and the custom client app before any `a365` commands will work. Mark this todo in-progress now.
+
+### Azure CLI login
 
 ```bash
 az login
 # If multiple subscriptions:
 az account set -s <SubscriptionNameOrID>
+# Confirm the active account:
+az account show --query "{name:name, user:user.name, tenantId:tenantId}" -o table
 ```
 
-If interactive login is not possible (headless environment), instruct the user to follow the device-code login URL.
+If interactive login is not possible (headless / CI environment), use device-code flow:
+
+```bash
+az login --use-device-code
+```
 
 ### Microsoft Entra ID roles
 
@@ -260,47 +499,20 @@ The authenticated account must be at minimum an **Agent ID Administrator** or **
 
 The CLI resolves the client app automatically by the well-known display name **"Agent 365 CLI"** registered in the tenant. Do NOT ask the user for a client app ID.
 
-The CLI will validate permissions and prompt for consent at runtime. If the CLI reports that "Agent 365 CLI" cannot be found, inform the user that an admin must register an Entra app with that exact display name and grant admin consent, then retry.
+If the CLI reports that "Agent 365 CLI" cannot be found, inform the user that an admin must register an Entra app with that exact display name and grant admin consent, then retry.
 
-### Validate language-specific prerequisites (REQUIRED)
-
-> **BLOCKING PREREQUISITE:** You MUST validate that language-specific build tools are installed BEFORE proceeding to Step 3.
-
-#### Detect project type
+To validate the app and check consent status before running setup:
 
 ```bash
-find . -name "*.csproj" -print -quit 2>/dev/null; \
-  test -f "package.json" && echo "Node.js project detected"; \
-  { test -f "requirements.txt" || test -f "pyproject.toml"; } && echo "Python project detected"
+a365 query-entra --help
 ```
 
-#### Validate required tools based on project type
-
-**For .NET agents:**
-```bash
-dotnet --version
-dotnet --list-sdks
-```
-Confirm .NET SDK 8.0 or later is installed.
-
-**For Node.js agents:**
-```bash
-node --version
-npm --version
-```
-Confirm Node.js 18.x or later and npm are available.
-
-**For Python agents:**
-```bash
-python --version
-pip --version
-```
-Confirm Python 3.10 or later and pip are available.
+This surfaces scope grants, permission status, and consent state — useful for diagnosing `Authorization_RequestDenied` errors before they block `setup all`.
 
 > **STOP AND CONFIRM before leaving Step 2:**
-> - Project type detected (at least one of: .NET, Node.js, or Python)
-> - Required build tools installed and verified
-> - Azure CLI login confirmed, custom client app validated, permissions checked
+> - Azure CLI login confirmed with correct account and tenant
+> - Entra ID roles confirmed (Agent ID Admin/Developer or Global Admin)
+> - Custom client app "Agent 365 CLI" validated in the tenant
 
 > **BEFORE MOVING ON:** Mark Todo 2 (Step 2) as **completed**. Mark Todo 3 in-progress → proceed to Step 3.
 
@@ -336,16 +548,60 @@ Mark Todo 3 as completed when the delegated skill finishes.
 
 ## Step 4 (Reference Only)
 
-> **This step is now handled by the `make-a365-agent` skill (Step 3 above).** Kept as a reference for re-running setup without the full skill flow.
+> **This step is now handled by the `make-a365-agent` or `make-ai-teammate` skill (Step 3 above).**
+> Kept as a reference for re-running setup without the full skill flow.
 
-If you need to re-run `a365 setup all` on a non-AI Teammate agent without going through the full skill:
+### Re-running `a365 setup all`
 
+`a365 setup all` is idempotent — safe to re-run after fixing any issue.
+
+**Standard Agent (Non Digital Worker):**
 ```bash
 a365 setup all --agent-name <agent_name> --dry-run   # preview
 a365 setup all --agent-name <agent_name>              # apply
 ```
 
-`a365 setup all` is idempotent — safe to re-run after fixing any issue.
+**Custom Engine Agent (CEA) with Teams/Copilot integration:**
+```bash
+a365 setup all --agent-name <agent_name> --m365       # registers endpoint via MCP Platform
+a365 setup permissions bot                            # required after setup all for CEA agents
+```
+
+**AI Teammate (Digital Worker):**
+```bash
+a365 setup all --agent-name <agent_name> --aiteammate
+# --aiteammate: blueprint + permissions only; run a365 create-instance separately
+# for M365-registered AI Teammates, also add --m365
+```
+
+### Additional permissions subcommands
+
+Run these individually when the blueprint already exists and you need to add specific grants:
+
+```bash
+a365 setup permissions mcp          # MCP server OAuth2 grants (always first)
+a365 setup permissions bot          # Messaging Bot API grants — CEA agents, run after mcp
+a365 setup permissions custom       # Custom resource OAuth2 grants
+a365 setup permissions copilotstudio  # CopilotStudio.Copilots.Invoke permission
+```
+
+### Admin handoff with `setup admin`
+
+For teams where the developer is not a Global Administrator, use the two-step handoff:
+
+```bash
+# Step 1 — Developer runs (produces a blueprint ID in output):
+a365 setup all --agent-name <agent_name>
+
+# Step 2 — Global Admin runs (config-free, blueprint ID from step 1 output):
+a365 setup admin --blueprint-id <blueprint-id>
+
+# Retrieve the blueprint ID at any time:
+a365 status --field agentBlueprintId
+```
+
+`setup admin` creates Observability API and Power Platform API grants only when called with
+`--blueprint-id`. For full grants from config, use `--config-dir <path>`.
 
 ---
 

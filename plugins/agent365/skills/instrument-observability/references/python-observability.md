@@ -76,42 +76,107 @@ configure(
 
 ### S2S configuration (`authMode: S2S`)
 
+S2S observability is supported for Python. The pattern mirrors the `.NET ObservabilityTokenService` — a background coroutine acquires and refreshes the Observability API token via MSAL client credentials. No OBO user token is required.
+
 > Reference: [Agent observability — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
+
+#### Step 1 — Create `observability/observability_token_service.py`
+
+Write this scaffold module to handle background token acquisition and refresh:
+
+```python
+# observability/observability_token_service.py
+# A365 Observability — best-effort instrumentation (verify against official sample)
+import asyncio
+import logging
+import os
+from msal import ConfidentialClientApplication
+
+# Dedicated Observability API app — scope updated per SDK release (April 2025)
+OBSERVABILITY_SCOPE = "api://9b975845-388f-4429-889e-eab1ef63949c/.default"
+TOKEN_REFRESH_INTERVAL_SECS = 50 * 60  # 50 minutes (token TTL = 60 min)
+
+logger = logging.getLogger(__name__)
+_cached_token: str = ""
+_msal_app: ConfidentialClientApplication | None = None
+
+
+def _get_msal_app() -> ConfidentialClientApplication:
+    global _msal_app
+    if _msal_app is None:
+        _msal_app = ConfidentialClientApplication(
+            client_id=os.environ["BLUEPRINT_CLIENT_ID"],
+            client_credential=os.environ["BLUEPRINT_CLIENT_SECRET"],
+            authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}",
+        )
+    return _msal_app
+
+
+def _acquire_token() -> str:
+    result = _get_msal_app().acquire_token_for_client(scopes=[OBSERVABILITY_SCOPE])
+    return result.get("access_token", "") or ""
+
+
+async def start_observability_token_service() -> None:
+    """Call once at startup — acquires the first token and refreshes every 50 min."""
+    global _cached_token
+    _cached_token = _acquire_token()
+    while True:
+        await asyncio.sleep(TOKEN_REFRESH_INTERVAL_SECS)
+        try:
+            _cached_token = _acquire_token()
+        except Exception as exc:
+            logger.warning("[A365 Observability] S2S token refresh failed (non-fatal): %s", exc)
+
+
+def get_s2s_observability_token(agent_id: str, tenant_id: str) -> str | None:
+    """Token resolver passed to configure(token_resolver=...)."""
+    return _cached_token or None
+```
+
+Also install the required MSAL package if not already present:
+```bash
+pip install msal
+# or: uv add msal
+```
+
+#### Step 2 — Wire in entry point (`host_agent_server.py` or `app.py`)
 
 ```python
 # authMode: S2S — service principal, no user OBO.
 # Token must be acquired via MSAL client credentials, NOT AgenticTokenCache.
-import os
-from msal import ConfidentialClientApplication
+import asyncio
 from microsoft_agents_a365.observability.core import configure, Agent365ExporterOptions
-
-_msal_app = ConfidentialClientApplication(
-    client_id=os.environ["BLUEPRINT_CLIENT_ID"],
-    client_credential=os.environ["BLUEPRINT_CLIENT_SECRET"],
-    authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}",
+from observability.observability_token_service import (
+    start_observability_token_service,
+    get_s2s_observability_token,
 )
-_cached_token: str = ""
 
-def _acquire_s2s_token(agent_id: str, tenant_id: str) -> str | None:
-    # Client credentials via MSAL — acquires Observability API token.
-    global _cached_token
-    result = _msal_app.acquire_token_for_client(
-        scopes=["api://9b975845-388f-4429-889e-eab1ef63949c/.default"]
+async def main():
+    # Start background token refresh BEFORE configure() is called.
+    asyncio.create_task(start_observability_token_service())
+
+    configure(
+        service_name="my-agent",
+        service_namespace="my.namespace",
+        exporter_options=Agent365ExporterOptions(
+            use_s2s_endpoint=True,       # S2S-specific: routes to the S2S endpoint
+            token_resolver=get_s2s_observability_token,
+        ),
     )
-    _cached_token = result.get("access_token", "")
-    return _cached_token or None
-
-configure(
-    service_name="my-agent",
-    service_namespace="my.namespace",
-    exporter_options=Agent365ExporterOptions(
-        use_s2s_endpoint=True,       # S2S-specific: different API endpoint
-        token_resolver=_acquire_s2s_token,
-    ),
-)
+    # ... rest of server startup
 ```
 
-Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and `use_s2s_endpoint` flag differ. Do **not** call `token_cache.register_observability()` for S2S agents.
+#### S2S environment variables
+
+```dotenv
+# Blueprint service principal (from a365 setup output)
+BLUEPRINT_CLIENT_ID=
+BLUEPRINT_CLIENT_SECRET=
+TENANT_ID=
+```
+
+Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver, `use_s2s_endpoint` flag, and absence of `register_observability()` differ. Do **not** call `token_cache.register_observability()` for S2S agents.
 
 ### Hosting path — AgenticTokenCache (AI Teammate agents)
 

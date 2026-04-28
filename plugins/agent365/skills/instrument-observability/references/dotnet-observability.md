@@ -31,9 +31,8 @@ dotnet add package Microsoft.Agents.A365.Observability.Runtime
 # Required for OBO agents (authMode: user-delegated or agentic-identity)
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
 
-# Required for S2S agents (authMode: S2S) — Federated Managed Identity (FMI) token chain
+# Required for S2S agents (authMode: S2S) — MSAL client credentials (Observability API scope)
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
-dotnet add package Azure.Identity
 dotnet add package Microsoft.Identity.Client
 
 # Optional auto-instrumentation extensions
@@ -98,8 +97,6 @@ public static class ObservabilityServiceExtensions
 ### Scaffold: `Observability/ObservabilityTokenService.cs`
 
 ```csharp
-using Azure.Core;
-using Azure.Identity;
 using Microsoft.Agents.A365.Observability.Hosting.Caching;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -111,21 +108,16 @@ using System.Threading.Tasks;
 
 namespace <ProjectNamespace>;
 
-// Background service that acquires an Observability API token via a 3-hop Federated Managed Identity (FMI) chain
-// and refreshes it every 50 minutes (tokens typically last 60–75 min).
-//
-// Hop 1+2: Blueprint → Agent identity token (T1) via WithFmiPath(agentId)
-//   MSI in prod (ManagedIdentityCredential), client secret locally (fallback).
-// Hop 3:   Agent identity uses T1 as assertion → Observability API token.
+// Background service that acquires an Observability API token via MSAL client credentials
+// targeting the Observability API scope and refreshes it every 50 minutes.
 internal sealed class ObservabilityTokenService : BackgroundService
 {
-    private static readonly string[] FmiScopes = ["api://AzureADTokenExchange/.default"];
     private static readonly string[] ObservabilityScopes = ["api://9b975845-388f-4429-889e-eab1ef63949c/.default"];
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(50);
 
     private readonly IExporterTokenCache<string> _tokenCache;
     private readonly ILogger<ObservabilityTokenService> _logger;
-    private readonly string _blueprintClientId, _blueprintClientSecret, _tenantId, _agentId;
+    private readonly string _clientId, _clientSecret, _tenantId, _agentId;
 
     public ObservabilityTokenService(
         IExporterTokenCache<string> tokenCache,
@@ -135,11 +127,10 @@ internal sealed class ObservabilityTokenService : BackgroundService
         _tokenCache = tokenCache;
         _logger = logger;
         var obs = configuration.GetSection("Agent365Observability");
-        _tenantId              = obs["TenantId"]     ?? throw new InvalidOperationException("Agent365Observability:TenantId is required.");
-        _agentId               = obs["AgentId"]      ?? throw new InvalidOperationException("Agent365Observability:AgentId is required.");
-        _blueprintClientId     = obs["ClientId"]     ?? throw new InvalidOperationException("Agent365Observability:ClientId is required.");
-        // ClientSecret is required even in production: MSI is tried first; secret is local-dev fallback.
-        _blueprintClientSecret = obs["ClientSecret"] ?? throw new InvalidOperationException("Agent365Observability:ClientSecret is required.");
+        _tenantId     = obs["TenantId"]     ?? throw new InvalidOperationException("Agent365Observability:TenantId is required.");
+        _agentId      = obs["AgentId"]      ?? throw new InvalidOperationException("Agent365Observability:AgentId is required.");
+        _clientId     = obs["ClientId"]     ?? throw new InvalidOperationException("Agent365Observability:ClientId is required.");
+        _clientSecret = obs["ClientSecret"] ?? throw new InvalidOperationException("Agent365Observability:ClientSecret is required.");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -158,42 +149,17 @@ internal sealed class ObservabilityTokenService : BackgroundService
 
     private async Task AcquireAndRegisterTokenAsync(CancellationToken ct)
     {
-        string t1Token;
         string authority = $"https://login.microsoftonline.com/{_tenantId}";
 
-        // Hop 1+2: Blueprint → T1 (MSI in prod, client secret locally)
-        // ManagedIdentityCredential uses resource URI (no /.default); FmiScopes uses /.default — intentional.
-        try
-        {
-            var assertion = await new ManagedIdentityCredential()
-                .GetTokenAsync(new TokenRequestContext(["api://AzureADTokenExchange"]), ct);
-            t1Token = (await ConfidentialClientApplicationBuilder
-                .Create(_blueprintClientId)
-                .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult(assertion.Token))
-                .WithAuthority(new Uri(authority)).Build()
-                .AcquireTokenForClient(FmiScopes).WithFmiPath(_agentId)
-                .ExecuteAsync(ct)).AccessToken;
-        }
-        catch (AuthenticationFailedException)
-        {
-            // MSI unavailable — fall back to client secret (local dev)
-            t1Token = (await ConfidentialClientApplicationBuilder
-                .Create(_blueprintClientId)
-                .WithClientSecret(_blueprintClientSecret)
-                .WithAuthority(new Uri(authority)).Build()
-                .AcquireTokenForClient(FmiScopes).WithFmiPath(_agentId)
-                .ExecuteAsync(ct)).AccessToken;
-        }
-
-        // Hop 3: Agent identity uses T1 → Observability API token
-        var obsResult = await ConfidentialClientApplicationBuilder
-            .Create(_agentId)
-            .WithClientAssertion((AssertionRequestOptions _) => Task.FromResult(t1Token))
-            .WithAuthority(new Uri(authority)).Build()
+        var result = await ConfidentialClientApplicationBuilder
+            .Create(_clientId)
+            .WithClientSecret(_clientSecret)
+            .WithAuthority(new Uri(authority))
+            .Build()
             .AcquireTokenForClient(ObservabilityScopes)
             .ExecuteAsync(ct);
 
-        _tokenCache.RegisterObservability(_agentId, _tenantId, obsResult.AccessToken, ObservabilityScopes);
+        _tokenCache.RegisterObservability(_agentId, _tenantId, result.AccessToken, ObservabilityScopes);
         _logger.LogInformation("Observability token registered for agent {AgentId}.", _agentId);
     }
 }
@@ -671,7 +637,7 @@ warn: Agent365ExporterCore: No token obtained for agent {agentId} tenant {tenant
 | `AddAgenticTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for OBO token caching (`IExporterTokenCache<AgenticTokenStruct>`) — user-delegated / agentic-identity |
 | `AddServiceTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for S2S token cache (`IExporterTokenCache<string>`) — used by `AddAgent365Observability()` |
 | `Agent365ObservabilityContext` | Scaffold (`Observability/`) | Singleton wrapping `AgentDetails` for S2S agents — inject instead of per-turn `RegisterObservability` |
-| `ObservabilityTokenService` | Scaffold (`Observability/`) | `BackgroundService` — 3-hop Federated Managed Identity (FMI) token acquisition; refreshes every 50 min |
+| `ObservabilityTokenService` | Scaffold (`Observability/`) | `BackgroundService` — acquires Observability API token via MSAL client credentials; refreshes every 50 min |
 | `AddAgent365Observability()` | Scaffold (`Observability/`) | Registers `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext` in one call |
 | `AddA365Tracing()` | `Microsoft.Agents.A365.Observability.Runtime` | Registers OTel TracerProvider with A365 exporter |
 | `BaggageTurnMiddleware` | `Microsoft.Agents.A365.Observability.Hosting.Middleware` | Adapter middleware — auto-populates baggage from every `ITurnContext` |
@@ -742,8 +708,8 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | Build error on `AddA365Tracing` | Wrong namespace | Use `Microsoft.Agents.A365.Observability.Runtime` |
 | Spans dropped silently | Missing tenant/agent ID in baggage | Ensure `BaggageBuilder` is set up before creating spans, or register `BaggageTurnMiddleware` |
 | S2S: `InvalidOperationException` on startup | Missing `Agent365Observability:ClientId` or `TenantId` | Add `ClientId`, `ClientSecret`, `TenantId`, `AgentId` to `Agent365Observability` section in appsettings |
-| S2S: Token never registered | MSI and client secret both failed | Check `ObservabilityTokenService` logs; ensure MSI is assigned in prod or `ClientSecret` is set for local dev |
-| S2S: 401 on export | FMI chain not completing | Verify `AgentId` in appsettings matches the agent's Entra app ID; check `WithFmiPath` is supported in current MSAL version |
+| S2S: Token never registered | Client credentials failed | Check `ObservabilityTokenService` logs; ensure `ClientId` and `ClientSecret` are set correctly in appsettings |
+| S2S: 401 on export | Token acquired for wrong scope or app | Verify `ClientId` has been granted `api://9b975845-388f-4429-889e-eab1ef63949c/.default` in Entra ID; check `AgentId` matches the agent's Entra app ID |
 | S2S: `AddServiceTracingExporter` not found | Hosting package not installed | Run `dotnet add package Microsoft.Agents.A365.Observability.Hosting` |
 | S2S: `InvokeAgentScopeDetails` constructor error | No parameterless constructor exists | Pass at least `endpoint`: `new InvokeAgentScopeDetails(endpoint: new Uri("..."))` |
 | S2S: `InvokeAgentScope` has no `FromTurnContext` | `FromTurnContext` is a `BaggageBuilder` extension only | Create `BaggageBuilder` separately: `new BaggageBuilder().FromTurnContext(tc).Build()` |
