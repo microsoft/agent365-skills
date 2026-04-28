@@ -1,5 +1,6 @@
 ---
 name: a365-setup
+version: 1.4.2
 description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding

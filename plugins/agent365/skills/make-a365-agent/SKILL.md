@@ -1,5 +1,6 @@
 ---
 name: make-a365-agent
+version: 1.4.2
 description: >
   Provisions a non-AI Teammate agent with Agent 365 — use this skill for Discoverability
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.

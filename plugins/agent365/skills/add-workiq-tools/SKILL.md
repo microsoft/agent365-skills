@@ -1,5 +1,6 @@
 ---
 name: add-workiq-tools
+version: 1.4.2
 description: >
   Adds WorkIQ MCP tool servers to an existing .NET AgentFramework, Node.js, or Python agent
   using the A365 CLI. Runs a365 develop list-available to show the catalog, adds selected servers

@@ -156,3 +156,54 @@ jobs:
             fi
           done < <(find plugins/agent365/skills -mindepth 1 -maxdepth 1 -type d)
           exit $FAIL
+
+  # ── 9. Plugin names must be kebab-case ───────────────────────────────────
+  validate-plugin-names:
+    name: Plugin name format (kebab-case)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate kebab-case plugin names
+        run: |
+          python3 <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          KEBAB_CASE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+          def validate_name(name, source):
+              if KEBAB_CASE_PATTERN.fullmatch(name):
+                  return None
+              return f"{source}: '{name}' is not kebab-case"
+
+          errors = []
+
+          # Check .claude-plugin/marketplace.json
+          for mp in [Path(".claude-plugin/marketplace.json"), Path(".github/plugin/marketplace.json")]:
+              manifest = json.loads(mp.read_text())
+              top_name = manifest.get("name", "")
+              if top_name:
+                  err = validate_name(top_name, f"{mp} name")
+                  if err:
+                      errors.append(err)
+              for index, plugin in enumerate(manifest.get("plugins", [])):
+                  err = validate_name(plugin["name"], f"{mp} plugins[{index}].name")
+                  if err:
+                      errors.append(err)
+
+          # Check each plugin's own plugin.json
+          for plugin_manifest_path in sorted(Path("plugins").glob("*/.claude-plugin/plugin.json")):
+              plugin_manifest = json.loads(plugin_manifest_path.read_text())
+              err = validate_name(plugin_manifest["name"], f"{plugin_manifest_path} name")
+              if err:
+                  errors.append(err)
+
+          if errors:
+              print("Found plugin names that are not kebab-case:")
+              for error in errors:
+                  print(f"- {error}")
+              raise SystemExit(1)
+
+          print("All plugin names are kebab-case.")
+          PY

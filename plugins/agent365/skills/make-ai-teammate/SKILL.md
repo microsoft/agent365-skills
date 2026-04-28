@@ -1,5 +1,6 @@
 ---
 name: make-ai-teammate
+version: 1.4.2
 description: >
   Transforms a non-M365 agent into a Microsoft Agent 365 AI Teammate. Supports all major
   frameworks across .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents

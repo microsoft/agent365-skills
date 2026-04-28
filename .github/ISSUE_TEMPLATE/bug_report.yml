@@ -1,0 +1,109 @@
+name: Bug Report
+description: Report a bug in an Agent 365 skill
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Skill
+      description: Which skill is this bug related to?
+      options:
+        - make-ai-teammate
+        - a365-setup
+        - make-a365-agent
+        - add-workiq-tools
+        - instrument-observability
+        - test-local
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: What version of the plugin are you using?
+      placeholder: e.g., 1.4.2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Agent Language / Stack
+      description: Which language/framework is your agent using?
+      options:
+        - .NET AgentFramework
+        - .NET Semantic Kernel
+        - Node.js LangChain
+        - Node.js OpenAI Agents SDK
+        - Node.js Claude SDK
+        - Node.js Semantic Kernel
+        - Node.js Google ADK
+        - Python AgentFramework
+        - Python LangChain
+        - Python OpenAI
+        - Python Claude SDK
+        - Python Semantic Kernel
+        - Python Google ADK
+        - Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of the bug.
+      placeholder: Describe what happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Run skill '...'
+        2. Provide input '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs / Screenshots
+      description: Paste any relevant log output or screenshots.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Any relevant environment details.
+      placeholder: |
+        - OS: Windows 11
+        - Claude Code version: x.x.x
+        - a365 CLI version: x.x.x
+        - Node.js / .NET / Python version: x.x.x
+    validations:
+      required: false
