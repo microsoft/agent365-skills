@@ -414,7 +414,7 @@ If missing:
 #### Python agents
 
 ```bash
-python --version
+python3 --version 2>/dev/null || python --version
 uv --version 2>/dev/null || echo "uv not found (optional but recommended)"
 ```
 
