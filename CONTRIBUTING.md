@@ -55,8 +55,8 @@ For more information, see the [Code of Conduct FAQ](https://opensource.microsoft
 
 2. **Run validator scripts** directly:
    ```bash
-   node plugins/agent365/scripts/validate-observability.js
-   node plugins/agent365/scripts/validate-setup.js
+   node plugins/agent365/hooks/stop/validate-instrument-observability.js
+   node plugins/agent365/hooks/stop/validate-a365-setup.js
    ```
 
 3. **Test against real projects**:

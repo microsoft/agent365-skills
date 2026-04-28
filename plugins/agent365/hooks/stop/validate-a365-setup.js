@@ -36,7 +36,7 @@ function runCmd(cmd) {
 }
 
 // ── Check 1: a365 CLI is installed ──────────────────────────────────────────
-const a365Version = runCmd('a365 --version');
+const a365Version = process.env.VALIDATE_SKIP_EXEC ? 'skipped' : runCmd('a365 --version');
 if (!a365Version) {
   issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease');
 }

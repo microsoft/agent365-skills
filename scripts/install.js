@@ -63,6 +63,11 @@ function detectCopilot() {
   return run('gh copilot --version') !== null;
 }
 
+function detectGhSkill() {
+  // gh skill is the GitHub CLI Agent Skills extension
+  return run('gh skill --version') !== null;
+}
+
 function detectVSCode() {
   return run('code --version') !== null;
 }
@@ -96,10 +101,30 @@ function enableAutoUpdateClaude() {
   ok('Auto-update enabled for Claude Code');
 }
 
-// ── GitHub Copilot installation (Chat + CLI) ─────────────────────────────────
-// Both GitHub Copilot Chat (VS Code) and GitHub Copilot CLI (gh copilot) read
+// ── GitHub Copilot / gh skill installation ───────────────────────────────────
+// GitHub Copilot Chat (VS Code) and GitHub Copilot CLI (gh copilot) read
 // .github/copilot-instructions.md from the workspace root automatically.
-// Installing this file enables skills for both surfaces.
+// Installing this file enables trigger-phrase-based skills for both surfaces.
+//
+// In addition, `gh skill add` installs skills from the repo's
+// .github/plugin/marketplace.json, enabling /skills-style invocation
+// in the GitHub Copilot CLI and cloud agent.
+
+function installGhSkill() {
+  header('GitHub Copilot — gh skill');
+  const result = spawnSync(
+    'gh', ['skill', 'add', MARKETPLACE_REPO],
+    { encoding: 'utf8', stdio: 'pipe' }
+  );
+  if (result.status === 0) {
+    ok(`Agent 365 skills installed via gh skill add ${MARKETPLACE_REPO}`);
+    log('Use /skills list in gh copilot to see installed skills.');
+  } else {
+    warn('gh skill add failed — falling back to copilot-instructions.md method.');
+    log('  ' + (result.stderr || '').trim());
+    installCopilotInstructions();
+  }
+}
 
 function installCopilotInstructions() {
   header('GitHub Copilot (Chat + CLI)');
@@ -132,6 +157,63 @@ function installCopilotInstructions() {
   log('Skills trigger when you type phrases like:');
   log('  Copilot Chat: "Make this agent an AI Teammate"');
   log('  gh copilot:   gh copilot suggest "Instrument observability for this agent"');
+}
+
+// ── Agent Skills open standard (.agents/skills/) ─────────────────────────────
+// Copies each skill directory into .agents/skills/<skill-name>/ in the
+// target project. This is the open agentskills.io standard location,
+// recognised by VS Code agent mode, GitHub Copilot CLI, and cloud agent.
+// Only SKILL.md and references/ are copied — Claude-specific hooks are excluded.
+
+function installAgentsSkills() {
+  header('Agent Skills — .agents/skills/ (open standard)');
+  const skillsRoot = path.join(__dirname, '..', 'plugins', 'agent365', 'skills');
+  if (!fs.existsSync(skillsRoot)) {
+    warn('Skills source directory not found — skipping .agents/skills/ install');
+    return;
+  }
+
+  const destRoot = path.join(process.cwd(), '.agents', 'skills');
+  let installed = 0;
+  let skipped   = 0;
+
+  for (const skillName of fs.readdirSync(skillsRoot)) {
+    const srcDir = path.join(skillsRoot, skillName);
+    if (!fs.statSync(srcDir).isDirectory()) continue;
+
+    const destDir   = path.join(destRoot, skillName);
+    const destSkill = path.join(destDir, 'SKILL.md');
+
+    if (fs.existsSync(destSkill)) {
+      skipped++;
+      continue;
+    }
+
+    fs.mkdirSync(destDir, { recursive: true });
+
+    // Copy SKILL.md
+    const srcSkill = path.join(srcDir, 'SKILL.md');
+    if (fs.existsSync(srcSkill)) fs.copyFileSync(srcSkill, destSkill);
+
+    // Copy references/ if present
+    const srcRefs = path.join(srcDir, 'references');
+    if (fs.existsSync(srcRefs)) {
+      const destRefs = path.join(destDir, 'references');
+      fs.mkdirSync(destRefs, { recursive: true });
+      for (const f of fs.readdirSync(srcRefs)) {
+        fs.copyFileSync(path.join(srcRefs, f), path.join(destRefs, f));
+      }
+    }
+
+    installed++;
+  }
+
+  if (installed > 0) {
+    ok(`Installed ${installed} skill(s) to .agents/skills/`);
+    log('These skills are available in VS Code agent mode, Copilot CLI, and cloud agent.');
+    log('Add .agents/skills/ to .gitignore if you do not want to commit them.');
+  }
+  if (skipped > 0) log(`${skipped} skill(s) already present — skipped.`);
 }
 
 // ── Manual fallback ──────────────────────────────────────────────────────────
@@ -171,17 +253,22 @@ if (!hasNode) {
   process.exit(1);
 }
 
-const hasClaude  = detectClaude();
-const hasCopilot = detectCopilot();
-const hasVSCode  = detectVSCode();
+const hasClaude   = detectClaude();
+const hasCopilot  = detectCopilot();
+const hasVSCode   = detectVSCode();
+const hasGhSkill  = detectGhSkill();
 
-if (!hasClaude && !hasVSCode && !hasCopilot) {
-  warn('Neither Claude Code, VS Code, nor gh copilot detected.');
+if (!hasClaude && !hasVSCode && !hasCopilot && !hasGhSkill) {
+  warn('Neither Claude Code, VS Code, gh copilot, nor gh skill detected.');
   showManualInstructions();
 } else {
-  if (hasClaude)              installClaudeCode();
-  if (hasVSCode || hasCopilot) installCopilotInstructions();
+  if (hasClaude)                    installClaudeCode();
+  if (hasGhSkill)                   installGhSkill();
+  else if (hasVSCode || hasCopilot) installCopilotInstructions();
 }
+
+// Always install to .agents/skills/ — works for VS Code agent mode, Copilot CLI, and cloud agent
+installAgentsSkills();
 
 checkA365();
 

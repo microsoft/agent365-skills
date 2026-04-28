@@ -99,8 +99,11 @@ const isPython  = !isDotnet && !isNodejs && (
 if (isDotnet) {
   const csFiles = findFiles(cwd, ['.cs']).filter(f => !f.includes('obj') && !f.includes('bin'));
 
-  const hasMcpWiring = anyFileContains(csFiles,
-    'GetMcpToolsAsync', 'AddToolServersToAgentAsync', 'IMcpToolRegistrationService');
+  const hasMcpWiring = csFiles.some(f =>
+    fileContains(f, 'GetMcpToolsAsync') ||
+    fileContains(f, 'AddToolServersToAgentAsync') ||
+    fileContains(f, 'IMcpToolRegistrationService')
+  );
   if (!hasMcpWiring) {
     issues.push('.NET: No .cs file calls GetMcpToolsAsync, AddToolServersToAgentAsync, or registers IMcpToolRegistrationService');
   }
@@ -112,7 +115,13 @@ if (isDotnet) {
 }
 
 if (isNodejs) {
-  const hasMcpClient = anyFileContains(tsFiles, 'A365McpToolClient', 'getToolsAsync', 'addToolServersToAgent', 'agents-a365-tooling', 'McpToolRegistrationService');
+  const hasMcpClient = tsFiles.some(f =>
+    fileContains(f, 'A365McpToolClient') ||
+    fileContains(f, 'getToolsAsync') ||
+    fileContains(f, 'addToolServersToAgent') ||
+    fileContains(f, 'agents-a365-tooling') ||
+    fileContains(f, 'McpToolRegistrationService')
+  );
   if (!hasMcpClient) {
     issues.push('Node.js: No TypeScript/JS file uses McpToolRegistrationService, A365McpToolClient, or imports agents-a365-tooling');
   }
@@ -124,8 +133,11 @@ if (isNodejs) {
 }
 
 if (isPython) {
-  const hasMcpWiring = anyFileContains(pyFiles,
-    'get_mcp_tools_async', 'add_tool_servers_to_agent', 'McpToolRegistrationService');
+  const hasMcpWiring = pyFiles.some(f =>
+    fileContains(f, 'get_mcp_tools_async') ||
+    fileContains(f, 'add_tool_servers_to_agent') ||
+    fileContains(f, 'McpToolRegistrationService')
+  );
   if (!hasMcpWiring) {
     issues.push('Python: No .py file calls get_mcp_tools_async, add_tool_servers_to_agent, or imports McpToolRegistrationService');
   }
@@ -141,7 +153,7 @@ if (isPython) {
 // ── Check 3: a365 develop list-configured shows WorkIQ servers ──────────────
 // (best-effort — skip if a365 CLI not installed or not authenticated)
 
-const a365Version = runCmd('a365 --version');
+const a365Version = process.env.VALIDATE_SKIP_EXEC ? '' : runCmd('a365 --version');
 if (a365Version) {
   const configured = runCmd('a365 develop list-configured');
   if (configured && configured.trim()) {
@@ -170,15 +182,17 @@ function runBuild(cmd, timeoutMs) {
   }
 }
 
-if (isDotnet) {
-  const result = runBuild('dotnet build --no-restore -v minimal', 25000);
-  if (!result.ok || !result.output.includes('Build succeeded')) {
-    issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
-  }
-} else if (isNodejs) {
-  const result = runBuild('npx tsc --noEmit', 15000);
-  if (!result.ok) {
-    issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+if (!process.env.VALIDATE_SKIP_EXEC) {
+  if (isDotnet) {
+    const result = runBuild('dotnet build --no-restore -v minimal', 25000);
+    if (!result.ok || !result.output.includes('Build succeeded')) {
+      issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
+    }
+  } else if (isNodejs) {
+    const result = runBuild('npx tsc --noEmit', 15000);
+    if (!result.ok) {
+      issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+    }
   }
 }
 // Python has no compilation step.

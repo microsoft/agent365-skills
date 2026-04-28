@@ -89,9 +89,9 @@ plugins/agent365/
 │   │   └── path-guard.js         # Blocks Write/Edit outside the agent project directory
 │   └── stop/
 │       ├── validate-make-ai-teammate.js  # Stop hook validator — build check included
-│       ├── validate-setup.js             # Stop hook validator for a365-setup
+│       ├── validate-a365-setup.js        # Stop hook validator for a365-setup
 │       ├── validate-make-a365-agent.js   # Stop hook validator for make-a365-agent
-│       ├── validate-observability.js     # Stop hook validator — build check included
+│       ├── validate-instrument-observability.js  # Stop hook validator — build check included
 │       ├── validate-add-workiq-tools.js  # Stop hook validator — build check included
 │       └── validate-test-local.js
 └── AGENTS.md                     # This file
@@ -173,7 +173,7 @@ hooks:
 
 1. Create `skills/<skill-name>/SKILL.md` with the YAML frontmatter above.
 2. Add any reference docs to `skills/<skill-name>/references/`.
-3. Add a validator script to `scripts/validate-<skill-name>.js`.
+3. Add a validator script to `hooks/stop/validate-<skill-name>.js`.
 4. Skills are auto-discovered from the `skills/` directory — no changes to `plugin.json` needed.
 5. Add eval cases to `evals/agent365/<skill-name>/evals.json`.
 6. Test with: `claude --plugin-dir /path/to/plugins/agent365`
@@ -207,7 +207,7 @@ Run by each skill's stop hook before the session ends. They must:
 - Complete within the timeout (15–30 seconds depending on skill).
 - Never block on network I/O — check local files only.
 
-`validate-observability.js`, `validate-make-ai-teammate.js`, and `validate-add-workiq-tools.js` also run a lightweight build check (`dotnet build --no-restore` for .NET, `tsc --noEmit` for Node.js) and block the session if compilation fails.
+`validate-instrument-observability.js`, `validate-make-ai-teammate.js`, and `validate-add-workiq-tools.js` also run a lightweight build check (`dotnet build --no-restore` for .NET, `tsc --noEmit` for Node.js) and block the session if compilation fails.
 
 ---
 
@@ -227,7 +227,7 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 
 All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = S2S` and the skill is `add-workiq-tools`, a compatibility warning is surfaced before Phase 4 (WorkIQ requires a user token).
 
-**S2S scaffold requirement:** When `authMode = S2S`, `instrument-observability` creates a scaffold token-service file per language: .NET creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`, Node.js creates `observability/observability-token-service.ts`, Python creates `observability/observability_token_service.py`. Each acquires and refreshes the Observability API token via MSAL client credentials targeting `api://9b975845-388f-4429-889e-eab1ef63949c/.default`. The .NET files additionally provide the `AddAgent365Observability()` / `Agent365ObservabilityContext` DI extensions that replace `AddAgenticTracingExporter()` and per-turn `RegisterObservability()`. The validator (`validate-observability.js`) accepts either the OBO signal (`BaggageBuilder` / `BaggageTurnMiddleware`) or the S2S signal to pass the context check.
+**S2S scaffold requirement:** When `authMode = S2S`, `instrument-observability` creates a scaffold token-service file per language: .NET creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`, Node.js creates `observability/observability-token-service.ts`, Python creates `observability/observability_token_service.py`. Each acquires and refreshes the Observability API token via MSAL client credentials targeting `api://9b975845-388f-4429-889e-eab1ef63949c/.default`. The .NET files additionally provide the `AddAgent365Observability()` / `Agent365ObservabilityContext` DI extensions that replace `AddAgenticTracingExporter()` and per-turn `RegisterObservability()`. The validator (`validate-instrument-observability.js`) accepts either the OBO signal (`BaggageBuilder` / `BaggageTurnMiddleware`) or the S2S signal to pass the context check.
 
 ---
 
@@ -261,7 +261,7 @@ claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 
 # Run the make-ai-teammate validator directly
 cd /path/to/your-agent-project
-node /path/to/agent365-skills/plugins/agent365/scripts/validate-make-ai-teammate.js
+node /path/to/agent365-skills/plugins/agent365/hooks/stop/validate-make-ai-teammate.js
 ```
 
 ---

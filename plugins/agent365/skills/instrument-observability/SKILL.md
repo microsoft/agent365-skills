@@ -23,7 +23,7 @@ hooks:
       timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-observability.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-instrument-observability.js
       timeout: 30000
     - type: prompt
       prompt: |

@@ -30,10 +30,10 @@ pip install --pre microsoft-agents-a365-runtime
 pip install --pre microsoft-agents-a365-observability-hosting
 
 # Optional auto-instrumentation extensions
-pip install microsoft-agents-a365-observability-extensions-semantic-kernel
-pip install microsoft-agents-a365-observability-extensions-openai
-pip install microsoft-agents-a365-observability-extensions-agent-framework
-pip install microsoft-agents-a365-observability-extensions-langchain
+pip3 install microsoft-agents-a365-observability-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-semantic-kernel
+pip3 install microsoft-agents-a365-observability-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-openai
+pip3 install microsoft-agents-a365-observability-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-agent-framework
+pip3 install microsoft-agents-a365-observability-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-langchain
 ```
 
 ---
@@ -136,7 +136,7 @@ def get_s2s_observability_token(agent_id: str, tenant_id: str) -> str | None:
 
 Also install the required MSAL package if not already present:
 ```bash
-pip install msal
+pip3 install msal 2>/dev/null || pip install msal
 # or: uv add msal
 ```
 

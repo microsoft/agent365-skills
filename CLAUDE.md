@@ -61,8 +61,8 @@ claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 # Say: "add a365 observability"
 
 # Validate stop hooks directly
-node plugins/agent365/scripts/validate-observability.js
-node plugins/agent365/scripts/validate-setup.js
+node plugins/agent365/hooks/stop/validate-instrument-observability.js
+node plugins/agent365/hooks/stop/validate-a365-setup.js
 
 # Run evals manually
 # See evals/README.md for detailed testing instructions

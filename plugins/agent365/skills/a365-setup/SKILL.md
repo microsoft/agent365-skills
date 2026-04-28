@@ -21,7 +21,7 @@ hooks:
       timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-setup.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-a365-setup.js
       timeout: 15000
     - type: prompt
       prompt: |
