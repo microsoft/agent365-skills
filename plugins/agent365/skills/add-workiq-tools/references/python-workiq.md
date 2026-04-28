@@ -62,7 +62,7 @@ a365 develop get-token --resource mcp -o raw
 
 Install core + the adapter for your framework. Example for AgentFramework:
 ```bash
-pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agent-framework
+pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agent-framework
 ```
 
 ---

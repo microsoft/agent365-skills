@@ -99,8 +99,11 @@ const isPython  = !isDotnet && !isNodejs && (
 if (isDotnet) {
   const csFiles = findFiles(cwd, ['.cs']).filter(f => !f.includes('obj') && !f.includes('bin'));
 
-  const hasMcpWiring = anyFileContains(csFiles,
-    'GetMcpToolsAsync', 'AddToolServersToAgentAsync', 'IMcpToolRegistrationService');
+  const hasMcpWiring = csFiles.some(f =>
+    fileContains(f, 'GetMcpToolsAsync') ||
+    fileContains(f, 'AddToolServersToAgentAsync') ||
+    fileContains(f, 'IMcpToolRegistrationService')
+  );
   if (!hasMcpWiring) {
     issues.push('.NET: No .cs file calls GetMcpToolsAsync, AddToolServersToAgentAsync, or registers IMcpToolRegistrationService');
   }
@@ -112,7 +115,13 @@ if (isDotnet) {
 }
 
 if (isNodejs) {
-  const hasMcpClient = anyFileContains(tsFiles, 'A365McpToolClient', 'getToolsAsync', 'addToolServersToAgent', 'agents-a365-tooling', 'McpToolRegistrationService');
+  const hasMcpClient = tsFiles.some(f =>
+    fileContains(f, 'A365McpToolClient') ||
+    fileContains(f, 'getToolsAsync') ||
+    fileContains(f, 'addToolServersToAgent') ||
+    fileContains(f, 'agents-a365-tooling') ||
+    fileContains(f, 'McpToolRegistrationService')
+  );
   if (!hasMcpClient) {
     issues.push('Node.js: No TypeScript/JS file uses McpToolRegistrationService, A365McpToolClient, or imports agents-a365-tooling');
   }
@@ -124,8 +133,11 @@ if (isNodejs) {
 }
 
 if (isPython) {
-  const hasMcpWiring = anyFileContains(pyFiles,
-    'get_mcp_tools_async', 'add_tool_servers_to_agent', 'McpToolRegistrationService');
+  const hasMcpWiring = pyFiles.some(f =>
+    fileContains(f, 'get_mcp_tools_async') ||
+    fileContains(f, 'add_tool_servers_to_agent') ||
+    fileContains(f, 'McpToolRegistrationService')
+  );
   if (!hasMcpWiring) {
     issues.push('Python: No .py file calls get_mcp_tools_async, add_tool_servers_to_agent, or imports McpToolRegistrationService');
   }

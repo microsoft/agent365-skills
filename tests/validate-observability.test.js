@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const path   = require('path');
 const { createFixture, runValidator, cleanup } = require('./helpers');
 
-const VALIDATOR = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-observability.js');
+const VALIDATOR = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-instrument-observability.js');
 
 // ── Shared fixture templates ─────────────────────────────────────────────────
 
