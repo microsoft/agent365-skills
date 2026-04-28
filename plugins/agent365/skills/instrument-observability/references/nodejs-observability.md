@@ -101,13 +101,25 @@ builder.start();
 
 ### S2S configuration (`authMode: S2S`)
 
+S2S observability is supported for Node.js. The pattern mirrors the `.NET ObservabilityTokenService` — a module-level token service acquires and refreshes the Observability API token via MSAL client credentials. No OBO user token is required.
+
 > Reference: [Agent observability — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
 
+#### Step 1 — Create `observability/observability-token-service.ts`
+
+Write this scaffold file to handle background token acquisition and refresh:
+
 ```typescript
-// authMode: S2S — service principal, no user OBO.
-// Token must be acquired via MSAL client credentials, NOT AgenticTokenCacheInstance.
-import { ObservabilityManager, Agent365ExporterOptions } from '@microsoft/agents-a365-observability';
+// observability/observability-token-service.ts
+// A365 Observability — best-effort instrumentation (verify against official sample)
 import { ConfidentialClientApplication } from '@azure/msal-node';
+
+// Dedicated Observability API app — scope updated per SDK release (April 2025)
+const OBSERVABILITY_SCOPE = 'api://9b975845-388f-4429-889e-eab1ef63949c/.default';
+const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes (token TTL = 60 min)
+
+let _cachedToken = '';
+let _refreshTimer: NodeJS.Timeout | undefined;
 
 const msalApp = new ConfidentialClientApplication({
   auth: {
@@ -117,24 +129,75 @@ const msalApp = new ConfidentialClientApplication({
   },
 });
 
+async function acquireToken(): Promise<string> {
+  const result = await msalApp.acquireTokenByClientCredential({
+    scopes: [OBSERVABILITY_SCOPE],
+  });
+  return result?.accessToken ?? '';
+}
+
+/** Call once at startup — acquires the first token and schedules refresh every 50 min. */
+export async function startObservabilityTokenService(): Promise<void> {
+  _cachedToken = await acquireToken();
+  _refreshTimer = setInterval(async () => {
+    try {
+      _cachedToken = await acquireToken();
+    } catch (e) {
+      console.warn('[A365 Observability] S2S token refresh failed (non-fatal):', e);
+    }
+  }, TOKEN_REFRESH_INTERVAL_MS);
+}
+
+/** Token resolver passed to ObservabilityManager.withTokenResolver(). */
+export function getS2SObservabilityToken(_agentId: string, _tenantId: string): string {
+  return _cachedToken;
+}
+
+export function stopObservabilityTokenService(): void {
+  if (_refreshTimer) clearInterval(_refreshTimer);
+}
+```
+
+Also install the required MSAL package if not already present:
+```bash
+npm install @azure/msal-node
+```
+
+#### Step 2 — Wire in entry point (`index.ts`)
+
+```typescript
+// authMode: S2S — service principal, no user OBO.
+// Token must be acquired via MSAL client credentials, NOT AgenticTokenCacheInstance.
+import { ObservabilityManager, Agent365ExporterOptions } from '@microsoft/agents-a365-observability';
+import {
+  startObservabilityTokenService,
+  getS2SObservabilityToken,
+} from './observability/observability-token-service';
+
+// Start background token refresh BEFORE ObservabilityManager.configure().
+await startObservabilityTokenService();
+
 const exporterOptions = new Agent365ExporterOptions();
-exporterOptions.useS2SEndpoint = true;   // S2S-specific: different API endpoint
+exporterOptions.useS2SEndpoint = true;   // S2S-specific: routes to the S2S endpoint
 
 ObservabilityManager.configure(builder =>
   builder
     .withService(process.env.SERVICE_NAME ?? 'my-agent', '1.0.0')
     .withExporterOptions(exporterOptions)
-    .withTokenResolver(async (_agentId, _tenantId) => {
-      // Client credentials via MSAL — acquires Observability API token.
-      const result = await msalApp.acquireTokenByClientCredential({
-        scopes: ['api://9b975845-388f-4429-889e-eab1ef63949c/.default'],
-      });
-      return result?.accessToken ?? '';
-    })
+    .withTokenResolver(getS2SObservabilityToken)  // uses cached token from service
 ).start();
 ```
 
-Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and `useS2SEndpoint` flag differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
+#### S2S environment variables
+
+```dotenv
+# Blueprint service principal (from a365 setup output)
+BLUEPRINT_CLIENT_ID=
+BLUEPRINT_CLIENT_SECRET=
+TENANT_ID=
+```
+
+Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver, `useS2SEndpoint` flag, and absence of `RefreshObservabilityToken` differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
 
 ---
 

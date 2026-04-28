@@ -7,7 +7,8 @@ description: >
   store publishing), and updates configuration files. Asks a two-stage question — agent kind
   (AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)) and auth mode — to determine
   the correct token path: OBO (user-delegated / agentic-identity / Assistive) or Autonomous S2S
-  (Federated Managed Identity (FMI) token chain, .NET with ObservabilityTokenService scaffold files). Non-destructive and idempotent.
+  (MSAL client-credentials token chain supported for .NET, Node.js, and Python — each language
+  gets a scaffold token-service file that acquires and refreshes the Observability API token). Non-destructive and idempotent.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -31,7 +32,7 @@ hooks:
         2. agentType (ai-teammate/AI Teammate (Digital Worker) or system-agent/Standard Agent (Non Digital Worker)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
         3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
         4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
-        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); RegisterObservability called per-turn with (agentId, tenantId, AgenticTokenStruct, scopes). For S2S path (.NET): baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist; no per-turn RegisterObservability call.
+        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); RegisterObservability called per-turn with (agentId, tenantId, AgenticTokenStruct, scopes). For S2S path — all languages: no per-turn RegisterObservability/RefreshObservabilityToken/register_observability call; token comes from the scaffold token-service file started at startup. .NET additionally: baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist. Node.js S2S: observability/observability-token-service.ts exists; startObservabilityTokenService() called before ObservabilityManager.configure(); useS2SEndpoint=true. Python S2S: observability/observability_token_service.py exists; start_observability_token_service() task created before configure(); use_s2s_endpoint=True.
         6. Agentic token resolver with caching is implemented.
         7. Configuration files (appsettings.json or .env) include observability variables.
         8. Build/compile succeeds (dotnet build, npm run build, or python import check).
@@ -279,7 +280,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability initialization following the reference pattern in `nodejs-observability.md`:
    - Add imports for `ObservabilityManager` from `@microsoft/agents-a365-observability`
    - **OBO path**: Add `ObservabilityManager.configure()` with `withTokenResolver` pointing to `AgenticTokenCacheInstance`. Call `.start()` before any LLM imports.
-   - **S2S path**: Set `exporterOptions.useS2SEndpoint = true` and wire a `withTokenResolver` callback that uses MSAL `acquireTokenByClientCredential` to acquire a client-credentials token.
+   - **S2S path**: First **Write** `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL client credentials and refreshes it every 50 min. Then call `await startObservabilityTokenService()` before `ObservabilityManager.configure()`, set `exporterOptions.useS2SEndpoint = true`, and wire `withTokenResolver(getS2SObservabilityToken)`. Also run `npm install @azure/msal-node` if not already present.
    - Optionally register `adapter.use(new BaggageMiddleware())` (OBO path) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -292,7 +293,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability configuration following the reference pattern in `python-observability.md`:
    - Add `from microsoft_agents_a365.observability.core import configure` and call `configure()` with `service_name`, `service_namespace`, and `token_resolver`
    - **OBO path**: Wire `token_resolver` to `AgenticTokenCache` from the hosting package.
-   - **S2S path**: Set `use_s2s_endpoint=True` in `Agent365ExporterOptions` and provide a `token_resolver` callback that uses MSAL `acquire_token_for_client` to acquire a client-credentials token.
+   - **S2S path**: First **Write** `observability/observability_token_service.py` using the scaffold pattern from `python-observability.md` (S2S section). This module acquires the Observability API token via MSAL client credentials and refreshes it every 50 min via an `asyncio` background task. Then call `asyncio.create_task(start_observability_token_service())` before `configure()`, set `use_s2s_endpoint=True` in `Agent365ExporterOptions`, and set `token_resolver=get_s2s_observability_token`. Also install `msal` if not already present.
    - Optionally register `BaggageMiddleware` or use `ObservabilityHostingManager` on the adapter (OBO path) to auto-populate baggage on every request
    - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -406,19 +407,31 @@ For AI Teammate agents using the hosting packages, the built-in token cache (`Ad
 
 ### For .NET AgentFramework (S2S path)
 
-The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Observability API token automatically via the Federated Managed Identity (FMI) 3-hop chain — no manual `TokenResolver` delegate needed.
+The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Observability API token automatically via the FMI 3-hop chain — no manual `TokenResolver` delegate needed.
 
 1. **Check** if `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` exist. If yes, **skip** — they were already created in Phase 3.
 
-2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Observability API token every 50 minutes).
+2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Power Platform token every 50 minutes).
 
-### For Node.js
+### For Node.js (OBO path)
 
 `AgenticTokenCacheInstance` from `@microsoft/agents-a365-observability-hosting` handles caching automatically. The `ObservabilityManager.configure()` call in Phase 3 wires it as the `tokenResolver`. No additional token resolver module is needed unless `Use_Custom_Resolver=true` is required (see reference doc for custom resolver pattern).
 
-### For Python
+### For Node.js (S2S path)
+
+**Check** if `observability/observability-token-service.ts` exists. If yes, **skip** — it was created in Phase 3.
+
+**If absent** (Phase 3 was skipped or re-running), create it now using the scaffold from `nodejs-observability.md` (S2S section). This file exports `startObservabilityTokenService()` (call at app startup) and `getS2SObservabilityToken()` (pass as `withTokenResolver`). The token is refreshed every 50 minutes targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`.
+
+### For Python (OBO path)
 
 `AgenticTokenCache` from `microsoft_agents_a365.observability.hosting.token_cache_helpers` handles caching automatically. It was wired as the `token_resolver` in the `configure()` call in Phase 3. No additional module is needed.
+
+### For Python (S2S path)
+
+**Check** if `observability/observability_token_service.py` exists. If yes, **skip** — it was created in Phase 3.
+
+**If absent**, create it now using the scaffold from `python-observability.md` (S2S section). This file exports `start_observability_token_service()` (schedule as `asyncio.create_task()` at startup) and `get_s2s_observability_token()` (pass as `token_resolver` in `configure()`). The token is refreshed every 50 minutes targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`.
 
 **TaskUpdate** — Mark complete.
 
