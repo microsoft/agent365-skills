@@ -22,12 +22,13 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Detects the agent language/framework across all supported stacks: .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). If no agent is found in the folder, offers to clone a sample agent from Agent365-Samples and continues from there.
-2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python)
+2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (.NET), or aiohttp (Python)
 3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
 4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables
 5. Runs `a365 setup all --aiteammate` — creates the Blueprint and Agentic User identity in Entra ID (use `--m365` too for M365-registered AI Teammates with Teams/Copilot integration)
-6. Offers `instrument-observability` (Strongly Recommended) — if yes, reads and follows instrument-observability/SKILL.md
-7. Offers `add-workiq-tools` (Optional) — if yes, reads and follows add-workiq-tools/SKILL.md
+6. Updates `manifest.json` with the correct Bot ID, App ID, and valid domains, then runs `a365 publish` to upload to the Teams App Catalog and `a365 deploy` to make the agent live; configures the bot endpoint in Teams Developer Portal and runs `a365 create-instance` to create the Agentic User UPN; guides a smoke test in Teams or AgentsPlayground
+7. Offers `instrument-observability` (Strongly Recommended) — if yes, reads and follows instrument-observability/SKILL.md
+8. Offers `add-workiq-tools` (Optional) — if yes, reads and follows add-workiq-tools/SKILL.md
    Both offers are mandatory checkpoints: skill does not end until each is either invoked or explicitly skipped by the user.
 
 **Reference patterns:**
@@ -56,11 +57,11 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Detects agent stack and language; shows detection summary; asks the user which capabilities to enable: Discoverability, Observability, Tools (WorkIQ), or AI Teammate (Digital Worker)
+1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Discoverability, Observability, Tools (WorkIQ), or AI Teammate (Digital Worker)
    - **CEA guard:** if the project is a Custom Engine Agent and the user selects AI Teammate, blocks the selection and re-presents options 1–3 (CEA is not supported as AI Teammate)
-2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and empty `authMode`
+2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and the collected `authMode` — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking
 3. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
-4. Validates Azure CLI login and Entra ID roles
+4. Validates Azure CLI login using `az login --allow-no-subscriptions` (plain `az login` fails for accounts with no Azure subscription) and validates Entra ID roles
 5. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths
 
 **This skill does NOT:** run `a365 setup all` itself — it delegates that to `make-ai-teammate` or `make-a365-agent`.
@@ -83,10 +84,11 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "make this a custom engine agent"
 
 **Summary of what this skill does:**
-1. Shows a dry-run preview of all `a365` operations before applying anything
-2. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants)
-3. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
-4. Guides the Global Administrator consent handoff: `a365 setup admin --blueprint-id <id>` (preferred) or PowerShell script
+1. Collects agent name (supports `default` → `developer` fallback; passes name verbatim — no case normalization) and project directory; asks whether the agent is cloud-hosted or local/dev-tunnel (guides through `devtunnel create/host` if local)
+2. Shows a dry-run preview of all `a365` operations before applying anything
+3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process
+4. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
+5. Guides the Global Administrator consent handoff: `a365 setup admin --blueprint-id <id>` (preferred) or PowerShell script
 
 **Normally delegated to from `a365-setup`** after CLI and Azure prerequisites are confirmed. Can also be invoked directly.
 
