@@ -19,6 +19,11 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Determine bump type from PR commits
         id: bump
         run: |
@@ -35,11 +40,12 @@ jobs:
           fi
           echo "Bump type: $(cat $GITHUB_OUTPUT | grep type | cut -d= -f2)"
 
-      - name: Bump plugin.json and marketplace.json
+      - name: Bump all version manifest files
         id: version
         run: |
           PLUGIN="plugins/agent365/.claude-plugin/plugin.json"
           MARKET=".claude-plugin/marketplace.json"
+          GH_MARKET=".github/plugin/marketplace.json"
           CURRENT=$(node -e "process.stdout.write(require('./$PLUGIN').version)")
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
           BUMP="${{ steps.bump.outputs.type }}"
@@ -52,22 +58,40 @@ jobs:
 
           node -e "
             const fs = require('fs');
+            // plugin.json and .claude-plugin/marketplace.json use flat 'version'
             ['$PLUGIN', '$MARKET'].forEach(p => {
               const j = JSON.parse(fs.readFileSync(p, 'utf8'));
               j.version = '$NEW';
               fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
             });
+            // .github/plugin/marketplace.json uses metadata.version
+            const gh = JSON.parse(fs.readFileSync('$GH_MARKET', 'utf8'));
+            gh.metadata.version = '$NEW';
+            // also bump plugin-level version inside plugins array if present
+            (gh.plugins || []).forEach(p => { if (p.version) p.version = '$NEW'; });
+            fs.writeFileSync('$GH_MARKET', JSON.stringify(gh, null, 2) + '\n');
           "
 
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "Bumped $CURRENT → $NEW ($BUMP)"
 
+      - name: Sync version field in SKILL.md files
+        run: node scripts/ensure-skill-version-check.js
+
+      - name: Update README version badge
+        run: |
+          sed -i "s/img.shields.io\/badge\/version-[0-9]*\.[0-9]*\.[0-9]*/img.shields.io\/badge\/version-${{ steps.version.outputs.new }}/g" README.md
+
       - name: Commit, tag, and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add plugins/agent365/.claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git add plugins/agent365/.claude-plugin/plugin.json \
+                  .claude-plugin/marketplace.json \
+                  .github/plugin/marketplace.json \
+                  "plugins/agent365/skills/*/SKILL.md" \
+                  README.md
           git diff --cached --quiet || git commit -m "chore: bump version ${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }} [skip ci]"
           git tag "v${{ steps.version.outputs.new }}"
           git push

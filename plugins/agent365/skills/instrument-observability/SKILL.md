@@ -43,6 +43,8 @@ hooks:
       timeout: 30000
 ---
 
+> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
+
 # Instrument A365 Observability
 
 > **Trigger phrases** — any of these will activate this skill automatically:
