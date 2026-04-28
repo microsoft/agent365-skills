@@ -118,8 +118,6 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 - If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Standard Agent (Non Digital Worker) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
 - If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
-After confirming, write `.a365-workspace-detection.json` (see `agent-detection.md` cache format).
-
 **Final question: What capabilities do you want to enable?**
 
 Present these options (omit or note option 4 if CEA was detected — see below):
@@ -148,7 +146,13 @@ After the capabilities question is answered (and the detection/confirmation abov
    - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported at GA.
      Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) at GA — AI Teammate (Digital Worker) is not available for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
-2. Derive `registrationType` from Phase 1A signals (do not ask the user):
+
+2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate`:
+   - `isAITeammate = true` → `agentType: "ai-teammate"`
+   - `isAITeammate = false` → `agentType: "system-agent"`
+   - Leave `authMode` as `""` — it is determined later by `instrument-observability`.
+
+3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
    - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard Agent (Non Digital Worker) / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)

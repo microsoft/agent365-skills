@@ -119,6 +119,8 @@ Store `agentType` (`ai-teammate` = AI Teammate (Digital Worker), or `system-agen
 - **AI Teammate (Digital Worker):** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
 - **Standard Agent (Non Digital Worker):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
 
+**Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
+
 The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry point wiring (Phase 3), message handler pattern (Phase 4), and token resolver (Phase 5). **Phases 2, 6, 7, and 8 are identical regardless of `authMode`.**
 
 **TaskUpdate** — Mark complete: "Determine agent type and authentication mode"

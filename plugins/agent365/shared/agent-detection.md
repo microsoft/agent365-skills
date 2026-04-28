@@ -396,20 +396,24 @@ Before any detection, check for `.a365-workspace-detection.json` in the working 
 
 ### Writing the cache (after detection + user confirmation)
 
-After detection completes and the user has confirmed the values, write `.a365-workspace-detection.json`:
+The cache is written in stages as values become known — always preserve fields already present.
 
+**Stage 1 — `a365-setup` Phase 1C** (after capabilities selection and `isAITeammate` is set):
 ```json
 {
   "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
   "agentType": "<ai-teammate | system-agent>",
-  "authMode": "<user-delegated | agentic-identity | S2S>",
+  "authMode": "",
   "detectedAt": "<ISO 8601 timestamp>"
 }
 ```
 
-Use the **Write** tool to create this file in the current working directory.
+**Stage 2 — `instrument-observability` Phase 0.5 or `add-workiq-tools` Phase 0B** (after `agentType` and `authMode` questions):
+Merge `agentType` and `authMode` into the existing file — update only those two fields, keep the rest unchanged.
+
+Use the **Write** tool to write the merged object back to `.a365-workspace-detection.json` in the current working directory.
 
 ---
 

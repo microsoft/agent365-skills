@@ -109,6 +109,8 @@ If `agentType` and `authMode` are already present in the detection cache (from a
 
 Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
 
+**Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
+
 The `authMode` value is used in Phase 4 to annotate which identity is used for M365 tool access. **If `authMode = S2S`, the WorkIQ guard in the shared section must be surfaced before proceeding to Phase 4.**
 
 ---
