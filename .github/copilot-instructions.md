@@ -56,10 +56,12 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command and requires user confirmation.
-2. Runs `a365 setup requirements` after all tools are confirmed, then checks Entra ID roles and validates Azure CLI login
-3. Asks which capability path the user wants (AI Teammate, Discoverability, Observability, WorkIQ)
-4. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths
+1. Detects agent stack and language; shows detection summary; asks the user which capabilities to enable: Discoverability, Observability, Tools (WorkIQ), or AI Teammate (Digital Worker)
+   - **CEA guard:** if the project is a Custom Engine Agent and the user selects AI Teammate, blocks the selection and re-presents options 1–3 (CEA is not supported as AI Teammate)
+2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and empty `authMode`
+3. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
+4. Validates Azure CLI login and Entra ID roles
+5. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths
 
 **This skill does NOT:** run `a365 setup all` itself — it delegates that to `make-ai-teammate` or `make-a365-agent`.
 
@@ -105,10 +107,12 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "add work iq calendar"
 
 **Summary of what this skill does:**
-1. Runs `a365 develop list-available` to show the MCP server catalog
-2. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
-3. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
-4. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; use `a365 setup admin --blueprint-id <id>` for the full consent handoff)
+1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.json` so subsequent skills skip re-asking
+   - **S2S warning:** if `authMode = S2S`, surfaces a compatibility warning before proceeding (WorkIQ tools require a user token — S2S autonomous agents have limited WorkIQ access)
+2. Runs `a365 develop list-available` to show the MCP server catalog
+3. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
+4. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
+5. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; use `a365 setup admin --blueprint-id <id>` for the full consent handoff)
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.json` to skip re-detection.
 
@@ -145,7 +149,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "prepare agent for a365"
 
 **Summary of what this skill does:**
-1. Asks a two-stage question: agent kind (AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)) then auth mode (`user-delegated`, `agentic-identity`, or `S2S`)
+1. Loads detection cache; asks a two-stage question (agent kind + auth mode) if not already cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.json` so `add-workiq-tools` and future runs skip re-asking
 2. Installs the observability packages (`Microsoft.Agents.A365.Observability.Runtime` + `Microsoft.Agents.A365.Observability.Hosting` for .NET; `@microsoft/agents-a365-runtime` + `@microsoft/agents-a365-observability` for all Node.js agents, plus `@microsoft/agents-a365-observability-hosting` for hosting-path scenarios; `microsoft-agents-a365-runtime` + `microsoft-agents-a365-observability-core` for all Python agents, plus `microsoft-agents-a365-observability-hosting` for hosting-path scenarios — **Python requires `--pre` flag for 0.3.x API**)
 3. **OBO path** (user-delegated / agentic-identity): wires `AddAgenticTracingExporter()` and per-turn `RegisterObservability(agentId, tenantId, new AgenticTokenStruct(userAuthorization, turnContext, "AGENTIC"), scopes)` — four arguments required
 4. **S2S path (all languages)**: Creates a scaffold token-service file that acquires/refreshes the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials every 50 min.
@@ -179,11 +183,12 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "test without deploying"
 
 **Summary of what this skill does:**
-1. Detects agent language (.NET → port 5000, Node.js/Python → port 3978)
+1. Detects agent language (.NET → port 5000, Node.js/Python → port 3978); detects Python command (`python3` on macOS/Linux, `python` on Windows)
 2. Checks `agentsplayground` CLI is installed — installs automatically if missing
-3. Checks language-specific build tools are present; offers to install any that are missing
+3. Checks language-specific build tools are present; offers to install any that are missing with platform-specific commands (Windows: winget, macOS: brew, Linux: apt)
 4. Builds the agent to confirm there are no compile errors
-5. Starts the agent in the background and launches AgentsPlayground at the local endpoint
+5. Asks the user before launching — either starts the agent + AgentsPlayground automatically, or shows the commands to run manually in two terminals
+6. Guides a local test: what to send, what terminal logs to watch for (observability span lines if instrumented), how to stop (`Ctrl+C`)
 
 **Works for any AI Teammate stack:** AgentsPlayground connects to `/api/messages` over HTTP — the LLM framework on the server is invisible to it.
 
@@ -213,7 +218,7 @@ All code added by observability instrumentation must be marked with the language
 **Observability API correctness rules (do not deviate):**
 - Node.js `AgentDetails`: field is `agentAUID` (uppercase UID) — `agentAuid` causes a TypeScript compile error
 - Node.js `extensions-openai`: requires `@openai/agents ^0.7.0` peer dep — NOT the `openai` npm package or `@azure/openai`
-- Python: for the 0.3.x observability API set, always use `pip install --pre` for `microsoft-agents-a365-observability-core`, `microsoft-agents-a365-observability-runtime`, and `microsoft-agents-a365-observability-hosting` — mixing prerelease and stable packages can produce incompatible APIs
+- Python: for the 0.3.x observability API set, always use `pip3 install --pre ... 2>/dev/null || pip install --pre ...` for `microsoft-agents-a365-observability-core`, `microsoft-agents-a365-observability-runtime`, and `microsoft-agents-a365-observability-hosting` — mixing prerelease and stable packages can produce incompatible APIs. Use `pip3` first (macOS/Linux default), fall back to `pip` (Windows)
 - .NET S2S: `FromTurnContext()` is only on `BaggageBuilder` — never chain it on `InvokeAgentScope.Start()`
 - .NET S2S: `InvokeAgentScopeDetails` has no parameterless constructor — always pass `endpoint: new Uri(...)`
 - .NET OBO: `RegisterObservability` takes four args: `agentId, tenantId, AgenticTokenStruct, scopes`
