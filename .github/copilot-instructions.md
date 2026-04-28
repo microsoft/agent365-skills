@@ -21,7 +21,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "make this agent work with microsoft 365"
 
 **Summary of what this skill does:**
-1. Detects the agent language/framework (Node.js LangChain/OpenAI/Claude SDK, .NET AgentFramework, Python AgentFramework)
+1. Detects the agent language/framework across all supported stacks: .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). If no agent is found in the folder, offers to clone a sample agent from Agent365-Samples and continues from there.
 2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python)
 3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
 4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables

@@ -18,7 +18,7 @@ This plugin instruments and configures A365 agents. It contains six skills:
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
-**Supported languages for `make-ai-teammate`:** Node.js (LangChain · OpenAI Agents SDK · Claude SDK) · .NET AgentFramework · Python AgentFramework
+**Supported languages for `make-ai-teammate`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI Agents SDK · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
 **Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 

@@ -1,17 +1,18 @@
 ---
 name: make-ai-teammate
 description: >
-  Transforms a non-M365 agent (Node.js LangChain/OpenAI/Claude, .NET AgentFramework, or Python
-  AgentFramework) into a Microsoft Agent 365 AI Teammate. Adds the hosting layer
-  (Express/CloudAdapter for Node.js, ASP.NET Core for .NET, aiohttp for Python), AgentApplication
-  class with message routing and typing indicators, email notifications, and all required packages
-  and env vars. Wraps existing LLM code — does not replace it.
-  Requires a365-setup to have been run first.
+  Transforms a non-M365 agent into a Microsoft Agent 365 AI Teammate. Supports all major
+  frameworks across .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents
+  SDK, Claude SDK, Semantic Kernel, Google ADK), and Python (AgentFramework, LangChain, OpenAI,
+  Claude, Semantic Kernel, Google ADK). Adds the hosting layer (Express/CloudAdapter for Node.js,
+  ASP.NET Core for .NET, aiohttp for Python), AgentApplication class with message routing and
+  typing indicators, email notifications, and all required packages and env vars. Wraps existing
+  LLM code — does not replace it. Requires a365-setup to have been run first.
 compatibility:
   - claude-code
   - vscode-copilot
 user-invocable: true
-argument-hint: "Optional: language/framework override (langchain | openai | claude | dotnet | python)"
+argument-hint: "Optional: language/framework override (langchain | openai | claude | semantickernel | googleadk | dotnet | dotnet-sk | python)"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
@@ -82,7 +83,7 @@ hooks:
 > **Prerequisite:** Run `a365-setup` first — it registers the agent with Agent 365 and writes
 > the detection cache that this skill reads.
 >
-> **Supported languages:** Node.js (LangChain, OpenAI Agents SDK, Claude SDK) · .NET AgentFramework · Python AgentFramework
+> **Supported languages:** Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) · .NET (AgentFramework, Semantic Kernel) · Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
 
 ---
 
@@ -102,13 +103,65 @@ Load from cache:
 
 **Find existing LLM entry point** (not stored by a365-setup — still required):
 
-*NodeJS:* **Glob** `src/**/*.ts` and **Grep** for LLM instantiation (`ChatOpenAI`, `AzureChatOpenAI`, `OpenAI`, `Anthropic`), chain/agent creation, or existing HTTP server.
+*NodeJS:* **Glob** `src/**/*.ts` and **Grep** for LLM instantiation (`ChatOpenAI`, `AzureChatOpenAI`, `OpenAI`, `Anthropic`, `Kernel`, `@google/generative-ai`, `@google/adk`), chain/agent creation, or existing HTTP server.
 
-*DotNet:* **Glob** `**/*.cs` and **Grep** for `AddAgent<`, `AgentApplication`, `IChatClient`, or `WebApplication.CreateBuilder`. Store `Program.cs` and agent `.cs` files.
+*DotNet:* **Glob** `**/*.cs` and **Grep** for `AddAgent<`, `AgentApplication`, `IChatClient`, `Microsoft.SemanticKernel`, or `WebApplication.CreateBuilder`. Store `Program.cs` and agent `.cs` files.
 
 *Python:* **Glob** `**/*.py` and **Grep** for `ChatAgent`, `AzureOpenAIChatClient`, `CloudAdapterAiohttp`, or `AgentInterface`.
 
 Store the main source file(s) as `existingFiles`.
+
+---
+
+## Phase 0A.5 — New Agent Path (no source files found)
+
+**Check for empty directory:** If `existingFiles` is empty AND no `.csproj`, `package.json`, or `requirements.txt` exists anywhere in the working directory, the user is starting fresh with no existing agent code.
+
+In this case, **do NOT fail** — offer to scaffold from an official sample:
+
+```
+No agent code found in this directory. Would you like to start from an official
+Agent365-Samples project?
+
+Pick a framework and I'll clone the sample, then continue with the AI Teammate setup:
+
+  .NET
+    1. Agent Framework  — classic AgentApplication pattern with IChatClient
+       https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/agent-framework/sample-agent
+    2. Semantic Kernel   — Kernel + IChatCompletionService pattern
+       https://github.com/microsoft/Agent365-Samples/tree/main/dotnet/semantic-kernel/sample-agent
+
+  Node.js
+    3. LangChain         — ReactAgent with AzureChatOpenAI / ChatOpenAI
+       https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain/sample-agent
+    4. OpenAI Agents SDK — @openai/agents with run()
+       https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/openai/sample-agent
+
+  Python
+    5. Agent Framework   — ChatAgent with AzureOpenAIChatClient
+       https://github.com/microsoft/Agent365-Samples/tree/main/python/agent-framework/sample-agent
+    6. Claude SDK        — ClaudeSDKClient with ClaudeAgentOptions
+       https://github.com/microsoft/Agent365-Samples/tree/main/python/claude/sample-agent
+    7. Google ADK        — google.adk Agent + Runner
+       https://github.com/microsoft/Agent365-Samples/tree/main/python/google-adk/sample-agent
+
+  0. I'll bring my own code — skip cloning
+```
+
+**If the user picks a sample (1–7):**
+Run the appropriate git clone:
+```bash
+# Example for option 3 (LangChain):
+git clone --depth 1 https://github.com/microsoft/Agent365-Samples.git _tmp_samples
+cp -r _tmp_samples/nodejs/langchain/sample-agent/. .
+rm -rf _tmp_samples
+```
+After cloning, re-run the LLM entry point detection above and continue to Phase 0B as normal.
+
+**If the user picks 0 (bring own code):**
+Ask: "What language and framework are you using?" and set `language` and `agentStack` accordingly, then continue to Phase 0B.
+
+---
 
 **Check what's already present** (parallel Grep):
 
@@ -150,9 +203,11 @@ Reply **yes** to confirm, or describe corrections.
 If `agentStack` is still unknown, ask which LLM framework the agent uses.
 
 If `agentStack` is unrecognized, tell the user:
-> "This skill supports LangChain/OpenAI/Claude (Node.js), AgentFramework (Node.js/.NET/Python),
-> and SemanticKernel (.NET). For other frameworks, I'll add the hosting layer and agent class,
-> but you'll need to integrate your LLM calls manually."
+> "This skill supports all major frameworks: .NET (AgentFramework, Semantic Kernel),
+> Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), and
+> Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).
+> For other frameworks, I'll add the hosting layer and agent class, but you'll need to
+> integrate your LLM calls manually."
 
 **NodeJS tasks (only create if not already present):**
 ```
@@ -471,7 +526,8 @@ dotnet build
 ```
 Fix errors:
 - `namespace not found` → check the package is installed and using directive is present
-- `IChatClient` not found → ensure `Microsoft.Extensions.AI.OpenAI` is installed
+- `IChatClient` not found → ensure `Microsoft.Extensions.AI.OpenAI` is installed (AgentFramework)
+- `Kernel` / `IChatCompletionService` not found → ensure `Microsoft.SemanticKernel` is installed (Semantic Kernel)
 - `IAgentHttpAdapter` not found → ensure `Microsoft.Agents.Hosting.AspNetCore` is installed
 
 ### Python
@@ -580,7 +636,8 @@ Next steps:
 | Build fails with `module` errors | NodeJS | Ensure both `"module": "node16"` AND `"moduleResolution": "node16"` in tsconfig |
 | `AgentApplication` import not found | NodeJS | Check `@microsoft/agents-hosting` is installed |
 | `IAgentHttpAdapter` not found | .NET | Ensure `Microsoft.Agents.Hosting.AspNetCore` is referenced |
-| `IChatClient` not found | .NET | Ensure `Microsoft.Extensions.AI.OpenAI` is installed |
+| `IChatClient` not found | .NET (AgentFramework) | Ensure `Microsoft.Extensions.AI.OpenAI` is installed |
+| `Kernel` / `IChatCompletionService` not found | .NET (Semantic Kernel) | Ensure `Microsoft.SemanticKernel` NuGet package is installed |
 | `Microsoft.Agents.A365.*` not found | .NET | Add `--prerelease` flag; check NuGet source includes prerelease feeds |
 | `ModuleNotFoundError` for `microsoft_agents_a365_*` | Python | Run `uv add <package> --prerelease` |
 | `requires-python` version mismatch | Python | Ensure Python 3.11+ is active in the virtual environment |

@@ -396,6 +396,588 @@ LOG_LEVEL=INFO
 | `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
+
+---
+
+# Alternative `agent.py` Implementations
+
+The `host_agent_server.py` and `agent_interface.py` files above are **identical for all Python frameworks**.
+Only `agent.py` changes — it implements `AgentInterface.process_user_message()` using a different LLM backend.
+
+---
+
+## agent.py — OpenAI Agents SDK variant
+
+Source: [Agent365-Samples/python/openai/sample-agent](https://github.com/microsoft/Agent365-Samples/tree/main/python/openai/sample-agent)
+
+```toml
+# pyproject.toml additions
+dependencies = [
+    "openai-agents>=0.0.19",
+    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-core",
+    "microsoft-agents-authentication-msal",
+    "microsoft-agents-activity",
+    "microsoft_agents_a365_notifications >= 0.1.0",
+    "python-dotenv",
+    "aiohttp",
+]
+```
+
+```python
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+import asyncio
+import logging
+import os
+import re
+from agent_interface import AgentInterface
+
+from agents import Agent, Runner
+
+from microsoft_agents_a365_notifications import NotificationType
+
+logger = logging.getLogger(__name__)
+
+def _sanitize_display_name(name: str | None, max_len: int = 64) -> str:
+    if not name or not name.strip():
+        return "unknown"
+    safe = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", name).strip()
+    return safe[:max_len].rstrip() or "unknown"
+
+AGENT_PROMPT_TEMPLATE = """You will speak like a friendly and professional virtual assistant.
+
+The user's name is {user_name}. Use their name naturally where appropriate.
+
+Use the tools available to you to help answer the user's questions.
+"""
+
+
+class MyAgent(AgentInterface):
+    """AI Teammate agent using the OpenAI Agents SDK."""
+
+    def __init__(self):
+        self._agent: Agent | None = None
+
+    async def initialize(self) -> None:
+        self._agent = Agent(
+            name="MyAgent",
+            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            instructions="You are a helpful assistant.",
+        )
+        logger.info("Agent initialized")
+
+    async def process_user_message(
+        self,
+        message: str,
+        auth: str | None,
+        auth_handler_name: str | None,
+        context,
+    ) -> str:
+        user_name = getattr(getattr(context, "activity", None), "from_property", None)
+        if user_name:
+            user_name = getattr(user_name, "name", None)
+        safe_name = _sanitize_display_name(user_name)
+        prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
+
+        # Recreate agent with per-turn instructions (or update instructions field)
+        agent = Agent(
+            name="MyAgent",
+            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+            instructions=prompt,
+        )
+        result = await Runner.run(agent, message)
+        return result.final_output or "Sorry, I couldn't get a response."
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
+
+    async def handle_agent_notification_activity(
+        self,
+        notification_type: str,
+        payload,
+        context,
+        auth: str | None,
+        auth_handler_name: str | None,
+    ) -> str | None:
+        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+            reply = await self.process_user_message(
+                f"Handle this email notification: {payload}", auth, auth_handler_name, context
+            )
+            return reply
+        return None
+
+    async def cleanup(self) -> None:
+        logger.info("Agent cleaned up")
+```
+
+> **Azure OpenAI with OpenAI Agents SDK:** Set `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`,
+> and `AZURE_OPENAI_DEPLOYMENT` env vars, then configure the default OpenAI client before
+> creating `Agent` instances. See the official sample for the configuration helper.
+
+---
+
+## agent.py — Claude SDK variant
+
+Source: [Agent365-Samples/python/claude/sample-agent](https://github.com/microsoft/Agent365-Samples/tree/main/python/claude/sample-agent)
+
+```toml
+# pyproject.toml additions
+dependencies = [
+    "claude-agent-sdk>=0.1.0",
+    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-core",
+    "microsoft-agents-authentication-msal",
+    "microsoft-agents-activity",
+    "microsoft_agents_a365_notifications >= 0.1.0",
+    "python-dotenv",
+    "aiohttp",
+]
+```
+
+```python
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+import logging
+import os
+import re
+from agent_interface import AgentInterface
+
+from claude_agent_sdk import (
+    ClaudeSDKClient,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    TextBlock,
+)
+from microsoft_agents_a365_notifications import NotificationType
+
+logger = logging.getLogger(__name__)
+
+def _sanitize_display_name(name: str | None, max_len: int = 64) -> str:
+    if not name or not name.strip():
+        return "unknown"
+    safe = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", name).strip()
+    return safe[:max_len].rstrip() or "unknown"
+
+AGENT_SYSTEM_PROMPT_TEMPLATE = """You will speak like a friendly and professional virtual assistant.
+
+The user's name is {user_name}. Use their name naturally where appropriate.
+
+Use the tools available to you to help answer the user's questions.
+"""
+
+
+class MyAgent(AgentInterface):
+    """AI Teammate agent using the Claude SDK."""
+
+    def __init__(self):
+        self._model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+
+    async def initialize(self) -> None:
+        logger.info("Claude agent initialized")
+
+    async def process_user_message(
+        self,
+        message: str,
+        auth: str | None,
+        auth_handler_name: str | None,
+        context,
+    ) -> str:
+        user_name = getattr(getattr(context, "activity", None), "from_property", None)
+        if user_name:
+            user_name = getattr(user_name, "name", None)
+        safe_name = _sanitize_display_name(user_name)
+        system_prompt = AGENT_SYSTEM_PROMPT_TEMPLATE.format(user_name=safe_name)
+
+        options = ClaudeAgentOptions(
+            model=self._model,
+            system_prompt=system_prompt,
+        )
+
+        response_parts: list[str] = []
+        async with ClaudeSDKClient(options=options) as client:
+            async for event in client.receive_response(message):
+                if isinstance(event, AssistantMessage):
+                    for block in event.content:
+                        if isinstance(block, TextBlock):
+                            response_parts.append(block.text)
+
+        return "".join(response_parts) or "Sorry, I couldn't get a response."
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
+
+    async def handle_agent_notification_activity(
+        self,
+        notification_type: str,
+        payload,
+        context,
+        auth: str | None,
+        auth_handler_name: str | None,
+    ) -> str | None:
+        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+            reply = await self.process_user_message(
+                f"Handle this email notification: {payload}", auth, auth_handler_name, context
+            )
+            return reply
+        return None
+
+    async def cleanup(self) -> None:
+        logger.info("Claude agent cleaned up")
+```
+
+---
+
+## agent.py — Google ADK variant
+
+Source: [Agent365-Samples/python/google-adk/sample-agent](https://github.com/microsoft/Agent365-Samples/tree/main/python/google-adk/sample-agent)
+
+> **OTel version constraint:** Google ADK requires `opentelemetry-sdk<1.39.0`.
+> Pin the full OTel stack to `1.38.x` in `pyproject.toml` using `[tool.uv] override-dependencies`.
+> See the official sample's `pyproject.toml` for the full pin list.
+
+```toml
+# pyproject.toml additions
+dependencies = [
+    "google-adk>=1.18.0",
+    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-core",
+    "microsoft-agents-authentication-msal",
+    "microsoft-agents-activity",
+    "microsoft_agents_a365_notifications >= 0.1.0",
+    "python-dotenv",
+    "aiohttp",
+]
+
+[tool.uv]
+prerelease = "allow"
+override-dependencies = [
+    # Pin OTel stack — google-adk requires sdk<1.39.0
+    "opentelemetry-api>=1.38.0,<1.39.0",
+    "opentelemetry-sdk>=1.38.0,<1.39.0",
+]
+```
+
+```python
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+import asyncio
+import logging
+import os
+import re
+from agent_interface import AgentInterface
+
+from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
+
+from microsoft_agents_a365_notifications import NotificationType
+
+logger = logging.getLogger(__name__)
+
+def _sanitize_display_name(name: str | None, max_len: int = 64) -> str:
+    if not name or not name.strip():
+        return "unknown"
+    safe = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", name).strip()
+    return safe[:max_len].rstrip() or "unknown"
+
+INSTRUCTION_TEMPLATE = """You are a helpful AI assistant.
+The user's name is {user_name}. Use their name naturally where appropriate.
+Use the tools available to you to help answer the user's questions.
+"""
+
+
+class MyAgent(AgentInterface):
+    """AI Teammate agent using Google ADK."""
+
+    def __init__(self):
+        self._model = os.getenv("GOOGLE_MODEL", "gemini-2.5-flash")
+        self._agent_name = "my_agent"
+
+    async def initialize(self) -> None:
+        logger.info("Google ADK agent initialized")
+
+    async def process_user_message(
+        self,
+        message: str,
+        auth: str | None,
+        auth_handler_name: str | None,
+        context,
+    ) -> str:
+        user_name = getattr(getattr(context, "activity", None), "from_property", None)
+        if user_name:
+            user_name = getattr(user_name, "name", None)
+        safe_name = _sanitize_display_name(user_name)
+        instruction = INSTRUCTION_TEMPLATE.format(user_name=safe_name)
+
+        agent = Agent(
+            name=self._agent_name,
+            model=self._model,
+            description="A helpful AI assistant",
+            instruction=instruction,
+        )
+
+        session_service = InMemorySessionService()
+        runner = Runner(
+            agent=agent,
+            app_name=self._agent_name,
+            session_service=session_service,
+        )
+
+        response_parts: list[str] = []
+        async for event in runner.run_async(
+            user_id="user",
+            session_id="session",
+            new_message=message,
+        ):
+            if hasattr(event, "content") and event.content:
+                for part in event.content.parts or []:
+                    if hasattr(part, "text") and part.text:
+                        response_parts.append(part.text)
+
+        return "".join(response_parts) or "Sorry, I couldn't get a response."
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
+
+    async def handle_agent_notification_activity(
+        self,
+        notification_type: str,
+        payload,
+        context,
+        auth: str | None,
+        auth_handler_name: str | None,
+    ) -> str | None:
+        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+            reply = await self.process_user_message(
+                f"Handle this email notification: {payload}", auth, auth_handler_name, context
+            )
+            return reply
+        return None
+
+    async def cleanup(self) -> None:
+        logger.info("Google ADK agent cleaned up")
+```
+
+---
+
+## agent.py — LangChain variant (best-effort)
+
+No official Python LangChain sample exists in Agent365-Samples. This is a best-effort pattern.
+
+```toml
+# pyproject.toml additions
+dependencies = [
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-core",
+    "microsoft-agents-authentication-msal",
+    "microsoft-agents-activity",
+    "microsoft_agents_a365_notifications >= 0.1.0",
+    "python-dotenv",
+    "aiohttp",
+]
+```
+
+```python
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+# A365 Observability — best-effort instrumentation (verify against official sample)
+
+import logging
+import os
+import re
+from agent_interface import AgentInterface
+
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from microsoft_agents_a365_notifications import NotificationType
+
+logger = logging.getLogger(__name__)
+
+def _sanitize_display_name(name: str | None, max_len: int = 64) -> str:
+    if not name or not name.strip():
+        return "unknown"
+    safe = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", name).strip()
+    return safe[:max_len].rstrip() or "unknown"
+
+SYSTEM_PROMPT_TEMPLATE = """You are a helpful assistant.
+The user's name is {user_name}. Use their name naturally where appropriate."""
+
+
+def _create_llm():
+    if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
+        return AzureChatOpenAI(
+            azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+            azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+            api_key=os.environ["AZURE_OPENAI_API_KEY"],
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-03-01-preview"),
+        )
+    return ChatOpenAI(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        api_key=os.environ["OPENAI_API_KEY"],
+    )
+
+
+class MyAgent(AgentInterface):
+    """AI Teammate agent using LangChain."""
+
+    def __init__(self):
+        self._llm = _create_llm()
+
+    async def initialize(self) -> None:
+        logger.info("LangChain agent initialized")
+
+    async def process_user_message(
+        self,
+        message: str,
+        auth: str | None,
+        auth_handler_name: str | None,
+        context,
+    ) -> str:
+        user_name = getattr(getattr(context, "activity", None), "from_property", None)
+        if user_name:
+            user_name = getattr(user_name, "name", None)
+        safe_name = _sanitize_display_name(user_name)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(user_name=safe_name)
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=message),
+        ]
+        response = await self._llm.ainvoke(messages)
+        return response.content or "Sorry, I couldn't get a response."
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
+
+    async def handle_agent_notification_activity(
+        self,
+        notification_type: str,
+        payload,
+        context,
+        auth: str | None,
+        auth_handler_name: str | None,
+    ) -> str | None:
+        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+            reply = await self.process_user_message(
+                f"Handle this email notification: {payload}", auth, auth_handler_name, context
+            )
+            return reply
+        return None
+
+    async def cleanup(self) -> None:
+        logger.info("LangChain agent cleaned up")
+```
+
+---
+
+## agent.py — Semantic Kernel variant (best-effort)
+
+No official Python Semantic Kernel + AI Teammate sample exists in Agent365-Samples. This is a best-effort pattern.
+
+```toml
+# pyproject.toml additions
+dependencies = [
+    "semantic-kernel>=1.0.0",
+    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-core",
+    "microsoft-agents-authentication-msal",
+    "microsoft-agents-activity",
+    "microsoft_agents_a365_notifications >= 0.1.0",
+    "python-dotenv",
+    "aiohttp",
+]
+```
+
+```python
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+# A365 Observability — best-effort instrumentation (verify against official sample)
+
+import logging
+import os
+import re
+from agent_interface import AgentInterface
+
+from semantic_kernel import Kernel
+from semantic_kernel.connectors.ai.open_ai import (
+    AzureChatCompletion,
+    OpenAIChatCompletion,
+)
+from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
+from semantic_kernel.contents import ChatHistory
+
+from microsoft_agents_a365_notifications import NotificationType
+
+logger = logging.getLogger(__name__)
+
+def _sanitize_display_name(name: str | None, max_len: int = 64) -> str:
+    if not name or not name.strip():
+        return "unknown"
+    safe = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", name).strip()
+    return safe[:max_len].rstrip() or "unknown"
+
+SYSTEM_PROMPT_TEMPLATE = """You are a helpful assistant.
+The user's name is {user_name}. Use their name naturally where appropriate."""
+
+
+class MyAgent(AgentInterface):
+    """AI Teammate agent using Semantic Kernel."""
+
+    def __init__(self):
+        self._kernel = Kernel()
+        if os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_ENDPOINT"):
+            self._kernel.add_service(AzureChatCompletion(
+                deployment_name=os.environ["AZURE_OPENAI_DEPLOYMENT"],
+                endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+                api_key=os.environ["AZURE_OPENAI_API_KEY"],
+            ))
+        else:
+            self._kernel.add_service(OpenAIChatCompletion(
+                ai_model_id=os.getenv("OPENAI_MODEL", "gpt-4o"),
+                api_key=os.environ["OPENAI_API_KEY"],
+            ))
+
+    async def initialize(self) -> None:
+        logger.info("Semantic Kernel agent initialized")
+
+    async def process_user_message(
+        self,
+        message: str,
+        auth: str | None,
+        auth_handler_name: str | None,
+        context,
+    ) -> str:
+        user_name = getattr(getattr(context, "activity", None), "from_property", None)
+        if user_name:
+            user_name = getattr(user_name, "name", None)
+        safe_name = _sanitize_display_name(user_name)
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(user_name=safe_name)
+
+        chat_service = self._kernel.get_service(type=ChatCompletionClientBase)
+        history = ChatHistory(system_message=system_prompt)
+        history.add_user_message(message)
+
+        result = await chat_service.get_chat_message_contents(history)
+        return result[0].content if result else "Sorry, I couldn't get a response."
+    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
+
+    async def handle_agent_notification_activity(
+        self,
+        notification_type: str,
+        payload,
+        context,
+        auth: str | None,
+        auth_handler_name: str | None,
+    ) -> str | None:
+        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+            reply = await self.process_user_message(
+                f"Handle this email notification: {payload}", auth, auth_handler_name, context
+            )
+            return reply
+        return None
+
+    async def cleanup(self) -> None:
+        logger.info("Semantic Kernel agent cleaned up")
+```
 | `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
 | `/api/health` returns 200 without auth | Load balancers and A365 infrastructure require unauthenticated health probes |
 
