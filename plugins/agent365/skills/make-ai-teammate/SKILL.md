@@ -722,9 +722,23 @@ Next steps:
        a365 setup admin --blueprint-id <id from setup output>
      Retrieve blueprint ID at any time:
        a365 status --field agentBlueprintId
-  2. Test locally: run the test-local skill
-  3. Add observability:  run the instrument-observability skill  (if not done)
-  4. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
+
+     **Windows Account Manager (WAM):** If you see "Authenticating via Windows Account
+     Manager..." when running `a365 setup all`, a native sign-in dialog appeared. Do NOT
+     kill the process — complete the sign-in dialog and setup will continue automatically.
+     If no dialog appears (headless), first run `az login --allow-no-subscriptions` to
+     populate the token cache, then retry.
+
+  2. For local testing, expose your agent via dev tunnel:
+       devtunnel create my-agent-tunnel --allow-anonymous
+       devtunnel host my-agent-tunnel --port 3978
+     The tunnel URL (e.g. https://<id>-3978.<region>.devtunnels.ms) is your messagingEndpoint.
+     Update the `a365 setup all` command: `--messaging-endpoint <tunnelUrl>/api/messages`
+     (or register the URL after setup with `a365 update --messaging-endpoint <url>`).
+
+  3. Test locally: run the test-local skill
+  4. Add observability:  run the instrument-observability skill  (if not done)
+  5. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
 ```
 
 ---

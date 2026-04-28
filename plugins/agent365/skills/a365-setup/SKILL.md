@@ -121,13 +121,39 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 - If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Standard Agent (Non Digital Worker) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
 - If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
+**Auth mode question (ask before capabilities):**
+
+```
+How will your agent authenticate when calling downstream APIs?
+
+  1. On-behalf-of (OBO) — the agent acts as the signed-in user (delegated permissions)
+     Choose this when the agent needs to access resources on behalf of a specific user
+     (e.g. reading the user's calendar, sending mail as them).
+
+  2. Service-to-service (S2S) — the agent acts as its own identity (application permissions)
+     Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
+     (e.g. reading all mailboxes, managing SharePoint sites).
+
+  3. Both (OBO and S2S)
+```
+
+Wait for the answer. Store as `authMode`:
+- If 1 → `authMode = "obo"`
+- If 2 → `authMode = "s2s"`
+- If 3 → `authMode = "both"`
+
+> **Note:** WorkIQ MCP tools require delegated (OBO) permissions — they are not available for S2S-only agents.
+
+---
+
 **Final question: What capabilities do you want to enable?**
 
-Present these options (omit or note option 4 if CEA was detected — see below):
+Present only the options that apply — **omit WorkIQ when `authMode = "s2s"`** and omit or note option 4 if CEA was detected:
 
   1. Discoverability — make the agent findable in the M365 catalog
   2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+     _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
   4. AI Teammate (Digital Worker) — agent gets a first-class M365 identity (Agentic User with UPN)
      ⚠️  NOT available for Custom Engine Agents — CEA is supported as Standard Agent (Non Digital Worker) only
 
@@ -135,7 +161,7 @@ Present these options (omit or note option 4 if CEA was detected — see below):
 > "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents.
 >  AI Teammate (Digital Worker) is not supported for CEA.
 >  Please choose from options 1–3."
-> Then re-present options 1–3 and wait for a new answer.
+> Then re-present options 1–3 (minus WorkIQ if S2S) and wait for a new answer.
 
 Wait for the answer. Store as `capabilities`.
 
@@ -150,10 +176,10 @@ After the capabilities question is answered (and the detection/confirmation abov
      Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) — AI Teammate (Digital Worker) is not supported for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
 
-2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate`:
+2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Leave `authMode` as `""` — it is determined later by `instrument-observability`.
+   - Write `authMode` as collected (`"obo"`, `"s2s"`, or `"both"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
 
 3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
@@ -480,23 +506,39 @@ a365 setup requirements --category PowerShell
 
 ### Azure CLI login
 
+> **CRITICAL:** Use `az login --allow-no-subscriptions` — not plain `az login`. The A365 setup flow does not require an Azure subscription, and plain `az login` will fail for users who have none. After a successful login, the CLI acquires Graph tokens silently from the cache with no interactive prompts.
+
 ```bash
-az login
-# If multiple subscriptions:
-az account set -s <SubscriptionNameOrID>
+az login --allow-no-subscriptions
+# If multiple tenants, target a specific one:
+az login --allow-no-subscriptions --tenant <tenantId>
 # Confirm the active account:
-az account show --query "{name:name, user:user.name, tenantId:tenantId}" -o table
+az account show --query "{user:user.name, tenantId:tenantId}" -o json
 ```
+
+- **If `az account show` succeeds**: login is active — continue.
+- **If `az account show` fails or returns no output**: STOP. Tell the user to run `az login --allow-no-subscriptions` in their terminal and complete the login, then confirm back. Do NOT proceed until `az account show` returns a valid account.
 
 If interactive login is not possible (headless / CI environment), use device-code flow:
 
 ```bash
-az login --use-device-code
+az login --allow-no-subscriptions --use-device-code
 ```
 
 ### Microsoft Entra ID roles
 
 The authenticated account must be at minimum an **Agent ID Administrator** or **Agent ID Developer**. Full environment setup requires **Global Administrator + Azure Contributor**. If the logged-in user lacks these roles, prompt them to use an appropriate account or have an admin grant the needed roles.
+
+### Windows Account Manager (WAM) — what to expect
+
+On Windows machines, `a365 setup all` may authenticate via **Windows Account Manager (WAM)**, the OS-level broker.
+
+- **Normal WAM prompt:** A native Windows sign-in dialog appears on the user's screen. Do NOT kill the process. Tell the user: "A Windows sign-in dialog has appeared — please complete it in the dialog. Setup will continue automatically after you authenticate."
+- **WAM dialog not appearing (headless or no desktop):** The `a365 CLI` will hang waiting for a dialog that can never be shown. Fix: ensure `az login --allow-no-subscriptions` has already populated the Azure CLI token cache before running `a365 setup all` — the CLI will then use the cached token and skip WAM.
+- **WAM hangs with no dialog:** Kill the process (`Ctrl+C`), run `az login --allow-no-subscriptions --tenant <tenant-id>` to refresh the cache, then retry.
+- **WAM error "no_accounts_found" or similar:** Run `az login --allow-no-subscriptions` again, confirm `az account show` returns the correct account, then retry.
+
+
 
 ### Custom client app
 
