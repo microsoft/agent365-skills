@@ -27,6 +27,17 @@ const MARKETPLACE_NAME = 'agent365-skills';
 const MARKETPLACE_REPO = 'microsoft/agent365-skills';
 const PLUGIN_NAME      = 'agent365';
 
+// Determine the target project directory.
+// When the script is invoked as `node install.js` from inside the scripts/
+// directory of this repo (e.g. cd scripts && node install.js), process.cwd()
+// equals __dirname and we would incorrectly install into scripts/. Detect that
+// case and redirect to the repo root (parent of scripts/) instead.
+const REPO_ROOT = path.resolve(__dirname, '..');
+const _skillsSourceExists = fs.existsSync(path.join(REPO_ROOT, 'plugins', 'agent365', 'skills'));
+const TARGET_DIR = (_skillsSourceExists && path.resolve(process.cwd()) === path.resolve(__dirname))
+  ? REPO_ROOT
+  : process.cwd();
+
 // ── Utility helpers ──────────────────────────────────────────────────────────
 
 function run(cmd, opts = {}) {
@@ -130,7 +141,7 @@ function installCopilotInstructions() {
   header('GitHub Copilot (Chat + CLI)');
 
   const srcInstructions = path.join(__dirname, '..', '.github', 'copilot-instructions.md');
-  const destDir         = path.join(process.cwd(), '.github');
+  const destDir         = path.join(TARGET_DIR, '.github');
   const destFile        = path.join(destDir, 'copilot-instructions.md');
 
   if (!fs.existsSync(srcInstructions)) {
@@ -173,7 +184,7 @@ function installAgentsSkills() {
     return;
   }
 
-  const destRoot = path.join(process.cwd(), '.agents', 'skills');
+  const destRoot = path.join(TARGET_DIR, '.agents', 'skills');
   let installed = 0;
   let skipped   = 0;
 
