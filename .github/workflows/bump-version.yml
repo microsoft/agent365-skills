@@ -1,0 +1,72 @@
+name: Bump version on PR merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0
+
+      - name: Determine bump type from PR commits
+        id: bump
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          COMMITS=$(git log --format="%s %b" "$BASE".."$HEAD" 2>/dev/null || git log --format="%s %b" -20)
+
+          if echo "$COMMITS" | grep -qE "^(feat|fix|refactor|perf)(\(.+\))?!:|BREAKING CHANGE:"; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Bump type: $(cat $GITHUB_OUTPUT | grep type | cut -d= -f2)"
+
+      - name: Bump plugin.json and marketplace.json
+        id: version
+        run: |
+          PLUGIN="plugins/agent365/.claude-plugin/plugin.json"
+          MARKET=".claude-plugin/marketplace.json"
+          CURRENT=$(node -e "process.stdout.write(require('./$PLUGIN').version)")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          BUMP="${{ steps.bump.outputs.type }}"
+
+          case "$BUMP" in
+            major) NEW="$((MAJOR+1)).0.0" ;;
+            minor) NEW="${MAJOR}.$((MINOR+1)).0" ;;
+            patch) NEW="${MAJOR}.${MINOR}.$((PATCH+1))" ;;
+          esac
+
+          node -e "
+            const fs = require('fs');
+            ['$PLUGIN', '$MARKET'].forEach(p => {
+              const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+              j.version = '$NEW';
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            });
+          "
+
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Bumped $CURRENT → $NEW ($BUMP)"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add plugins/agent365/.claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git diff --cached --quiet || git commit -m "chore: bump version ${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }} [skip ci]"
+          git push
