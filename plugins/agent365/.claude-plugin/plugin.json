@@ -9,6 +9,6 @@
   "repository": "https://github.com/microsoft/agent365-skills/",
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
-  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "blueprint", "s2s", "fmi", "ai-teammate"],
+  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "blueprint", "s2s", "msal", "ai-teammate"],
   "skills": "./skills/"
 }
