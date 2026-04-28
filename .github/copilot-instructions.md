@@ -56,8 +56,8 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Installs/updates the `a365` CLI and validates Azure CLI login
-2. Checks Entra ID roles and confirms language-specific build tools are present
+1. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command and requires user confirmation.
+2. Runs `a365 setup requirements` after all tools are confirmed, then checks Entra ID roles and validates Azure CLI login
 3. Asks which capability path the user wants (AI Teammate, Discoverability, Observability, WorkIQ)
 4. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths
 
