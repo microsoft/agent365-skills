@@ -107,7 +107,7 @@ TaskCreate: "Guide local test"
 4. Determine start command:
    - **.NET**: `dotnet run`
    - **Node.js**: `npm start` (fall back to `npm run dev` if `start` script absent)
-   - **Python**: detect entry point — check for `host_agent_server.py`, `app.py`, or `main.py`; run with `python <entry>` (or `uvicorn app:app --port 3978` if an ASGI app is detected)
+   - **Python**: detect entry point — check for `host_agent_server.py`, `app.py`, or `main.py`. Detect the Python command: `python3 --version 2>/dev/null && echo python3 || echo python`. Use `python3` if available (macOS/Linux default), otherwise `python` (Windows). Run with `<python-cmd> <entry>` (or `uvicorn app:app --port 3978` if an ASGI app is detected).
 
 5. If agent type cannot be determined, stop and ask:
 
@@ -124,59 +124,58 @@ AskUserQuestion:
 
 After detection, immediately verify the required build tool is installed:
 
-**For .NET** — check `dotnet --version`. If missing:
+**For .NET** — check `dotnet --version`. If missing or below 8.0:
 ```
 AskUserQuestion:
   question: "dotnet SDK 8.0+ is required but not found. Install it now?"
   options:
-    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "Yes — install it for me"
     - "No — I'll install manually and re-run"
 ```
-If yes, attempt:
-```bash
-# Windows
-winget install Microsoft.DotNet.SDK.8
-# macOS
-brew install dotnet
+If yes, show the appropriate command for the detected OS and ask the user to run it:
 ```
-After install, run `dotnet --version` to confirm. If it still fails, show the download link and stop:
-> Download from: https://dotnet.microsoft.com/download — restart your terminal after installing, then re-run this skill.
+Windows:      winget install Microsoft.DotNet.SDK.8
+macOS:        brew install --cask dotnet-sdk
+Linux:        sudo apt-get update && sudo apt-get install -y dotnet-sdk-8.0
+              (or: https://learn.microsoft.com/en-us/dotnet/core/install/linux)
+All:          https://dotnet.microsoft.com/download
+```
+After install, restart the terminal then run `dotnet --version` to confirm.
 
-**For Node.js** — check `node --version`. If missing:
+**For Node.js** — check `node --version`. If missing or below 18:
 ```
 AskUserQuestion:
   question: "Node.js 18+ is required but not found. Install it now?"
   options:
-    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "Yes — install it for me"
     - "No — I'll install manually and re-run"
 ```
-If yes, attempt:
-```bash
-# Windows
-winget install OpenJS.NodeJS.LTS
-# macOS
-brew install node
+If yes, show the appropriate command:
 ```
-After install, run `node --version` to confirm. If it still fails, show the download link and stop:
-> Download from: https://nodejs.org — restart your terminal after installing, then re-run this skill.
+Windows:      winget install OpenJS.NodeJS.LTS
+macOS:        brew install node
+Linux:        sudo apt-get update && sudo apt-get install -y nodejs npm
+              (or via nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash && nvm install --lts)
+All:          https://nodejs.org (LTS)
+```
+After install, run `node --version` to confirm.
 
-**For Python** — check `python --version` (or `python3 --version`). If missing:
+**For Python** — check `python3 --version 2>/dev/null || python --version`. If missing or below 3.11:
 ```
 AskUserQuestion:
   question: "Python 3.11+ is required but not found. Install it now?"
   options:
-    - "Yes — install via winget (Windows) or brew (macOS)"
+    - "Yes — install it for me"
     - "No — I'll install manually and re-run"
 ```
-If yes, attempt:
-```bash
-# Windows
-winget install Python.Python.3.11
-# macOS
-brew install python@3.11
+If yes, show the appropriate command:
 ```
-After install, run `python --version` to confirm. If it still fails, show the download link and stop:
-> Download from: https://python.org — restart your terminal after installing, then re-run this skill.
+Windows:      winget install Python.Python.3.11
+macOS:        brew install python@3.11
+Linux:        sudo apt-get install -y python3.11 python3.11-venv python3-pip
+All:          https://python.org
+```
+After install, confirm with `python3 --version 2>/dev/null || python --version`.
 
 **Mark task complete: "Detect agent type and verify build tools"**
 
@@ -241,8 +240,10 @@ npm run build || npm run compile || echo "No build script — skipping compile c
 ### For Python
 
 ```bash
-pip install -r requirements.txt || pip install .
-python -c "import sys; print('Python', sys.version)"
+# Use pip3 on macOS/Linux, pip on Windows — try pip3 first
+pip3 install -r requirements.txt 2>/dev/null || pip install -r requirements.txt || pip install .
+# Verify the active Python version (use python3 on macOS/Linux, python on Windows)
+python3 --version 2>/dev/null || python --version
 ```
 
 If build fails, show the error output and stop:
@@ -276,7 +277,7 @@ Inform the user:
 **Start the agent** (terminal 1) — command varies by language:
 - **.NET**: `dotnet run`
 - **Node.js**: `npm start` (fall back to `npm run dev`)
-- **Python**: `python <entry-point>` (e.g. `python host_agent_server.py` or `python app.py`)
+- **Python**: `python3 <entry-point>` on macOS/Linux (e.g. `python3 host_agent_server.py`); `python <entry-point>` on Windows
 
 > **Note for .NET:** The `-c "emulator"` flag bypasses Bot Framework auth.
 > This works because `MapAgentApplicationEndpoints` with `requireAuth: false` skips
@@ -285,7 +286,11 @@ Inform the user:
 Poll until the agent responds (max ~20 s), then launch AgentsPlayground — **same command for all stacks**:
 
 ```bash
-for i in $(seq 1 20); do curl -s --max-time 1 "http://localhost:<port>/api/messages" > /dev/null 2>&1 && break; sleep 1; done
+# Poll until agent responds (works on Windows/macOS/Linux — no seq dependency)
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  curl -s --max-time 1 "http://localhost:<port>/api/messages" > /dev/null 2>&1 && break
+  sleep 1
+done
 agentsplayground -e "http://localhost:<port>/api/messages" -c "emulator"
 ```
 
@@ -295,11 +300,12 @@ Present the commands for the user to run in two terminals:
 
 ```
 Terminal 1 — start your agent:
-  .NET:    dotnet run
-  Node.js: npm start
-  Python:  python host_agent_server.py   (or python app.py / python main.py)
+  .NET:                  dotnet run
+  Node.js:               npm start
+  Python (macOS/Linux):  python3 host_agent_server.py   (or python3 app.py / python3 main.py)
+  Python (Windows):      python host_agent_server.py    (or python app.py / python main.py)
 
-Terminal 2 — open AgentsPlayground (same for all stacks):
+Terminal 2 — open AgentsPlayground (same for all stacks and platforms):
   agentsplayground -e "http://localhost:<port>/api/messages" -c "emulator"
 ```
 
@@ -384,9 +390,9 @@ To stop: Ctrl+C in the agent terminal.
 | Tool | Required | Install |
 |------|----------|---------|
 | `agentsplayground` | Yes (all stacks) | `npm install -g @microsoft/agentsplayground` |
-| `dotnet` (8.0+) | .NET only | https://dotnet.microsoft.com/download |
-| `node` / `npm` | All stacks (required to install/run `agentsplayground`) | https://nodejs.org |
-| `python` (3.11+) | Python only | https://python.org |
+| `dotnet` (8.0+) | .NET only | Windows: `winget install Microsoft.DotNet.SDK.8` · macOS: `brew install --cask dotnet-sdk` · Linux: see https://learn.microsoft.com/en-us/dotnet/core/install/linux |
+| `node` / `npm` (18+) | All stacks (agentsplayground requires npm) | Windows: `winget install OpenJS.NodeJS.LTS` · macOS: `brew install node` · Linux: `apt install nodejs npm` · https://nodejs.org |
+| `python3` or `python` (3.11+) | Python only | Windows: `winget install Python.Python.3.11` · macOS: `brew install python@3.11` · Linux: `apt install python3.11` · https://python.org |
 
 ---
 
