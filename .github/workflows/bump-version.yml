@@ -63,10 +63,12 @@ jobs:
           echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "Bumped $CURRENT → $NEW ($BUMP)"
 
-      - name: Commit and push
+      - name: Commit, tag, and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add plugins/agent365/.claude-plugin/plugin.json .claude-plugin/marketplace.json
           git diff --cached --quiet || git commit -m "chore: bump version ${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }} [skip ci]"
+          git tag "v${{ steps.version.outputs.new }}"
           git push
+          git push origin "v${{ steps.version.outputs.new }}"

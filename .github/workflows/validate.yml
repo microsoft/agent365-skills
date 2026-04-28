@@ -1,0 +1,166 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── 1. JSON files are valid ───────────────────────────────────────────────
+  json-lint:
+    name: JSON lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate all JSON files
+        run: |
+          FAIL=0
+          while IFS= read -r f; do
+            if ! node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" 2>/dev/null; then
+              echo "Invalid JSON: $f" >&2
+              FAIL=1
+            fi
+          done < <(find . -name "*.json" -not -path "./.git/*" -not -path "./node_modules/*")
+          exit $FAIL
+
+  # ── 2. Hook JS files have valid syntax ───────────────────────────────────
+  js-syntax:
+    name: JS hook syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all hook JS files
+        run: |
+          FAIL=0
+          while IFS= read -r f; do
+            if ! node --check "$f" 2>/dev/null; then
+              echo "Syntax error: $f" >&2
+              FAIL=1
+            fi
+          done < <(find plugins/agent365/hooks -name "*.js")
+          exit $FAIL
+
+  # ── 3. plugin.json and marketplace.json versions must match ──────────────
+  version-parity:
+    name: Version parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: plugin.json == marketplace.json version
+        run: |
+          V1=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
+          V2=$(node -e "process.stdout.write(require('./.claude-plugin/marketplace.json').version)")
+          if [ "$V1" != "$V2" ]; then
+            echo "Version mismatch: plugin.json=$V1  marketplace.json=$V2" >&2
+            exit 1
+          fi
+          echo "✓ Both at $V1"
+
+  # ── 4. Stale or banned terminology ───────────────────────────────────────
+  stale-terms:
+    name: Stale terminology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for removed/renamed concepts
+        run: |
+          FAIL=0
+          scan() {
+            local pattern="$1" label="$2"
+            # exclude workflow files themselves (may reference these terms in comments)
+            if grep -rn --include="*.md" --include="*.json" --include="*.js" \
+                "$pattern" . --exclude-dir=".git" --exclude-dir=".github/workflows" \
+                | grep -v "^Binary"; then
+              echo "" >&2
+              echo "FAIL: $label" >&2
+              FAIL=1
+            fi
+          }
+          scan "isOwnIdentity"                     "Stale rename — use isAITeammate"
+          scan "Federated Managed Identity"         "Removed concept — use MSAL client credentials"
+          scan "\bFMI\b"                            "Stale acronym FMI — use MSAL client credentials"
+          scan "3-hop"                              "Removed concept — FMI 3-hop chain was replaced"
+          scan "not available at GA\|NOT available.*at GA\|not supported at GA" \
+                                                    "Hedged wording — say 'not supported' without 'at GA'"
+          exit $FAIL
+
+  # ── 5. Cross-platform shell patterns ─────────────────────────────────────
+  cross-platform:
+    name: Cross-platform patterns
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for non-portable shell commands in SKILL.md files
+        run: |
+          FAIL=0
+
+          # $(seq N) in shell loops — not available on some Windows Git Bash builds
+          if grep -rn '\$(seq ' plugins/agent365/skills/ --include="*.md"; then
+            echo "FAIL: replace \$(seq N) with a literal number list" >&2
+            FAIL=1
+          fi
+
+          # bare `pip install <pkg>` without pip3 fallback
+          # matches lines that start with "pip install" (i.e. shell commands in code blocks)
+          if grep -rn "^pip install [a-z]" plugins/agent365/skills/ --include="*.md"; then
+            echo "FAIL: use 'pip3 install ... 2>/dev/null || pip install ...' for cross-platform pip" >&2
+            FAIL=1
+          fi
+
+          # bare `python <something>` without python3 fallback
+          # matches lines starting with "python " that are NOT "python3"
+          if grep -rn "^python [^3\-]" plugins/agent365/skills/ --include="*.md" \
+               | grep -v "^.*:#\|python_\|python-\|python\.org\|python version\|python 3"; then
+            echo "FAIL: use 'python3 ... 2>/dev/null || python ...' for cross-platform python" >&2
+            FAIL=1
+          fi
+
+          exit $FAIL
+
+  # ── 6. Referenced files exist ─────────────────────────────────────────────
+  internal-links:
+    name: Internal link integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that all reference file links in SKILL.md files resolve
+        run: |
+          FAIL=0
+          while IFS= read -r skill; do
+            skill_dir=$(dirname "$skill")
+            # Extract relative markdown links that point to references/ or shared/
+            grep -oE '\[.*?\]\([./a-zA-Z0-9_-]+\)' "$skill" \
+              | grep -oE '\([^)]+\)' | tr -d '()' \
+              | grep -E '^\.\.?/' \
+              | while IFS= read -r link; do
+                  target="$skill_dir/$link"
+                  # normalize path
+                  target=$(realpath -m "$target")
+                  if [ ! -f "$target" ]; then
+                    echo "FAIL: broken link '$link' in $skill" >&2
+                    FAIL=1
+                  fi
+                done
+          done < <(find plugins/agent365/skills -name "SKILL.md")
+          exit $FAIL
+
+  # ── 7. Each skill has a stop-hook validator ───────────────────────────────
+  hook-coverage:
+    name: Hook coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every skill directory has a corresponding stop-hook validator
+        run: |
+          FAIL=0
+          while IFS= read -r skill_dir; do
+            name=$(basename "$skill_dir")
+            hook="plugins/agent365/hooks/stop/validate-${name}.js"
+            if [ ! -f "$hook" ]; then
+              echo "FAIL: missing stop hook $hook for skill '$name'" >&2
+              FAIL=1
+            fi
+          done < <(find plugins/agent365/skills -mindepth 1 -maxdepth 1 -type d)
+          exit $FAIL
