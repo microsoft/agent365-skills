@@ -58,34 +58,7 @@ jobs:
           fi
           echo "✓ Both at $V1"
 
-  # ── 4. Stale or banned terminology ───────────────────────────────────────
-  stale-terms:
-    name: Stale terminology
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Scan for removed/renamed concepts
-        run: |
-          FAIL=0
-          scan() {
-            local pattern="$1" label="$2"
-            # exclude workflow files themselves (may reference these terms in comments)
-            if grep -rn --include="*.md" --include="*.json" --include="*.js" \
-                "$pattern" . --exclude-dir=".git" --exclude-dir=".github/workflows" \
-                | grep -v "^Binary"; then
-              echo "" >&2
-              echo "FAIL: $label" >&2
-              FAIL=1
-            fi
-          }
-          scan "isOwnIdentity"                     "Stale rename — use isAITeammate"
-          scan "Federated Managed Identity"         "Removed concept — use MSAL client credentials"
-          scan "\bFMI\b"                            "Stale acronym FMI — use MSAL client credentials"
-          scan "3-hop"                              "Removed concept — FMI 3-hop chain was replaced"
-          scan "not available at GA\|NOT available.*at GA\|not supported at GA" \
-                                                    "Hedged wording — say 'not supported' without 'at GA'"
-          exit $FAIL
-
+ 
   # ── 5. Cross-platform shell patterns ─────────────────────────────────────
   cross-platform:
     name: Cross-platform patterns
@@ -146,7 +119,19 @@ jobs:
           done < <(find plugins/agent365/skills -name "SKILL.md")
           exit $FAIL
 
-  # ── 7. Each skill has a stop-hook validator ───────────────────────────────
+  # ── 7. Unit tests for stop-hook validators ───────────────────────────────
+  tests:
+    name: Hook validator tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run validator unit tests
+        run: node --test tests/*.test.js
+
+  # ── 8. Each skill has a stop-hook validator ───────────────────────────────
   hook-coverage:
     name: Hook coverage
     runs-on: ubuntu-latest

@@ -265,15 +265,17 @@ function runBuild(cmd, timeoutMs) {
   }
 }
 
-if (isDotnet) {
-  const result = runBuild('dotnet build --no-restore -v minimal', 25000);
-  if (!result.ok || !result.output.includes('Build succeeded')) {
-    issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
-  }
-} else if (isNodejs) {
-  const result = runBuild('npx tsc --noEmit', 15000);
-  if (!result.ok) {
-    issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+if (!process.env.VALIDATE_SKIP_EXEC) {
+  if (isDotnet) {
+    const result = runBuild('dotnet build --no-restore -v minimal', 25000);
+    if (!result.ok || !result.output.includes('Build succeeded')) {
+      issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
+    }
+  } else if (isNodejs) {
+    const result = runBuild('npx tsc --noEmit', 15000);
+    if (!result.ok) {
+      issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+    }
   }
 }
 // Python has no compilation step — import checks are covered by the pattern checks above.
