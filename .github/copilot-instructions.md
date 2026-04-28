@@ -25,7 +25,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python)
 3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
 4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables
-5. Runs `a365 setup all` — creates the Blueprint and Agentic User identity in Entra ID
+5. Runs `a365 setup all --aiteammate` — creates the Blueprint and Agentic User identity in Entra ID (use `--m365` too for M365-registered AI Teammates with Teams/Copilot integration)
 6. Offers `instrument-observability` (Strongly Recommended) — if yes, reads and follows instrument-observability/SKILL.md
 7. Offers `add-workiq-tools` (Optional) — if yes, reads and follows add-workiq-tools/SKILL.md
    Both offers are mandatory checkpoints: skill does not end until each is either invoked or explicitly skipped by the user.
@@ -82,9 +82,9 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Shows a dry-run preview of all `a365` operations before applying anything
-2. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions
+2. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants)
 3. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
-4. Guides the Global Administrator consent handoff workflow for WorkIQ permissions
+4. Guides the Global Administrator consent handoff: `a365 setup admin --blueprint-id <id>` (preferred) or PowerShell script
 
 **Normally delegated to from `a365-setup`** after CLI and Azure prerequisites are confirmed. Can also be invoked directly.
 
@@ -108,7 +108,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 1. Runs `a365 develop list-available` to show the MCP server catalog
 2. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
 3. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
-4. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`)
+4. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; use `a365 setup admin --blueprint-id <id>` for the full consent handoff)
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.json` to skip re-detection.
 

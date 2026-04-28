@@ -554,9 +554,17 @@ Your agent now has:
   [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 
 Next steps:
-  1. Test locally: run the test-local skill
-  2. Add observability:  run the instrument-observability skill  (if not done)
-  3. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
+  1. Register with Agent 365 (if not done via a365-setup):
+       a365 setup all --agent-name <name> --aiteammate
+     For M365-registered agents (Teams/Copilot integration), also add --m365:
+       a365 setup all --agent-name <name> --aiteammate --m365
+     Then have a Global Admin run:
+       a365 setup admin --blueprint-id <id from setup output>
+     Retrieve blueprint ID at any time:
+       a365 status --field agentBlueprintId
+  2. Test locally: run the test-local skill
+  3. Add observability:  run the instrument-observability skill  (if not done)
+  4. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
 ```
 
 ---

@@ -134,15 +134,27 @@ Show the full dry-run output to the user, then ask:
 
 ### 2.2 — Apply setup
 
+Choose the right flags based on the detected agent type:
+
 ```bash
+# Standard Agent (Non Digital Worker) — default
 cd "<project_dir>" && a365 setup all --agent-name <agent_name>
+
+# Custom Engine Agent (CEA) with Teams/Copilot integration — add --m365
+cd "<project_dir>" && a365 setup all --agent-name <agent_name> --m365
 ```
+
+**For CEA agents (`usesTeamsOrCopilot = 1`):** after `setup all`, also run the bot permission step:
+```bash
+a365 setup permissions bot
+```
+This is required for Messaging Bot API grants and must follow `setup all` (which handles `permissions mcp`).
 
 This command:
 - Creates the Agent 365 Blueprint in Entra ID (agent identity + app registration)
 - Grants required Entra ID permissions
 - For Discoverability: makes the agent findable in the M365 catalog
-- For Custom Engine Agents with a messaging endpoint: registers the endpoint
+- For Custom Engine Agents (`--m365`): registers the endpoint via MCP Platform
 
 Monitor output carefully:
 - The CLI logs progress in numbered steps (e.g. `[1/5]`). Watch for errors or warnings.
@@ -162,12 +174,13 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **If the CLI printed an admin consent action item (Permission Grants):** Show both options verbatim:
+2. **If the CLI printed an admin consent action item (Permission Grants):** Show all options:
    - Option A (Entra portal steps)
    - Option B (PowerShell script)
+   - Option C — **simplest path** — GA runs: `a365 setup admin --blueprint-id <id from setup output>`
 
    Tell the user:
-   > "If admin consent is required, have a Global Admin run the PowerShell script above."
+   > "If admin consent is required, have a Global Admin use Option C (preferred) or the PowerShell script above."
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.
@@ -231,7 +244,7 @@ Show the user a summary:
 ✅ Agent provisioned with Agent 365!
 
 Your agent now has:
-  • Blueprint:       Created in Entra ID (see a365.generated.config.json for Blueprint ID)
+  • Blueprint:       Created in Entra ID (run `a365 status --field agentBlueprintId` to retrieve)
   • Discoverability: Agent appears in the M365 catalog
   [• Observability:  OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:   M365 data access via MCP]                     (if added)

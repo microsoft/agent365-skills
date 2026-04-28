@@ -222,6 +222,25 @@ a365 -h
 
 This must show usage information, not an error. Confirms the CLI is on PATH.
 
+### Run prerequisite checks
+
+Once the CLI is confirmed installed, run the built-in requirements validator:
+
+```bash
+a365 setup requirements
+```
+
+This checks Azure, Authentication, PowerShell, and Tenant Enrollment in one pass and reports
+issues with resolution guidance. To run a single category:
+
+```bash
+a365 setup requirements --category Azure
+a365 setup requirements --category Authentication
+```
+
+Fix any reported issues before proceeding. Do not skip this step — it surfaces missing
+roles, unconsented apps, and tenant enrollment gaps that will silently fail later.
+
 ### Adapt to CLI version differences
 
 The CLI is under active development. If a command referenced later is not recognized, upgrade the CLI. Using the latest version is essential — newer versions include important fixes and new commands (e.g. `create-instance`, `publish`).
@@ -261,6 +280,15 @@ The authenticated account must be at minimum an **Agent ID Administrator** or **
 The CLI resolves the client app automatically by the well-known display name **"Agent 365 CLI"** registered in the tenant. Do NOT ask the user for a client app ID.
 
 The CLI will validate permissions and prompt for consent at runtime. If the CLI reports that "Agent 365 CLI" cannot be found, inform the user that an admin must register an Entra app with that exact display name and grant admin consent, then retry.
+
+To validate the app and check consent status before running setup, use `query-entra`:
+
+```bash
+a365 query-entra --help
+```
+
+This surfaces scope grants, permission status, and consent state for the blueprint app —
+useful for diagnosing `Authorization_RequestDenied` errors before they block `setup all`.
 
 ### Validate language-specific prerequisites (REQUIRED)
 
@@ -336,16 +364,60 @@ Mark Todo 3 as completed when the delegated skill finishes.
 
 ## Step 4 (Reference Only)
 
-> **This step is now handled by the `make-a365-agent` skill (Step 3 above).** Kept as a reference for re-running setup without the full skill flow.
+> **This step is now handled by the `make-a365-agent` or `make-ai-teammate` skill (Step 3 above).**
+> Kept as a reference for re-running setup without the full skill flow.
 
-If you need to re-run `a365 setup all` on a non-AI Teammate agent without going through the full skill:
+### Re-running `a365 setup all`
 
+`a365 setup all` is idempotent — safe to re-run after fixing any issue.
+
+**Standard Agent (Non Digital Worker):**
 ```bash
 a365 setup all --agent-name <agent_name> --dry-run   # preview
 a365 setup all --agent-name <agent_name>              # apply
 ```
 
-`a365 setup all` is idempotent — safe to re-run after fixing any issue.
+**Custom Engine Agent (CEA) with Teams/Copilot integration:**
+```bash
+a365 setup all --agent-name <agent_name> --m365       # registers endpoint via MCP Platform
+a365 setup permissions bot                            # required after setup all for CEA agents
+```
+
+**AI Teammate (Digital Worker):**
+```bash
+a365 setup all --agent-name <agent_name> --aiteammate
+# --aiteammate: blueprint + permissions only; run a365 create-instance separately
+# for M365-registered AI Teammates, also add --m365
+```
+
+### Additional permissions subcommands
+
+Run these individually when the blueprint already exists and you need to add specific grants:
+
+```bash
+a365 setup permissions mcp          # MCP server OAuth2 grants (always first)
+a365 setup permissions bot          # Messaging Bot API grants — CEA agents, run after mcp
+a365 setup permissions custom       # Custom resource OAuth2 grants
+a365 setup permissions copilotstudio  # CopilotStudio.Copilots.Invoke permission
+```
+
+### Admin handoff with `setup admin`
+
+For teams where the developer is not a Global Administrator, use the two-step handoff:
+
+```bash
+# Step 1 — Developer runs (produces a blueprint ID in output):
+a365 setup all --agent-name <agent_name>
+
+# Step 2 — Global Admin runs (config-free, blueprint ID from step 1 output):
+a365 setup admin --blueprint-id <blueprint-id>
+
+# Retrieve the blueprint ID at any time:
+a365 status --field agentBlueprintId
+```
+
+`setup admin` creates Observability API and Power Platform API grants only when called with
+`--blueprint-id`. For full grants from config, use `--config-dir <path>`.
 
 ---
 

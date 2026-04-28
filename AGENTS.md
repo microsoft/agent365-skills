@@ -39,9 +39,9 @@ make-a365-agent  →  instrument-observability  (Observability paths)
 
 test-local  (no prerequisite)
 ```
-`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all`, reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
+`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all --aiteammate` (add `--m365` for M365-registered AI Teammates), reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
 `a365-setup` verifies the CLI and Azure prerequisites (Steps 1–2), then delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
-`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ), then conditionally invokes `instrument-observability` and `add-workiq-tools`.
+`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ); add `--m365` for CEA agents and follow with `a365 setup permissions bot`. Admin consent handoff: `a365 setup admin --blueprint-id <id>`. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
 `add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.json` to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.

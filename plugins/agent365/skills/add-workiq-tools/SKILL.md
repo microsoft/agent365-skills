@@ -578,6 +578,7 @@ If yes, invoke the `test-local` skill.
 |-----------|--------|
 | `a365` CLI not installed | Install with `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease` |
 | `a365 develop list-available` fails | Check a365 CLI authentication; run `a365 auth login` |
+| Need to manage MCP servers in Dataverse | Use `a365 develop-mcp` (not `a365 develop`) — separate command for Dataverse-hosted MCP server management |
 | Server name not found in catalog | Show user the `list-available` output and ask to re-select |
 | `add-mcp-servers` fails | Run `a365 develop list-available` again to verify exact server name spelling |
 | Tooling package install fails | Check NuGet/npm/pip registry access; verify runtime is installed |
