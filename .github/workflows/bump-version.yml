@@ -79,6 +79,10 @@ jobs:
       - name: Sync version field in SKILL.md files
         run: node scripts/ensure-skill-version-check.js
 
+      - name: Update README version badge
+        run: |
+          sed -i "s/img.shields.io\/badge\/version-[0-9]*\.[0-9]*\.[0-9]*/img.shields.io\/badge\/version-${{ steps.version.outputs.new }}/g" README.md
+
       - name: Commit, tag, and push
         run: |
           git config user.name "github-actions[bot]"
@@ -86,7 +90,8 @@ jobs:
           git add plugins/agent365/.claude-plugin/plugin.json \
                   .claude-plugin/marketplace.json \
                   .github/plugin/marketplace.json \
-                  "plugins/agent365/skills/*/SKILL.md"
+                  "plugins/agent365/skills/*/SKILL.md" \
+                  README.md
           git diff --cached --quiet || git commit -m "chore: bump version ${{ steps.version.outputs.old }} → ${{ steps.version.outputs.new }} [skip ci]"
           git tag "v${{ steps.version.outputs.new }}"
           git push
