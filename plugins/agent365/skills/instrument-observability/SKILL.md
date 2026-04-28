@@ -219,31 +219,31 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 1. **Version pre-flight (critical — do this first):** The stable PyPI release of `microsoft-agents-a365-observability-core` (v0.1.0) has a **completely different and incompatible API** from what this skill instruments. The correct API is in the 0.3.x prerelease. Check the installed version before proceeding:
    ```bash
-   pip show microsoft-agents-a365-observability-core 2>/dev/null | grep Version
+   pip3 show microsoft-agents-a365-observability-core 2>/dev/null || pip show microsoft-agents-a365-observability-core 2>/dev/null | grep Version
    ```
    If missing or below `0.3.0.dev1`, install with `--pre`:
    ```bash
-   pip install --pre microsoft-agents-a365-observability-core
-   pip install --pre microsoft-agents-a365-observability-hosting
+   pip3 install --pre microsoft-agents-a365-observability-core 2>/dev/null || pip install --pre microsoft-agents-a365-observability-core
+   pip3 install --pre microsoft-agents-a365-observability-hosting 2>/dev/null || pip install --pre microsoft-agents-a365-observability-hosting
    ```
 
 2. **Bash** — Run package installation (core + hosting):
    ```bash
-   pip install --pre microsoft-agents-a365-observability-core
-   pip install --pre microsoft-agents-a365-runtime
-   pip install --pre microsoft-agents-a365-observability-hosting
+   pip3 install --pre microsoft-agents-a365-observability-core 2>/dev/null || pip install --pre microsoft-agents-a365-observability-core
+   pip3 install --pre microsoft-agents-a365-runtime 2>/dev/null || pip install --pre microsoft-agents-a365-runtime
+   pip3 install --pre microsoft-agents-a365-observability-hosting 2>/dev/null || pip install --pre microsoft-agents-a365-observability-hosting
    ```
 
 4. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
    ```bash
    # Semantic Kernel
-   pip install microsoft-agents-a365-observability-extensions-semantic-kernel
+   pip3 install microsoft-agents-a365-observability-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-semantic-kernel
    # OpenAI Agents SDK
-   pip install microsoft-agents-a365-observability-extensions-openai
+   pip3 install microsoft-agents-a365-observability-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-openai
    # Agent Framework
-   pip install microsoft-agents-a365-observability-extensions-agent-framework
+   pip3 install microsoft-agents-a365-observability-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-agent-framework
    # LangChain
-   pip install microsoft-agents-a365-observability-extensions-langchain
+   pip3 install microsoft-agents-a365-observability-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-langchain
    ```
 
 5. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or `pyproject.toml` automatically. Explicitly add the installed packages:
@@ -614,7 +614,7 @@ All new lines marked with the language-appropriate comment:
 
 1. **Bash** — Run an import check to verify the packages load without errors:
    ```bash
-   python -c "from microsoft_agents_a365.observability.core import configure; from microsoft_agents_a365.observability.hosting import AgenticTokenCache; print('A365 observability imports OK')"
+   python3 -c "from microsoft_agents_a365.observability.core import configure; from microsoft_agents_a365.observability.hosting import AgenticTokenCache; print('A365 observability imports OK')" 2>/dev/null || python -c "from microsoft_agents_a365.observability.core import configure; from microsoft_agents_a365.observability.hosting import AgenticTokenCache; print('A365 observability imports OK')"
    ```
 
 2. **If import fails**, collect error output and present to user with suggested fixes (usually a missing `pip install`).

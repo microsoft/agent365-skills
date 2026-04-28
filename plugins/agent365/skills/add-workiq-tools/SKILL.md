@@ -357,19 +357,19 @@ Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
 
 **Grep** `microsoft-agents-a365-tooling` in `requirements.txt` or `pyproject.toml`. If missing:
 ```bash
-pip install microsoft-agents-a365-tooling
+pip3 install microsoft-agents-a365-tooling 2>/dev/null || pip install microsoft-agents-a365-tooling
 ```
 
 Then install the extension for the detected framework:
 ```bash
 # AgentFramework
-pip install microsoft-agents-a365-tooling-extensions-agent-framework
+pip3 install microsoft-agents-a365-tooling-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-agent-framework
 # LangChain
-pip install microsoft-agents-a365-tooling-extensions-langchain
+pip3 install microsoft-agents-a365-tooling-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-langchain
 # OpenAI Agents SDK
-pip install microsoft-agents-a365-tooling-extensions-openai
+pip3 install microsoft-agents-a365-tooling-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-openai
 # Semantic Kernel
-pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
+pip3 install microsoft-agents-a365-tooling-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
 ```
 
 Update `requirements.txt` or `pyproject.toml` to record the installed packages.
@@ -524,8 +524,8 @@ npm run build || npm run compile || echo "No build script — skipping compile c
 ### For Python
 
 ```bash
-pip install -r requirements.txt || pip install .
-python -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')"
+pip3 install -r requirements.txt 2>/dev/null || pip install -r requirements.txt || pip install .
+python3 -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')" 2>/dev/null || python -c "from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService; print('WorkIQ imports OK')"
 ```
 
 Adjust the import path to match the installed framework extension (e.g. `.langchain`, `.openai`).

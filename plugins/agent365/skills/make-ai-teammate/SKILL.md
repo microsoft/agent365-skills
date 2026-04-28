@@ -255,7 +255,7 @@ Before continuing, install the sample's dependencies so subsequent build steps s
 
 If `uv` is not installed for Python:
 ```bash
-pip install uv
+pip3 install uv 2>/dev/null || pip install uv
 uv sync
 ```
 
@@ -634,8 +634,8 @@ Fix errors:
 ### Python
 ```bash
 uv sync
-# or: pip install -e .
-python -c "import host_agent_server; import agent; print('imports OK')"
+# or: pip3 install -e . 2>/dev/null || pip install -e .
+python3 -c "import host_agent_server; import agent; print('imports OK')" 2>/dev/null || python -c "import host_agent_server; import agent; print('imports OK')"
 ```
 Fix errors:
 - `ModuleNotFoundError` for `microsoft_agents_a365_*` → run `uv add <package>` or `pip install <package>`
