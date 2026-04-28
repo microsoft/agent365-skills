@@ -19,6 +19,11 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Determine bump type from PR commits
         id: bump
         run: |
@@ -70,11 +75,6 @@ jobs:
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "Bumped $CURRENT → $NEW ($BUMP)"
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Sync version field in SKILL.md files
         run: node scripts/ensure-skill-version-check.js
