@@ -310,7 +310,7 @@ Our blueprint already exists — tell me what to give our Global Administrator.
 **Standard Agent (Non Digital Worker) with S2S observability (.NET):**
 ```
 This is a .NET Standard Agent (Non Digital Worker) that runs autonomously — no signed-in user.
-Add A365 observability with S2S auth (FMI token chain).
+Add A365 observability with S2S auth (MSAL client credentials).
 ```
 
 **Check what's already configured:**

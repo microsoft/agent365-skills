@@ -267,7 +267,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability wiring following the reference pattern in `dotnet-observability.md`:
    - Add using directives for the observability namespaces
    - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
-   - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()`) and `Observability/ObservabilityTokenService.cs` (background service with FMI 3-hop chain). Then call `builder.Services.AddAgent365Observability();` and `builder.AddA365Tracing();`. Also run `dotnet add package Azure.Identity` and `dotnet add package Microsoft.Identity.Client`.
+   - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()`) and `Observability/ObservabilityTokenService.cs` (background service that acquires the Observability API token via MSAL client credentials). Then call `builder.Services.AddAgent365Observability();` and `builder.AddA365Tracing();`. Also run `dotnet add package Microsoft.Identity.Client`.
    - Optionally register `adapter.Use(new BaggageTurnMiddleware())` (OBO path only) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -344,7 +344,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    - **Baggage:** Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` as a separate `using var baggageScope` — `FromTurnContext()` is an extension on `BaggageBuilder` **only**; it does not exist on `InvokeAgentScope` or any scope type
    - **Scope:** Use `InvokeAgentScope.Start(new Request(...), new InvokeAgentScopeDetails(endpoint: new Uri("...")), _obs.AgentDetails)` as a separate `using var scope` — `InvokeAgentScopeDetails` has **no parameterless constructor**; always pass at least `endpoint`
    - **No** per-turn `RegisterObservability()` call; **no** `.FromTurnContext()` chaining on the scope
-   - Add inline comment: `// A365 auth mode: S2S — FMI token chain via ObservabilityTokenService`
+   - Add inline comment: `// A365 auth mode: S2S — MSAL client credentials via ObservabilityTokenService (scope: api://9b975845-388f-4429-889e-eab1ef63949c/.default)`
 
    Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -407,11 +407,11 @@ For AI Teammate agents using the hosting packages, the built-in token cache (`Ad
 
 ### For .NET AgentFramework (S2S path)
 
-The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Observability API token automatically via the FMI 3-hop chain — no manual `TokenResolver` delegate needed.
+The `ObservabilityTokenService` background service (created in Phase 3 via the scaffold) acquires and refreshes the Observability API token automatically via MSAL client credentials — no manual `TokenResolver` delegate needed.
 
 1. **Check** if `Observability/ObservabilityServiceExtensions.cs` and `Observability/ObservabilityTokenService.cs` exist. If yes, **skip** — they were already created in Phase 3.
 
-2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service with FMI 3-hop chain refreshing the Power Platform token every 50 minutes).
+2. **If absent** (Phase 3 was skipped or re-running the skill on a partial state), create them now following the S2S scaffold patterns in `dotnet-observability.md`. These files provide `AddAgent365Observability()` (DI extension registering `AddServiceTracingExporter`, `ObservabilityTokenService`, and `Agent365ObservabilityContext`) and `ObservabilityTokenService` (background service that acquires the Observability API token via MSAL client credentials and refreshes it every 50 minutes).
 
 ### For Node.js (OBO path)
 
