@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // scripts/ensure-skill-version-check.js
-// Ensures each SKILL.md in plugins/agent365/skills/ has a `version:` field
-// in its YAML frontmatter that matches the version in plugins/agent365/.claude-plugin/plugin.json.
+// Ensures each SKILL.md in plugins/agent365/skills/:
+//   1. Has a `version:` field in YAML frontmatter matching plugin.json
+//   2. Has the runtime version-check prompt line immediately after the frontmatter closing ---
 //
 // Usage:
 //   node scripts/ensure-skill-version-check.js          # auto-add / auto-fix (default)
 //   node scripts/ensure-skill-version-check.js --check  # check-only; exit 1 if any are missing or wrong
+
+const VERSION_CHECK_LINE =
+  '> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.';
 
 'use strict';
 
@@ -73,6 +77,30 @@ for (const skill of fs.readdirSync(SKILLS_DIR).sort()) {
     fs.writeFileSync(skillMdPath, updated + afterFrontmatter);
     console.log(`Added version: ${pluginVersion} to ${skillMdPath}`);
     fixed++;
+  }
+
+  // ── 2. Ensure runtime check line exists immediately after closing --- ──────
+  const currentContent = fs.readFileSync(skillMdPath, 'utf8');
+  const hasCheckLine = currentContent.includes(VERSION_CHECK_LINE);
+
+  if (!hasCheckLine) {
+    if (checkOnly) {
+      console.error(`FAIL: ${skillMdPath} — missing runtime version-check line`);
+      missing++;
+    } else {
+      // Find closing --- and insert the line right after it
+      const match = currentContent.match(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/);
+      if (match) {
+        const insertPos = match[0].length;
+        const updated =
+          currentContent.slice(0, insertPos) +
+          '\n' + VERSION_CHECK_LINE + '\n' +
+          currentContent.slice(insertPos);
+        fs.writeFileSync(skillMdPath, updated, 'utf8');
+        console.log(`Added runtime check line to ${skillMdPath}`);
+        fixed++;
+      }
+    }
   }
 }
 
