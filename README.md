@@ -144,7 +144,7 @@ Provisions a **Standard Agent (Non Digital Worker)** with Agent 365. A Standard 
 
 > **Taxonomy:** Standard Agent (Non Digital Worker) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Standard Agent (Non Digital Worker), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
 >
-> **At GA:** CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate (Digital Worker) at GA.
+> CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate (Digital Worker).
 
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required

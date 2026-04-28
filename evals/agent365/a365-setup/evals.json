@@ -143,9 +143,9 @@
       "files": [],
       "expectations": [
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA)",
-        "Phase 1B: Capabilities menu shown — option 4 includes ⚠️ note about CEA not supported as AI Teammate at GA",
+        "Phase 1B: Capabilities menu shown — option 4 includes ⚠️ note about CEA not supported as AI Teammate",
         "Phase 1B: User selects option 4 (AI Teammate)",
-        "Phase 1C: CEA guard fires — skill responds: 'Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents at GA. AI Teammate (Digital Worker) is not available for CEA at GA.'",
+        "Phase 1C: CEA guard fires — skill responds: 'Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents. AI Teammate (Digital Worker) is not supported for CEA.'",
         "Phase 1C: isAITeammate is forced to false",
         "Phase 1C: Options 1-3 are re-presented to the user",
         "Phase 1C: User selects a valid option — skill continues with Standard Agent (Non Digital Worker) path",

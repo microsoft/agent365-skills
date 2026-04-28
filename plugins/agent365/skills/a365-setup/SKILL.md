@@ -126,11 +126,11 @@ Present these options (omit or note option 4 if CEA was detected — see below):
   2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
   4. AI Teammate (Digital Worker) — agent gets a first-class M365 identity (Agentic User with UPN)
-     ⚠️  NOT available for Custom Engine Agents at GA — CEA is supported as Standard Agent (Non Digital Worker) only
+     ⚠️  NOT available for Custom Engine Agents — CEA is supported as Standard Agent (Non Digital Worker) only
 
 > **CEA guard:** If `usesTeamsOrCopilot = 1` (CEA detected) and the user selects option 4, respond:
-> "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents at GA.
->  AI Teammate (Digital Worker) is not available for CEA at GA.
+> "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents.
+>  AI Teammate (Digital Worker) is not supported for CEA.
 >  Please choose from options 1–3."
 > Then re-present options 1–3 and wait for a new answer.
 
@@ -143,8 +143,8 @@ Wait for the answer. Store as `capabilities`.
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
 1. Set `isAITeammate = true` if the user selected **AI Teammate (Digital Worker)**, else `isAITeammate = false`.
-   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported at GA.
-     Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) at GA — AI Teammate (Digital Worker) is not available for CEA."
+   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported.
+     Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) — AI Teammate (Digital Worker) is not supported for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
 
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate`:
