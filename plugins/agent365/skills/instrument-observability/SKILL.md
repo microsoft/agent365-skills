@@ -1,5 +1,6 @@
 ---
 name: instrument-observability
+version: 1.4.2
 description: >
   Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual

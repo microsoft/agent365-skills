@@ -1,0 +1,84 @@
+name: Feature Request
+description: Suggest a new feature or improvement for an Agent 365 skill
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: skill
+    attributes:
+      label: Skill
+      description: Which skill is this feature request for?
+      options:
+        - make-ai-teammate
+        - a365-setup
+        - make-a365-agent
+        - add-workiq-tools
+        - instrument-observability
+        - test-local
+        - new skill
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: What version of the plugin are you using?
+      placeholder: e.g., 1.4.2
+    validations:
+      required: false
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Agent Language / Stack
+      description: Which language/framework is this related to? (Leave blank for general requests)
+      options:
+        - .NET AgentFramework
+        - .NET Semantic Kernel
+        - Node.js LangChain
+        - Node.js OpenAI Agents SDK
+        - Node.js Claude SDK
+        - Node.js Semantic Kernel
+        - Node.js Google ADK
+        - Python AgentFramework
+        - Python LangChain
+        - Python OpenAI
+        - Python Claude SDK
+        - Python Semantic Kernel
+        - Python Google ADK
+        - All / Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What's the motivation?
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or feature you'd like.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or examples.
+    validations:
+      required: false
