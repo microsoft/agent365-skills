@@ -80,7 +80,16 @@ function detectGhSkill() {
 }
 
 function detectVSCode() {
-  return run('code --version') !== null;
+  // Avoid spawning `code --version` — on Windows it can open VS Code.
+  // Instead check well-known install paths and environment markers.
+  if (process.env.VSCODE_PID || process.env.TERM_PROGRAM === 'vscode') return true;
+  const locations = [
+    path.join(os.homedir(), '.vscode', 'extensions'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code'),
+    '/usr/share/code',
+    '/Applications/Visual Studio Code.app',
+  ];
+  return locations.some(p => fs.existsSync(p));
 }
 
 function detectA365() {
@@ -225,6 +234,30 @@ function installAgentsSkills() {
     log('Add .agents/skills/ to .gitignore if you do not want to commit them.');
   }
   if (skipped > 0) log(`${skipped} skill(s) already present — skipped.`);
+
+  // VS Code Copilot Chat only scans .github/skills/ and .claude/skills/ by default.
+  // Write chat.agentSkillsLocations to .vscode/settings.json so it also scans .agents/skills/.
+  // The setting requires an object { "path": true } format — arrays are silently ignored.
+  writeVSCodeSkillsLocation('.agents/skills');
+}
+
+function writeVSCodeSkillsLocation(relPath) {
+  const settingsDir  = path.join(TARGET_DIR, '.vscode');
+  const settingsFile = path.join(settingsDir, 'settings.json');
+  const key = 'chat.agentSkillsLocations';
+
+  let settings = readJson(settingsFile) || {};
+  if (typeof settings[key] !== 'object' || Array.isArray(settings[key])) {
+    settings[key] = {};
+  }
+  if (settings[key][relPath] === true) {
+    log('chat.agentSkillsLocations already set — skipping');
+    return;
+  }
+  settings[key][relPath] = true;
+  writeJson(settingsFile, settings);
+  ok(`Updated .vscode/settings.json — chat.agentSkillsLocations includes "${relPath}"`);
+  log('Reload VS Code (Ctrl+Shift+P → Developer: Reload Window) for skills to appear.');
 }
 
 // ── Manual fallback ──────────────────────────────────────────────────────────
@@ -273,9 +306,9 @@ if (!hasClaude && !hasVSCode && !hasCopilot && !hasGhSkill) {
   warn('Neither Claude Code, VS Code, gh copilot, nor gh skill detected.');
   showManualInstructions();
 } else {
-  if (hasClaude)                    installClaudeCode();
-  if (hasGhSkill)                   installGhSkill();
-  else if (hasVSCode || hasCopilot) installCopilotInstructions();
+  if (hasClaude) installClaudeCode();
+  if (hasGhSkill) installGhSkill();
+  else installCopilotInstructions(); // covers VS Code, gh copilot, and unknown hosts
 }
 
 // Always install to .agents/skills/ — works for VS Code agent mode, Copilot CLI, and cloud agent
