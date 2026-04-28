@@ -148,15 +148,116 @@ Pick a framework and I'll clone the sample, then continue with the AI Teammate s
   0. I'll bring my own code — skip cloning
 ```
 
-**If the user picks a sample (1–7):**
-Run the appropriate git clone:
+**If the user picks a sample (1–7), run prerequisite checks BEFORE cloning:**
+
+### Step 1 — Verify git is installed
+
 ```bash
-# Example for option 3 (LangChain):
-git clone --depth 1 https://github.com/microsoft/Agent365-Samples.git _tmp_samples
-cp -r _tmp_samples/nodejs/langchain/sample-agent/. .
-rm -rf _tmp_samples
+git --version
 ```
-After cloning, re-run the LLM entry point detection above and continue to Phase 0B as normal.
+
+If the command fails:
+> "**git is not installed.** Please install it from https://git-scm.com/downloads and restart your terminal, then try again."
+
+Stop until the user confirms git is installed.
+
+### Step 2 — Verify GitHub CLI is installed
+
+```bash
+gh --version
+```
+
+If the command fails:
+> "**GitHub CLI (gh) is not installed.** Install it from https://cli.github.com/ and restart
+> your terminal. The CLI is used to authenticate with GitHub before cloning the sample."
+
+Stop until the user confirms `gh` is installed.
+
+### Step 3 — Verify GitHub authentication
+
+```bash
+gh auth status
+```
+
+Check the output:
+- If output contains `Logged in to github.com` → authenticated, proceed.
+- If output contains `not logged in` or exits non-zero:
+
+> "You are not logged in to GitHub. Run the following command to authenticate:
+>
+> ```
+> gh auth login
+> ```
+>
+> Choose **GitHub.com**, then **HTTPS**, then **Login with a web browser**.
+> Follow the prompts, then come back here."
+
+Stop until `gh auth status` succeeds.
+
+### Step 4 — Verify language-specific toolchain (pre-clone)
+
+Run the relevant check for the chosen sample:
+
+| Sample | Check command | Install URL if missing |
+|--------|--------------|------------------------|
+| .NET (1, 2) | `dotnet --version` | https://dotnet.microsoft.com/download (requires .NET 8+) |
+| Node.js (3, 4) | `node --version && npm --version` | https://nodejs.org (requires Node.js 18+) |
+| Python (5, 6, 7) | `python --version` or `python3 --version` | https://www.python.org/downloads (requires 3.11+) |
+
+If the check fails:
+> "**{tool} is not installed or is below the minimum version.** Please install it from
+> {install URL} and restart your terminal."
+
+Stop until the check passes.
+
+### Step 5 — Clone the sample
+
+Once all checks pass, clone and copy the chosen sample into the current directory:
+
+```bash
+# Pattern — replace {path} with the framework subfolder
+git clone --depth 1 https://github.com/microsoft/Agent365-Samples.git _tmp_a365samples
+```
+
+Then copy only the chosen sample subfolder:
+
+| Option | Source path inside clone |
+|--------|--------------------------|
+| 1 — .NET Agent Framework | `dotnet/agent-framework/sample-agent` |
+| 2 — .NET Semantic Kernel | `dotnet/semantic-kernel/sample-agent` |
+| 3 — Node.js LangChain | `nodejs/langchain/sample-agent` |
+| 4 — Node.js OpenAI Agents SDK | `nodejs/openai/sample-agent` |
+| 5 — Python Agent Framework | `python/agent-framework/sample-agent` |
+| 6 — Python Claude SDK | `python/claude/sample-agent` |
+| 7 — Python Google ADK | `python/google-adk/sample-agent` |
+
+```bash
+# Example for option 3 (Node.js LangChain):
+cp -r _tmp_a365samples/nodejs/langchain/sample-agent/. .
+rm -rf _tmp_a365samples
+```
+
+Tell the user:
+> "✅ Sample cloned into the current directory. Continuing with AI Teammate setup…"
+
+Set `language` and `agentStack` from the chosen option, re-run the LLM entry point detection
+above, then continue to Phase 0B as normal.
+
+### Step 6 — Install sample dependencies (post-clone)
+
+Before continuing, install the sample's dependencies so subsequent build steps succeed:
+
+| Language | Command |
+|----------|---------|
+| Node.js | `npm install` |
+| .NET | `dotnet restore` |
+| Python | `uv sync` (preferred) or `pip install -e .` |
+
+If `uv` is not installed for Python:
+```bash
+pip install uv
+uv sync
+```
 
 **If the user picks 0 (bring own code):**
 Ask: "What language and framework are you using?" and set `language` and `agentStack` accordingly, then continue to Phase 0B.
