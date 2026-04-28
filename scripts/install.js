@@ -80,7 +80,16 @@ function detectGhSkill() {
 }
 
 function detectVSCode() {
-  return run('code --version') !== null;
+  // Avoid spawning `code --version` — on Windows it can open VS Code.
+  // Instead check well-known install paths and environment markers.
+  if (process.env.VSCODE_PID || process.env.TERM_PROGRAM === 'vscode') return true;
+  const locations = [
+    path.join(os.homedir(), '.vscode', 'extensions'),
+    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Microsoft VS Code'),
+    '/usr/share/code',
+    '/Applications/Visual Studio Code.app',
+  ];
+  return locations.some(p => fs.existsSync(p));
 }
 
 function detectA365() {
@@ -273,9 +282,9 @@ if (!hasClaude && !hasVSCode && !hasCopilot && !hasGhSkill) {
   warn('Neither Claude Code, VS Code, gh copilot, nor gh skill detected.');
   showManualInstructions();
 } else {
-  if (hasClaude)                    installClaudeCode();
-  if (hasGhSkill)                   installGhSkill();
-  else if (hasVSCode || hasCopilot) installCopilotInstructions();
+  if (hasClaude) installClaudeCode();
+  if (hasGhSkill) installGhSkill();
+  else installCopilotInstructions(); // covers VS Code, gh copilot, and unknown hosts
 }
 
 // Always install to .agents/skills/ — works for VS Code agent mode, Copilot CLI, and cloud agent
