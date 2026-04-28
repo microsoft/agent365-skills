@@ -1,0 +1,27 @@
+{
+  "name": "agent365-skills",
+  "metadata": {
+    "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP tools, instrument observability, and test locally. Supports .NET, Node.js, and Python.",
+    "version": "1.4.2"
+  },
+  "owner": {
+    "name": "Microsoft",
+    "email": "agent365@microsoft.com"
+  },
+  "plugins": [
+    {
+      "name": "agent365",
+      "source": "./plugins/agent365",
+      "description": "Six skills covering the full Agent 365 lifecycle: AI Teammate transformation, Blueprint provisioning (Discoverability / Observability paths), WorkIQ MCP tools (M365 data access), OTel observability instrumentation, and local testing with AgentsPlayground. Supports .NET AgentFramework, Node.js (LangChain, OpenAI, Claude SDK, Semantic Kernel, Google ADK), and Python.",
+      "version": "1.4.2",
+      "skills": [
+        "./skills/make-ai-teammate",
+        "./skills/a365-setup",
+        "./skills/make-a365-agent",
+        "./skills/add-workiq-tools",
+        "./skills/instrument-observability",
+        "./skills/test-local"
+      ]
+    }
+  ]
+}

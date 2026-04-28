@@ -48,15 +48,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: plugin.json == marketplace.json version
+      - name: plugin.json == .claude-plugin/marketplace.json == .github/plugin/marketplace.json
         run: |
           V1=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
           V2=$(node -e "process.stdout.write(require('./.claude-plugin/marketplace.json').version)")
+          V3=$(node -e "process.stdout.write(require('./.github/plugin/marketplace.json').metadata.version)")
+          FAIL=0
           if [ "$V1" != "$V2" ]; then
-            echo "Version mismatch: plugin.json=$V1  marketplace.json=$V2" >&2
-            exit 1
+            echo "Version mismatch: plugin.json=$V1  .claude-plugin/marketplace.json=$V2" >&2
+            FAIL=1
           fi
-          echo "✓ Both at $V1"
+          if [ "$V1" != "$V3" ]; then
+            echo "Version mismatch: plugin.json=$V1  .github/plugin/marketplace.json=$V3" >&2
+            FAIL=1
+          fi
+          [ $FAIL -eq 0 ] && echo "✓ All three manifests at $V1"
+          exit $FAIL
 
  
   # ── 5. Cross-platform shell patterns ─────────────────────────────────────

@@ -40,16 +40,31 @@ claude --plugin-dir "/path/to/agent365-skills/plugins/agent365"
 
 Or install via the marketplace first (inside a Claude Code session), then the CLI picks it up automatically on every `claude` invocation.
 
-### GitHub Copilot Chat (VS Code)
+### GitHub Copilot CLI — `gh skill` (recommended)
 
-Run the installer from your agent project directory:
+The fastest way to install for GitHub Copilot CLI and VS Code agent mode:
+
+```bash
+gh skill add microsoft/agent365-skills
+```
+
+This reads `.github/plugin/marketplace.json` and installs all six skills directly into your Copilot CLI session. Use `/skills list` to verify, and invoke skills by name:
+
+```bash
+gh copilot suggest "Make this agent an AI Teammate"
+gh copilot suggest "Instrument observability for this agent"
+```
+
+### GitHub Copilot Chat (VS Code) — `copilot-instructions.md`
+
+For trigger-phrase activation in VS Code Copilot Chat, run the installer from your agent project directory:
 
 ```bash
 cd my-agent-project
 node /path/to/agent365-skills/scripts/install.js
 ```
 
-This copies `.github/copilot-instructions.md` into your workspace. Copilot Chat picks it up automatically and triggers skills when you use any of the phrases below.
+The installer automatically prefers `gh skill add` if available, then falls back to copying `.github/copilot-instructions.md` into your workspace. Copilot Chat picks it up automatically and triggers skills when you use any of the phrases listed below.
 
 Or manually copy `.github/copilot-instructions.md` from this repo to your workspace's `.github/` folder.
 
@@ -354,17 +369,20 @@ claude --plugin-dir "/path/to/agent365-skills/plugins/agent365"
 
 The `--plugin-dir` path must be in double quotes if it contains spaces. Use the absolute path.
 
-### Testing with GitHub Copilot Chat or Copilot CLI
+### Testing with GitHub Copilot CLI or VS Code agent mode
 
 ```bash
-# Run the installer against your test agent project
+# Install skills directly via gh skill (preferred)
+gh skill add microsoft/agent365-skills
+
+# Or run the installer for the copilot-instructions.md fallback
 cd my-agent-project
 node /path/to/agent365-skills/scripts/install.js
 ```
 
-This copies `.github/copilot-instructions.md` into the test project. Copilot Chat in VS Code and `gh copilot` CLI both automatically use those instructions.
+With `gh skill`, skills are invocable by name (`/make-ai-teammate`, `/instrument-observability`, etc.) from any `gh copilot` session. With `copilot-instructions.md`, trigger phrases activate the skill in Copilot Chat and `gh copilot` when run inside the workspace.
 
-To update after pulling changes, re-run `install.js` — it appends only if the Agent 365 block is not already present.
+To update after pulling changes, re-run `gh skill add microsoft/agent365-skills` (idempotent) or re-run `install.js` — it appends only if the Agent 365 block is not already present.
 
 ---
 

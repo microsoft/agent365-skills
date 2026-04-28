@@ -63,6 +63,11 @@ function detectCopilot() {
   return run('gh copilot --version') !== null;
 }
 
+function detectGhSkill() {
+  // gh skill is the GitHub CLI Agent Skills extension
+  return run('gh skill --version') !== null;
+}
+
 function detectVSCode() {
   return run('code --version') !== null;
 }
@@ -96,10 +101,30 @@ function enableAutoUpdateClaude() {
   ok('Auto-update enabled for Claude Code');
 }
 
-// ── GitHub Copilot installation (Chat + CLI) ─────────────────────────────────
-// Both GitHub Copilot Chat (VS Code) and GitHub Copilot CLI (gh copilot) read
+// ── GitHub Copilot / gh skill installation ───────────────────────────────────
+// GitHub Copilot Chat (VS Code) and GitHub Copilot CLI (gh copilot) read
 // .github/copilot-instructions.md from the workspace root automatically.
-// Installing this file enables skills for both surfaces.
+// Installing this file enables trigger-phrase-based skills for both surfaces.
+//
+// In addition, `gh skill add` installs skills from the repo's
+// .github/plugin/marketplace.json, enabling /skills-style invocation
+// in the GitHub Copilot CLI and cloud agent.
+
+function installGhSkill() {
+  header('GitHub Copilot — gh skill');
+  const result = spawnSync(
+    'gh', ['skill', 'add', MARKETPLACE_REPO],
+    { encoding: 'utf8', stdio: 'pipe' }
+  );
+  if (result.status === 0) {
+    ok(`Agent 365 skills installed via gh skill add ${MARKETPLACE_REPO}`);
+    log('Use /skills list in gh copilot to see installed skills.');
+  } else {
+    warn('gh skill add failed — falling back to copilot-instructions.md method.');
+    log('  ' + (result.stderr || '').trim());
+    installCopilotInstructions();
+  }
+}
 
 function installCopilotInstructions() {
   header('GitHub Copilot (Chat + CLI)');
@@ -171,16 +196,18 @@ if (!hasNode) {
   process.exit(1);
 }
 
-const hasClaude  = detectClaude();
-const hasCopilot = detectCopilot();
-const hasVSCode  = detectVSCode();
+const hasClaude   = detectClaude();
+const hasCopilot  = detectCopilot();
+const hasVSCode   = detectVSCode();
+const hasGhSkill  = detectGhSkill();
 
-if (!hasClaude && !hasVSCode && !hasCopilot) {
-  warn('Neither Claude Code, VS Code, nor gh copilot detected.');
+if (!hasClaude && !hasVSCode && !hasCopilot && !hasGhSkill) {
+  warn('Neither Claude Code, VS Code, gh copilot, nor gh skill detected.');
   showManualInstructions();
 } else {
-  if (hasClaude)              installClaudeCode();
-  if (hasVSCode || hasCopilot) installCopilotInstructions();
+  if (hasClaude)               installClaudeCode();
+  if (hasGhSkill)              installGhSkill();
+  else if (hasVSCode || hasCopilot) installCopilotInstructions();
 }
 
 checkA365();
