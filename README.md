@@ -57,7 +57,7 @@ gh copilot suggest "Instrument observability for this agent"
 
 ### VS Code agent mode — `.agents/skills/` (open standard)
 
-To install into your project for VS Code agent mode, Copilot cloud agent, and any [agentskills.io](https://agentskills.io)-compatible tool, run the installer from your agent project directory:
+To install into your project for VS Code agent mode, Copilot cloud agent, and any agentskills.io-compatible tool, run the installer from your agent project directory:
 
 ```bash
 cd my-agent-project
