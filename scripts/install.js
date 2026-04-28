@@ -234,6 +234,30 @@ function installAgentsSkills() {
     log('Add .agents/skills/ to .gitignore if you do not want to commit them.');
   }
   if (skipped > 0) log(`${skipped} skill(s) already present — skipped.`);
+
+  // VS Code Copilot Chat only scans .github/skills/ and .claude/skills/ by default.
+  // Write chat.agentSkillsLocations to .vscode/settings.json so it also scans .agents/skills/.
+  // The setting requires an object { "path": true } format — arrays are silently ignored.
+  writeVSCodeSkillsLocation('.agents/skills');
+}
+
+function writeVSCodeSkillsLocation(relPath) {
+  const settingsDir  = path.join(TARGET_DIR, '.vscode');
+  const settingsFile = path.join(settingsDir, 'settings.json');
+  const key = 'chat.agentSkillsLocations';
+
+  let settings = readJson(settingsFile) || {};
+  if (typeof settings[key] !== 'object' || Array.isArray(settings[key])) {
+    settings[key] = {};
+  }
+  if (settings[key][relPath] === true) {
+    log('chat.agentSkillsLocations already set — skipping');
+    return;
+  }
+  settings[key][relPath] = true;
+  writeJson(settingsFile, settings);
+  ok(`Updated .vscode/settings.json — chat.agentSkillsLocations includes "${relPath}"`);
+  log('Reload VS Code (Ctrl+Shift+P → Developer: Reload Window) for skills to appear.');
 }
 
 // ── Manual fallback ──────────────────────────────────────────────────────────
