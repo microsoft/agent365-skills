@@ -96,3 +96,78 @@ describe('validate-a365-setup — .gitignore warning', () => {
     } finally { cleanup(dir); }
   });
 });
+
+// ── .a365-workspace-detection.json authMode checks ────────────────────────────
+
+describe('validate-a365-setup — authMode in detection cache', () => {
+  test('no detection file → ok (a365-setup may not have written it yet)', () => {
+    const dir = createFixture({ 'README.md': '# My Agent' });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with authMode=obo → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: 'obo' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with authMode=s2s → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 's2s' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with authMode=both → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'both' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with empty authMode → reports missing authMode', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: '' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /authMode is empty/);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with missing authMode key → reports missing authMode', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', agentType: 'system-agent' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /authMode is empty/);
+    } finally { cleanup(dir); }
+  });
+
+  test('malformed detection file → reports parse error', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': '{ invalid json',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /cannot be parsed/);
+    } finally { cleanup(dir); }
+  });
+});

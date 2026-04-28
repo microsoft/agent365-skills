@@ -109,66 +109,14 @@ Ask both questions in a single message:
 ```
 To provision your agent with Agent 365, I need two things:
 
-  1. Agent Name — short, unique identifier for your tenant (e.g. "contoso-hr-agent" or "SunilsAgent1")
-     Rules: letters, numbers, hyphens only. Start with a letter. 3–20 chars.
-     This derives the Blueprint name. Pass the name exactly as you type it — do NOT normalize case.
-     Type "default" to use the name "developer".
+  1. Agent Name — short, unique identifier for your tenant (e.g. "contoso-hr-agent")
+     Rules: lowercase letters, numbers, hyphens only. Start with a letter. 3–20 chars.
+     This derives the Blueprint name.
 
   2. Project directory — full path to your agent code, or "current" for this directory.
 ```
 
 Store as `agent_name` and `project_dir`. If the user replies `current`, use CWD.
-If the user types `default`, set `agent_name = "developer"`.
-
-### 1.1 — Determine Messaging Endpoint
-
-Ask the user where their agent is (or will be) hosted:
-
-```
-Where will your agent run?
-
-  1. Azure / Cloud — the agent has (or will have) a public HTTPS endpoint already
-  2. Local / Dev Tunnel — the agent runs on localhost and needs a dev tunnel for a public URL
-```
-
-**If Cloud (option 1):** Ask for the full HTTPS endpoint URL (e.g. `https://myagent.azurewebsites.net/api/messages`). Store as `messagingEndpoint`.
-
-**If Local / Dev Tunnel (option 2):** Guide the user through dev tunnel setup:
-
-#### Dev Tunnel Setup
-
-```bash
-devtunnel --version
-```
-
-If the command fails, install it:
-
-| OS | Install command |
-|----|-----------------|
-| Windows | `winget install Microsoft.devtunnel` |
-| macOS | `brew install --cask devtunnel` |
-| Linux | `curl -sL https://aka.ms/DevTunnelCliInstall | bash` |
-
-> Ask the user to confirm installation is complete before continuing.
-
-```bash
-# Authenticate with dev tunnel
-devtunnel user login
-
-# Create a persistent named tunnel (reuse the same URL across restarts)
-devtunnel create <agent-name>-tunnel --allow-anonymous
-
-# Start hosting the tunnel (leave this running in a separate terminal)
-devtunnel host <agent-name>-tunnel --port 3978
-```
-
-> Tell the user: "Start the tunnel in a separate terminal and copy the tunnel URL shown in the output (format: `https://<id>-3978.<region>.devtunnels.ms`). Paste it here."
-
-Wait for the user to paste the URL. Store as `tunnelUrl`.
-Set `messagingEndpoint = "${tunnelUrl}/api/messages"`.
-
-> **Headless / no browser:** Use `devtunnel user login --device-code` for device-code auth instead.
-> **Tunnel not reachable:** Confirm `--allow-anonymous` flag was used; port firewall rules are not blocking 3978.
 
 ---
 
@@ -214,9 +162,6 @@ This command:
 Monitor output carefully:
 - The CLI logs progress in numbered steps (e.g. `[1/5]`). Watch for errors or warnings.
 - Existing resources from a previous run are skipped — this is expected behavior.
-
-> **Windows Account Manager (WAM):** If you see `"Authenticating via Windows Account Manager..."` in the output, a native Windows sign-in dialog has appeared. Do NOT kill the process. Tell the user: "A Windows sign-in dialog has appeared — please complete it. Setup will continue automatically after you sign in."
-> - If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions` to populate the token cache, then retry.
 
 **Handle these conditions:**
 

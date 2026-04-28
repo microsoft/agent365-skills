@@ -66,6 +66,21 @@ if (fileExists(gitignorePath)) {
   }
 }
 
+// ── Check 4: .a365-workspace-detection.json has authMode ────────────────────
+// authMode must be collected in Phase 1B and written to the cache so downstream
+// skills (instrument-observability, add-workiq-tools) can skip re-asking.
+const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
+if (fileExists(detectionPath)) {
+  try {
+    const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
+    if (!detection.authMode || detection.authMode === '') {
+      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (OBO/S2S/Both) and write it to the detection cache');
+    }
+  } catch {
+    issues.push('.a365-workspace-detection.json exists but cannot be parsed — file may be malformed');
+  }
+}
+
 // ── Result ───────────────────────────────────────────────────────────────────
 if (issues.length > 0) {
   process.stdout.write(JSON.stringify({ ok: false, reason: issues.join('; ') }));
