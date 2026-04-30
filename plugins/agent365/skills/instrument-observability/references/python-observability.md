@@ -15,8 +15,8 @@ into a Python agent. All samples mirror the official Microsoft Learn docs (updat
 
 Install commands:
 ```bash
-pip install microsoft-opentelemetry
-pip install msal azure-identity
+pip3 install microsoft-opentelemetry 2>/dev/null || pip install microsoft-opentelemetry
+pip3 install msal azure-identity 2>/dev/null || pip install msal azure-identity
 ```
 
 ---
