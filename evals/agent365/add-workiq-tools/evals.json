@@ -59,7 +59,7 @@
         "Phase 4: WorkIQ tools are spread into the existing tools array",
         "Phase 4: All new code is marked: // A365 WorkIQ — added by add-workiq-tools skill",
         "Phase 5: Blueprint exists — user is told Global Administrator must run a365 setup permissions mcp",
-        "Phase 5: User is told admin must first verify deploymentProjectPath via a365 config display",
+        "Phase 5: User is told admin must run a365 setup permissions mcp from the project directory",
         "Phase 5: Updated ToolingManifest.json must be shared with the GA",
         "Phase 6: a365 develop get-token is shown",
         "Phase 6: BEARER_TOKEN and SKIP_TOOLING_ON_ERRORS added to .env",

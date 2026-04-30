@@ -1,7 +1,7 @@
 # Node.js — A365 Observability Reference
 
 Authoritative package versions and code patterns for instrumenting A365 observability
-into a Node.js agent. All samples mirror the official Microsoft Learn docs (updated 2026-04-22).
+into a Node.js agent. All samples mirror the official Microsoft Learn docs (updated 2026-04-30).
 
 ---
 
@@ -9,23 +9,37 @@ into a Node.js agent. All samples mirror the official Microsoft Learn docs (upda
 
 | Package | Purpose |
 |---------|---------|
-| `@microsoft/agents-a365-observability` | `ObservabilityManager`, `BaggageBuilder`, `Agent365ExporterOptions`, `ObservabilityConfiguration`, all scope types |
+| `@microsoft/agents-a365-observability` | Logger/exporter helpers such as `setLogger`, `ExporterEventNames`, and additional observability contracts |
 | `@microsoft/agents-a365-observability-hosting` | `AgenticTokenCacheInstance`, `BaggageBuilderUtils`, `BaggageMiddleware`, `ObservabilityHostingManager`, `ScopeUtils` |
 | `@microsoft/agents-a365-runtime` | `getObservabilityAuthenticationScope()`, `ClusterCategory` |
+
+**Unified distro entry point:**
+
+| Package | Purpose |
+|---------|---------|
+| `@microsoft/opentelemetry` (v0.1.0-beta.1) | Required entry point: `useMicrosoftOpenTelemetry()`, `shutdownMicrosoftOpenTelemetry()`, all scope types (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`), `AgentDetails`, and all contract types |
+| `@azure/msal-node` (^3.6.0) | MSAL `ConfidentialClientApplication` with `fmiPath` for the FMI token chain |
+| `@azure/identity` (^4.6.0) | `ManagedIdentityCredential` for MSI-based token acquisition |
 
 Install commands:
 ```bash
 # Required for all agents
+npm install @microsoft/opentelemetry@0.1.0-beta.1
 npm install @microsoft/agents-a365-observability
 npm install @microsoft/agents-a365-runtime
 
 # Required for AI Teammate agents (hosting path)
 npm install @microsoft/agents-a365-observability-hosting
 
+# S2S token service dependencies
+npm install @azure/msal-node @azure/identity
+
 # Optional auto-instrumentation extensions
 npm install @microsoft/agents-a365-observability-extensions-openai
 npm install @microsoft/agents-a365-observability-extensions-langchain
 ```
+
+The unified distro `useMicrosoftOpenTelemetry()` entry point is used for both OBO and S2S flows.
 
 Minimum Node.js: **18.x** (LTS). TypeScript: **5.x** recommended.
 
@@ -33,171 +47,319 @@ Minimum Node.js: **18.x** (LTS). TypeScript: **5.x** recommended.
 
 ## Entry Point — Observability Init (before any LLM imports)
 
-### Basic configuration (env-var driven)
+### Configuration
+
+Initialize the unified distro before importing the rest of your app so LangChain auto-instrumentation can patch libraries.
 
 ```typescript
-import { ObservabilityManager } from '@microsoft/agents-a365-observability';
+// A365 Observability — best-effort instrumentation (verify against official sample)
+// index.ts — must be called BEFORE importing other modules
+import { configDotenv } from 'dotenv';
+configDotenv();
+
+import { useMicrosoftOpenTelemetry } from '@microsoft/opentelemetry';
+import { tokenResolver } from './token-cache';
 import { AgenticTokenCacheInstance } from '@microsoft/agents-a365-observability-hosting';
 
-// Call this at the top of main() or the entry file, before any LLM/agent imports.
-const builder = ObservabilityManager.configure(builder =>
-  builder
-    .withService(process.env.SERVICE_NAME ?? 'my-agent', '1.0.0')
-    .withTokenResolver((agentId, tenantId) =>
-      AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId)
-    )
-);
-
-builder.start();
-// ENABLE_A365_OBSERVABILITY_EXPORTER env var controls whether spans go to console or A365.
-```
-
-### Programmatic configuration provider
-
-```typescript
-import { ObservabilityManager, ObservabilityConfiguration } from '@microsoft/agents-a365-observability';
-
-const configProvider = new ObservabilityConfiguration({
-  isObservabilityExporterEnabled: () => true,
-  // Set log levels as pipe-separated values
-  observabilityLogLevel: () => 'info|warn|error',
+useMicrosoftOpenTelemetry({
+  a365: {
+    enabled: true,
+    // Option 1: Custom token resolver with local cache (sample default when Use_Custom_Resolver=true)
+    tokenResolver: process.env.Use_Custom_Resolver === 'true'
+      ? (agentId: string, tenantId: string) => tokenResolver(agentId, tenantId) ?? ''
+      : (agentId: string, tenantId: string) => AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
+  },
+  instrumentationOptions: {
+    langchain: {},
+  },
 });
-
-const builder = ObservabilityManager.configure(builder =>
-  builder
-    .withService('my-agent-service', '1.0.0')
-    .withConfigurationProvider(configProvider)
-    .withTokenResolver((agentId, tenantId) =>
-      AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId)
-    )
-);
-
-builder.start();
-// Individual builder methods (withExporterOptions, withClusterCategory) take precedence over provider.
 ```
 
-### Advanced configuration with exporter options
-
-```typescript
-import {
-  ObservabilityManager,
-  Agent365ExporterOptions,
-} from '@microsoft/agents-a365-observability';
-import { ClusterCategory } from '@microsoft/agents-a365-runtime';
-
-const exporterOptions = new Agent365ExporterOptions();
-exporterOptions.maxQueueSize = 10;
-
-const builder = ObservabilityManager.configure(builder =>
-  builder
-    .withService('my-agent-service', '1.0.0')
-    .withClusterCategory(ClusterCategory.prod)
-    .withExporterOptions(exporterOptions)
-    .withTokenResolver(tokenResolver)
-);
-
-builder.start();
-```
+> If you are not using LangChain, replace `instrumentationOptions.langchain` with the matching instrumentation(s) for your stack, or omit `instrumentationOptions` entirely.
 
 ### S2S configuration (`authMode: S2S`)
 
-S2S observability is supported for Node.js. The pattern mirrors the `.NET ObservabilityTokenService` — a module-level token service acquires and refreshes the Observability API token via MSAL client credentials. No OBO user token is required.
+S2S observability is supported for Node.js. The token service uses a **3-hop FMI (Federated Managed Identity) token chain**:
 
-> Reference: [Agent observability — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/observability)
+```
+Blueprint (client_credentials / MSI)
+  → Hop 1+2: FMI token (api://AzureADTokenExchange/.default with fmiPath=agentId)
+    → Agent Identity token
+      → Hop 3: Observability API token (scope=api://9b975845-388f-4429-889e-eab1ef63949c/.default)
+```
 
-#### Step 1 — Create `observability/observability-token-service.ts`
+No OBO user token is required.
 
-Write this scaffold file to handle background token acquisition and refresh:
+> **Auth strategy** is controlled by `AGENT365_USE_MANAGED_IDENTITY`:
+>   - `true` (production) — MSI → Blueprint FIC → Agent Identity → API
+>   - `false` (local dev) — Client Secret → Blueprint FIC → Agent Identity → API
+
+> **Note:** As of CLI 1.1, `a365 setup all` automatically grants `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application). No manual role assignment is needed for newly provisioned agents.
+
+#### Step 1 — Create `observability/token-cache.ts`
+
+Simple in-memory token cache shared by the token service and the OTel exporter:
+
+```typescript
+// observability/token-cache.ts
+// A365 Observability — best-effort instrumentation (verify against official sample)
+
+interface CacheEntry {
+  token: string;
+  expiresAt: number; // Unix ms
+}
+
+const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
+
+const cache = new Map<string, CacheEntry>();
+
+export function cacheToken(agentId: string, tenantId: string, token: string, expiresInMs: number = 60 * 60 * 1000): void {
+  const key = `${agentId}:${tenantId}`;
+  cache.set(key, {
+    token,
+    expiresAt: Date.now() + expiresInMs,
+  });
+}
+
+export function getCachedToken(agentId: string, tenantId: string): string | null {
+  const key = `${agentId}:${tenantId}`;
+  const entry = cache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  if (Date.now() + EXPIRY_BUFFER_MS >= entry.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.token;
+}
+
+/**
+ * Token resolver called by the A365 Observability exporter when exporting telemetry.
+ */
+export const tokenResolver = (agentId: string, tenantId: string): string | null => {
+  return getCachedToken(agentId, tenantId);
+};
+```
+
+#### Step 2 — Create `observability/observability-token-service.ts`
+
+Background token acquisition via MSAL 3-hop FMI chain:
 
 ```typescript
 // observability/observability-token-service.ts
 // A365 Observability — best-effort instrumentation (verify against official sample)
+// A365 auth mode: S2S — 3-hop FMI token chain (MSAL)
+//   Hop 1+2: Blueprint (MSI or client secret) → T1 via FMI path → Agent Identity
+//   Hop 3:   Agent Identity uses T1 as assertion → Observability API token
+
 import { ConfidentialClientApplication } from '@azure/msal-node';
+import { ManagedIdentityCredential } from '@azure/identity';
+import { cacheToken } from './token-cache';
 
-// Dedicated Observability API app — scope updated per SDK release (April 2025)
-const OBSERVABILITY_SCOPE = 'api://9b975845-388f-4429-889e-eab1ef63949c/.default';
-const TOKEN_REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes (token TTL = 60 min)
+const FMI_SCOPES = ['api://AzureADTokenExchange/.default'];
+const OBSERVABILITY_SCOPES = ['api://9b975845-388f-4429-889e-eab1ef63949c/.default'];
+const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes
 
-let _cachedToken = '';
-let _refreshTimer: NodeJS.Timeout | undefined;
-
-const msalApp = new ConfidentialClientApplication({
-  auth: {
-    clientId: process.env.BLUEPRINT_CLIENT_ID!,
-    clientSecret: process.env.BLUEPRINT_CLIENT_SECRET!,
-    authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
-  },
-});
-
-async function acquireToken(): Promise<string> {
-  const result = await msalApp.acquireTokenByClientCredential({
-    scopes: [OBSERVABILITY_SCOPE],
-  });
-  return result?.accessToken ?? '';
+export interface TokenServiceConfig {
+  tenantId: string;
+  agentId: string;
+  blueprintClientId: string;
+  blueprintClientSecret: string;
+  useManagedIdentity: boolean;
 }
 
-/** Call once at startup — acquires the first token and schedules refresh every 50 min. */
-export async function startObservabilityTokenService(): Promise<void> {
-  _cachedToken = await acquireToken();
-  _refreshTimer = setInterval(async () => {
+export function startTokenService(config: TokenServiceConfig): ReturnType<typeof setInterval> {
+  console.log(`[A365 Observability] Token service started (useManagedIdentity=${config.useManagedIdentity}).`);
+
+  const run = async () => {
     try {
-      _cachedToken = await acquireToken();
-    } catch (e) {
-      console.warn('[A365 Observability] S2S token refresh failed (non-fatal):', e);
+      await acquireAndRegisterToken(config);
+    } catch (error) {
+      console.warn(`[A365 Observability] Failed to acquire token; will retry in ${REFRESH_INTERVAL_MS / 1000}s.`, error);
     }
-  }, TOKEN_REFRESH_INTERVAL_MS);
+  };
+
+  // Acquire immediately, then on interval
+  run();
+  return setInterval(run, REFRESH_INTERVAL_MS);
 }
 
-/** Token resolver passed to ObservabilityManager.withTokenResolver(). */
-export function getS2SObservabilityToken(_agentId: string, _tenantId: string): string {
-  return _cachedToken;
+async function acquireAndRegisterToken(config: TokenServiceConfig): Promise<void> {
+  const authority = `https://login.microsoftonline.com/${config.tenantId}`;
+
+  // Hop 1+2: Blueprint → T1 via FMI path
+  const t1Token = config.useManagedIdentity
+    ? await acquireT1ViaMsi(authority, config.blueprintClientId, config.agentId)
+    : await acquireT1ViaClientSecret(authority, config.blueprintClientId, config.blueprintClientSecret, config.agentId);
+
+  // Hop 3: Agent Identity uses T1 → Observability API token
+  const identityApp = new ConfidentialClientApplication({
+    auth: {
+      clientId: config.agentId,
+      authority,
+      clientAssertion: t1Token,
+    },
+  });
+
+  const obsResult = await identityApp.acquireTokenByClientCredential({
+    scopes: OBSERVABILITY_SCOPES,
+  });
+
+  if (!obsResult?.accessToken) {
+    throw new Error('Failed to acquire observability token: no access token returned');
+  }
+
+  const expiresInMs = obsResult.expiresOn
+    ? obsResult.expiresOn.getTime() - Date.now()
+    : 55 * 60 * 1000;
+  cacheToken(config.agentId, config.tenantId, obsResult.accessToken, expiresInMs);
+  console.log(`[A365 Observability] Token registered for agent ${config.agentId}.`);
 }
 
-export function stopObservabilityTokenService(): void {
-  if (_refreshTimer) clearInterval(_refreshTimer);
+async function acquireT1ViaMsi(authority: string, blueprintClientId: string, agentId: string): Promise<string> {
+  // ManagedIdentityCredential.getToken uses a resource URI (no /.default suffix).
+  const credential = new ManagedIdentityCredential();
+  const msiToken = await credential.getToken('api://AzureADTokenExchange');
+
+  const blueprintApp = new ConfidentialClientApplication({
+    auth: {
+      clientId: blueprintClientId,
+      authority,
+      clientAssertion: msiToken.token,
+    },
+  });
+
+  const result = await blueprintApp.acquireTokenByClientCredential({
+    scopes: FMI_SCOPES,
+    azureRegion: undefined,
+    fmiPath: agentId,
+  } as any); // fmiPath is available in MSAL Node but not yet in stable types
+
+  if (!result?.accessToken) {
+    throw new Error('FMI T1 via MSI failed: no access token returned');
+  }
+  return result.accessToken;
+}
+
+async function acquireT1ViaClientSecret(authority: string, blueprintClientId: string, blueprintClientSecret: string, agentId: string): Promise<string> {
+  const blueprintApp = new ConfidentialClientApplication({
+    auth: {
+      clientId: blueprintClientId,
+      authority,
+      clientSecret: blueprintClientSecret,
+    },
+  });
+
+  const result = await blueprintApp.acquireTokenByClientCredential({
+    scopes: FMI_SCOPES,
+    azureRegion: undefined,
+    fmiPath: agentId,
+  } as any); // fmiPath is available in MSAL Node but not yet in stable types
+
+  if (!result?.accessToken) {
+    throw new Error('FMI T1 via client secret failed: no access token returned');
+  }
+  return result.accessToken;
 }
 ```
 
-Also install the required MSAL package if not already present:
-```bash
-npm install @azure/msal-node
-```
-
-#### Step 2 — Wire in entry point (`index.ts`)
+#### Step 3 — Wire in entry point (`index.ts`)
 
 ```typescript
 // authMode: S2S — service principal, no user OBO.
-// Token must be acquired via MSAL client credentials, NOT AgenticTokenCacheInstance.
-import { ObservabilityManager, Agent365ExporterOptions } from '@microsoft/agents-a365-observability';
 import {
-  startObservabilityTokenService,
-  getS2SObservabilityToken,
-} from './observability/observability-token-service';
+  useMicrosoftOpenTelemetry,
+  shutdownMicrosoftOpenTelemetry,
+} from '@microsoft/opentelemetry';
+import type { AgentDetails } from '@microsoft/opentelemetry';
 
-// Start background token refresh BEFORE ObservabilityManager.configure().
-await startObservabilityTokenService();
+import { tokenResolver } from './observability/token-cache';
+import { startTokenService } from './observability/observability-token-service';
 
-const exporterOptions = new Agent365ExporterOptions();
-exporterOptions.useS2SEndpoint = true;   // S2S-specific: routes to the S2S endpoint
+// ── Configuration ────────────────────────────────────────────────────────────
+const TENANT_ID = process.env.AGENT365_TENANT_ID || '';
+const AGENT_ID = process.env.AGENT365_AGENT_ID || '';
+const BLUEPRINT_ID = process.env.AGENT365_BLUEPRINT_ID || '';
+const CLIENT_ID = process.env.AGENT365_CLIENT_ID || '';
+const CLIENT_SECRET = process.env.AGENT365_CLIENT_SECRET || '';
+const AGENT_NAME = process.env.AGENT365_AGENT_NAME || 'my-agent';
+const AGENT_DESCRIPTION = process.env.AGENT365_AGENT_DESCRIPTION || '';
+const USE_MANAGED_IDENTITY = (process.env.AGENT365_USE_MANAGED_IDENTITY || 'true').toLowerCase() === 'true';
 
-ObservabilityManager.configure(builder =>
-  builder
-    .withService(process.env.SERVICE_NAME ?? 'my-agent', '1.0.0')
-    .withExporterOptions(exporterOptions)
-    .withTokenResolver(getS2SObservabilityToken)  // uses cached token from service
-).start();
+function hasA365Credentials(): boolean {
+  const requiredValues = [TENANT_ID, AGENT_ID, CLIENT_ID];
+  const hasRequired = requiredValues.every(v => v && !v.startsWith('<<'));
+  if (!hasRequired) return false;
+  if (USE_MANAGED_IDENTITY) return true;
+  return !!CLIENT_SECRET && !CLIENT_SECRET.startsWith('<<');
+}
+
+const A365_ENABLED = hasA365Credentials();
+
+// ── Agent Details ────────────────────────────────────────────────────────────
+const agentDetails: AgentDetails = {
+  agentId: AGENT_ID || 'local-dev',
+  agentName: AGENT_NAME,
+  agentDescription: AGENT_DESCRIPTION,
+  agentBlueprintId: BLUEPRINT_ID,
+  tenantId: TENANT_ID || 'local-dev',
+};
+
+// ── Observability ────────────────────────────────────────────────────────────
+// Microsoft OpenTelemetry distro with A365 exporter.
+// Token resolver reads from in-memory cache populated by the background token service.
+useMicrosoftOpenTelemetry({
+  a365: A365_ENABLED
+    ? {
+        enabled: true,
+        tokenResolver: (agentId, tenantId) => tokenResolver(agentId, tenantId) ?? '',
+      }
+    : undefined,
+});
+
+// Start background token service (skipped when credentials not configured)
+if (A365_ENABLED) {
+  startTokenService({
+    tenantId: TENANT_ID,
+    agentId: AGENT_ID,
+    blueprintClientId: CLIENT_ID,
+    blueprintClientSecret: CLIENT_SECRET,
+    useManagedIdentity: USE_MANAGED_IDENTITY,
+  });
+} else {
+  console.warn(
+    '[A365 Observability] Credentials not configured — skipping token service. ' +
+    "Run 'a365 setup all' to enable A365 observability export."
+  );
+}
+
+// ... rest of agent startup ...
+
+// Graceful shutdown:
+process.on('SIGTERM', () => {
+  shutdownMicrosoftOpenTelemetry().finally(() => process.exit(0));
+});
 ```
 
 #### S2S environment variables
 
 ```dotenv
-# Blueprint service principal (from a365 setup output)
-BLUEPRINT_CLIENT_ID=
-BLUEPRINT_CLIENT_SECRET=
-TENANT_ID=
+# Agent 365 Observability — S2S
+AGENT365_TENANT_ID=
+AGENT365_AGENT_ID=
+AGENT365_BLUEPRINT_ID=
+AGENT365_CLIENT_ID=
+AGENT365_CLIENT_SECRET=
+AGENT365_AGENT_NAME=my-agent
+AGENT365_AGENT_DESCRIPTION=
+AGENT365_USE_MANAGED_IDENTITY=true
 ```
 
-Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver, `useS2SEndpoint` flag, and absence of `RefreshObservabilityToken` differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
+Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and credential source differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
 
 ---
 
@@ -226,44 +388,63 @@ manager.configure(adapter, { enableBaggage: true });
 
 ## Message Handler — Token Refresh + BaggageBuilder
 
-The built-in `AgenticTokenCacheInstance` handles caching. Call `RefreshObservabilityToken`
-once per turn so the exporter always has a valid token.
+For OBO / user-delegated / agentic-identity flows, the official sample now builds the baggage scope from `TurnContext`, optionally adds `sessionDescription(...)`, preloads the exporter token, then runs the agent logic inside `baggageScope.run(...)`.
+
+The sample supports **two token refresh patterns**:
+- **Option 1 (sample default when `Use_Custom_Resolver=true`)** — exchange the OBO token yourself and cache it with `createAgenticTokenCacheKey(...)`
+- **Option 2** — call `AgenticTokenCacheInstance.RefreshObservabilityToken(...)`
 
 ```typescript
-import { BaggageBuilder } from '@microsoft/agents-a365-observability';
+// A365 Observability — best-effort instrumentation (verify against official sample)
+import { BaggageBuilder } from '@microsoft/opentelemetry';
 import { AgenticTokenCacheInstance, BaggageBuilderUtils } from '@microsoft/agents-a365-observability-hosting';
 import { getObservabilityAuthenticationScope } from '@microsoft/agents-a365-runtime';
+import tokenCache, { createAgenticTokenCacheKey } from './token-cache';
 
-// Inside your AgentApplication message handler / onActivity:
-async function handleMessage(context: TurnContext, state: ApplicationTurnState) {
-  const agentId  = context.activity.recipient?.agenticAppId ?? '';
-  const tenantId = context.activity.recipient?.tenantId ?? '';
+// Inside your AgentApplication subclass / message handler:
+async function handleMessage(turnContext: TurnContext, state: ApplicationTurnState) {
+  const baggageScope = BaggageBuilderUtils.fromTurnContext(
+    new BaggageBuilder(),
+    turnContext
+  ).sessionDescription('Initial onboarding session')
+    .build();
 
-  // Refresh the observability token for this turn (non-fatal if it fails).
+  await preloadObservabilityToken(turnContext);
+
   try {
+    await baggageScope.run(async () => {
+      // ... your LangChain invocation, tool calls, streaming, etc. ...
+    });
+  } finally {
+    baggageScope.dispose();
+  }
+}
+
+async function preloadObservabilityToken(turnContext: TurnContext): Promise<void> {
+  const agentId = turnContext.activity?.recipient?.agenticAppId ?? '';
+  const tenantId = turnContext.activity?.recipient?.tenantId ?? '';
+
+  if (process.env.Use_Custom_Resolver === 'true') {
+    // Option 1: Custom cache
+    const aauToken = await agentApplication.authorization.exchangeToken(turnContext, 'agentic', {
+      scopes: getObservabilityAuthenticationScope()
+    });
+    const cacheKey = createAgenticTokenCacheKey(agentId, tenantId);
+    tokenCache.set(cacheKey, aauToken?.token || '');
+  } else {
+    // Option 2: Built-in cache
     await AgenticTokenCacheInstance.RefreshObservabilityToken(
       agentId,
       tenantId,
-      context,
+      turnContext,
       agentApplication.authorization,
       getObservabilityAuthenticationScope()
     );
-  } catch (e) {
-    console.warn('[A365 Observability] Token refresh failed (non-fatal):', e);
   }
-
-  // Build baggage from TurnContext and run agent logic inside the scope.
-  // Skip if BaggageMiddleware is already registered on the adapter.
-  const baggageScope = BaggageBuilderUtils
-    .fromTurnContext(new BaggageBuilder(), context)
-    .invokeAgentServer(context.activity.serviceUrl, 3978)
-    .build();
-
-  await baggageScope.run(async () => {
-    // ... your LangChain invocation, tool calls, streaming, etc. ...
-  });
 }
 ```
+
+> If you already registered `BaggageMiddleware`, you can usually skip the manual `BaggageBuilderUtils.fromTurnContext(...)` call, but the per-turn token preload/refresh step is still required for OBO export.
 
 ---
 
@@ -271,6 +452,25 @@ async function handleMessage(context: TurnContext, state: ApplicationTurnState) 
 
 > **Store publishing requirement:** `InvokeAgentScope`, `InferenceScope`, and `ExecuteToolScope`
 > are **required** for store validation. Missing any one causes store validation failure.
+
+> **Import source:** Import all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `BaggageBuilder`, `AgentDetails`, etc.) from `@microsoft/opentelemetry`.
+
+```typescript
+import {
+  BaggageBuilder,
+  InvokeAgentScope,
+  InferenceScope,
+  ExecuteToolScope,
+  InferenceOperationType,
+} from '@microsoft/opentelemetry';
+import type {
+  AgentDetails,
+  InferenceDetails,
+  InvokeAgentScopeDetails,
+  A365Request,
+  ToolCallDetails,
+} from '@microsoft/opentelemetry';
+```
 
 ### InvokeAgentScope
 
@@ -284,7 +484,7 @@ import {
   Channel,
   Request,
   ServiceEndpoint,
-} from '@microsoft/agents-a365-observability';
+} from '@microsoft/opentelemetry';
 
 // Use the same agentDetails and request instances across all scopes in a request.
 const agentDetails: AgentDetails = {
@@ -337,7 +537,7 @@ try {
 #### InvokeAgentScope with ScopeUtils (hosting path — auto-populates from TurnContext)
 
 ```typescript
-import { InvokeAgentScopeDetails, AgentDetails, ServiceEndpoint } from '@microsoft/agents-a365-observability';
+import { InvokeAgentScopeDetails, AgentDetails, ServiceEndpoint } from '@microsoft/opentelemetry';
 import { ScopeUtils } from '@microsoft/agents-a365-observability-hosting';
 
 const agentDetails: AgentDetails = { agentId: 'agent-456' };
@@ -365,7 +565,7 @@ try {
 ### ExecuteToolScope
 
 ```typescript
-import { ExecuteToolScope, ToolCallDetails } from '@microsoft/agents-a365-observability';
+import { ExecuteToolScope, ToolCallDetails } from '@microsoft/opentelemetry';
 
 // Use the same agentDetails and request instances from InvokeAgentScope above.
 
@@ -401,7 +601,7 @@ try {
 #### ExecuteToolScope with ScopeUtils
 
 ```typescript
-import { ToolCallDetails } from '@microsoft/agents-a365-observability';
+import { ToolCallDetails } from '@microsoft/opentelemetry';
 import { ScopeUtils } from '@microsoft/agents-a365-observability-hosting';
 
 const toolDetails: ToolCallDetails = {
@@ -429,31 +629,45 @@ try {
 
 ### InferenceScope
 
-```typescript
-import { InferenceScope, InferenceDetails, InferenceOperationType } from '@microsoft/agents-a365-observability';
+#### Example
 
-// Use the same agentDetails and request instances from InvokeAgentScope above.
+```typescript
+// A365 Observability — best-effort instrumentation (verify against official sample)
+import {
+  InferenceScope,
+  InferenceOperationType,
+} from '@microsoft/opentelemetry';
+import type {
+  AgentDetails,
+  InferenceDetails,
+  Request,
+} from '@microsoft/opentelemetry';
 
 const inferenceDetails: InferenceDetails = {
   operationName: InferenceOperationType.CHAT,
   model: 'gpt-4o-mini',
-  providerName: 'azure-openai',
 };
 
+const request: Request = {
+  conversationId: context.activity?.conversation?.id || `conv-${Date.now()}`,
+};
+
+const agentDetails: AgentDetails = {
+  agentId: context.activity?.recipient?.agenticAppId || agentName,
+  agentName,
+  tenantId: context.activity?.recipient?.tenantId || 'sample-tenant',
+};
+
+let response = '';
 const scope = InferenceScope.start(request, inferenceDetails, agentDetails);
-
 try {
-  return await scope.withActiveSpanAsync(async () => {
-    scope.recordInputMessages(['Summarize the following emails for me...']);
-
-    const response = await callLLM();
-
-    scope.recordOutputMessages(['Here is your email summary...']);
-    scope.recordInputTokens(145);
-    scope.recordOutputTokens(82);
+  await scope.withActiveSpanAsync(async () => {
+    response = await invokeAgent(prompt);
+    scope.recordOutputMessages([response]);
+    scope.recordInputMessages([prompt]);
+    scope.recordInputTokens(45);
+    scope.recordOutputTokens(78);
     scope.recordFinishReasons(['stop']);
-
-    return response.text;
   });
 } catch (error) {
   scope.recordError(error as Error);
@@ -466,7 +680,7 @@ try {
 #### InferenceScope with ScopeUtils
 
 ```typescript
-import { InferenceDetails, InferenceOperationType } from '@microsoft/agents-a365-observability';
+import { InferenceDetails, InferenceOperationType } from '@microsoft/opentelemetry';
 import { ScopeUtils } from '@microsoft/agents-a365-observability-hosting';
 
 const inferenceDetails: InferenceDetails = {
@@ -496,7 +710,7 @@ try {
 ### OutputScope (async scenarios)
 
 ```typescript
-import { OutputScope, OutputResponse, SpanDetails } from '@microsoft/agents-a365-observability';
+import { OutputScope, OutputResponse, SpanDetails } from '@microsoft/opentelemetry';
 
 // Use the same agentDetails and request instances from InvokeAgentScope above.
 
@@ -524,22 +738,20 @@ scope.dispose();
 ## Advanced: Custom Token Resolver
 
 ```typescript
-import { ObservabilityManager, Agent365ExporterOptions } from '@microsoft/agents-a365-observability';
+import { useMicrosoftOpenTelemetry } from '@microsoft/opentelemetry';
 import { AgenticTokenCacheInstance } from '@microsoft/agents-a365-observability-hosting';
 import { tokenResolver } from './token-cache'; // your custom resolver
 
-const builder = ObservabilityManager.configure(builder =>
-  builder
-    .withService('my-langchain-agent', '1.0.0')
-    .withExporterOptions(new Agent365ExporterOptions())
-    .withTokenResolver(
+useMicrosoftOpenTelemetry({
+  a365: {
+    enabled: true,
+    tokenResolver:
       process.env.Use_Custom_Resolver === 'true'
-        ? tokenResolver
-        : (agentId, tenantId) => AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId)
-    )
-);
-
-builder.start();
+        ? (agentId: string, tenantId: string) => tokenResolver(agentId, tenantId) ?? ''
+        : (agentId: string, tenantId: string) =>
+            AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
+  },
+});
 ```
 
 ---
@@ -557,37 +769,25 @@ builder.start();
 > ```
 
 ```typescript
-import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { OpenAIAgentsTraceInstrumentor } from '@microsoft/agents-a365-observability-extensions-openai';
 
-const sdk = ObservabilityManager.configure(builder =>
-  builder.withService('My Agent Service', '1.0.0')
-);
-
+// Assumes useMicrosoftOpenTelemetry(...) already ran in your entry point.
 const instrumentor = new OpenAIAgentsTraceInstrumentor({
   enabled: true,
   tracerName: 'openai-agents-tracer',
   tracerVersion: '1.0.0'
 });
 
-sdk.start();
 instrumentor.enable();
 ```
 
 ### LangChain
 
 ```typescript
-import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { LangChainTraceInstrumentor } from '@microsoft/agents-a365-observability-extensions-langchain';
 import * as LangChainCallbacks from '@langchain/core/callbacks/manager';
 
-const sdk = ObservabilityManager.configure(builder =>
-  builder.withService('My Agent Service', '1.0.0')
-);
-
-sdk.start();
-
-// Enable LangChain auto-instrumentation
+// Assumes useMicrosoftOpenTelemetry(...) already ran in your entry point.
 LangChainTraceInstrumentor.instrument(LangChainCallbacks);
 ```
 
@@ -668,14 +868,12 @@ setLogger({
 
 | Symbol | Module | Purpose |
 |--------|--------|---------|
-| `ObservabilityManager.configure(fn)` | `@microsoft/agents-a365-observability` | Builder to configure service name, exporter options, token resolver, logger |
-| `ObservabilityConfiguration` | `@microsoft/agents-a365-observability` | Programmatic config provider (alternative to env vars) |
-| `new Agent365ExporterOptions()` | `@microsoft/agents-a365-observability` | Exporter settings (`maxQueueSize`, `scheduledDelayMilliseconds`, etc.) |
-| `builder.withConfigurationProvider(provider)` | — | Attach programmatic config provider |
-| `builder.withClusterCategory(ClusterCategory.prod)` | — | Set cluster category |
-| `builder.start()` | — | Starts the OTel provider. Must be called before first span. |
-| `BaggageBuilder` | `@microsoft/agents-a365-observability` | Fluent builder for tenant/agent/correlation baggage |
-| `BaggageBuilderUtils.fromTurnContext(builder, ctx)` | `@microsoft/agents-a365-observability-hosting` | Populates baggage from a TurnContext automatically |
+| `useMicrosoftOpenTelemetry(options)` | `@microsoft/opentelemetry` | Configure the OTel pipeline with the A365 exporter |
+| `shutdownMicrosoftOpenTelemetry()` | `@microsoft/opentelemetry` | Graceful shutdown of the OTel provider |
+| `tokenResolver` | `./observability/token-cache` | Returns cached token for the A365 exporter |
+| `startTokenService(config)` | `./observability/observability-token-service` | Background MSAL FMI token acquisition |
+| `BaggageBuilder` | `@microsoft/opentelemetry` | Fluent builder for tenant/agent/correlation baggage |
+| `BaggageBuilderUtils.fromTurnContext(builder, ctx)` | `@microsoft/agents-a365-observability-hosting` | Populates baggage from a `TurnContext` automatically |
 | `BaggageMiddleware` | `@microsoft/agents-a365-observability-hosting` | Adapter middleware — auto-populates baggage for every request |
 | `ObservabilityHostingManager` | `@microsoft/agents-a365-observability-hosting` | Composite hosting configuration |
 | `ScopeUtils.populateInvokeAgentScopeFromTurnContext` | `@microsoft/agents-a365-observability-hosting` | Creates `InvokeAgentScope` from `TurnContext` |
@@ -684,10 +882,12 @@ setLogger({
 | `AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId)` | `@microsoft/agents-a365-observability-hosting` | Retrieve cached observability token |
 | `AgenticTokenCacheInstance.RefreshObservabilityToken(...)` | `@microsoft/agents-a365-observability-hosting` | Refresh and cache token for the current turn |
 | `getObservabilityAuthenticationScope()` | `@microsoft/agents-a365-runtime` | Returns the OAuth2 scope string for the observability API. **Deprecated** in v0.2.0-preview.5 — still functional; modern replacement is `defaultObservabilityConfigurationProvider.getConfiguration().observabilityAuthenticationScopes` |
-| `InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails)` | `@microsoft/agents-a365-observability` | Start agent invocation telemetry scope |
-| `ExecuteToolScope.start(request, toolDetails, agentDetails)` | `@microsoft/agents-a365-observability` | Start tool execution telemetry scope |
-| `InferenceScope.start(request, inferenceDetails, agentDetails)` | `@microsoft/agents-a365-observability` | Start LLM inference telemetry scope |
-| `OutputScope.start(request, response, agentDetails, userDetails, spanDetails)` | `@microsoft/agents-a365-observability` | Start output telemetry scope (async scenarios) |
+| `InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails)` | `@microsoft/opentelemetry` | Start agent invocation telemetry scope |
+| `ExecuteToolScope.start(request, toolDetails, agentDetails)` | `@microsoft/opentelemetry` | Start tool execution telemetry scope |
+| `InferenceScope.start(request, inferenceDetails, agentDetails)` | `@microsoft/opentelemetry` | Start LLM inference telemetry scope |
+| `OutputScope.start(request, response, agentDetails, userDetails, spanDetails)` | `@microsoft/opentelemetry` | Start output telemetry scope (async scenarios) |
+| `setLogger(logger)` | `@microsoft/agents-a365-observability` | Optional custom exporter logger |
+| `ExporterEventNames` | `@microsoft/agents-a365-observability` | Event names emitted by the exporter logger |
 | `scope.withActiveSpanAsync(fn)` | — | Execute async work within the active OTel span |
 | `scope.recordInputMessages(msgs)` / `scope.recordOutputMessages(msgs)` | — | Record prompts and completions |
 | `scope.recordInputTokens(n)` / `scope.recordOutputTokens(n)` | — | Record token counts |
@@ -697,24 +897,11 @@ setLogger({
 
 ---
 
-## Agent365ExporterOptions Properties
-
-| Property | Description | Default |
-|----------|-------------|---------|
-| `useS2SEndpoint` | Use service-to-service endpoint path | `false` |
-| `maxQueueSize` | Max queue size for batch processor | `2048` |
-| `scheduledDelayMilliseconds` | Delay between export batches | `5000` |
-| `exporterTimeoutMilliseconds` | Timeout for entire export operation | `90000` |
-| `httpRequestTimeoutMilliseconds` | Timeout for each HTTP request | `30000` |
-| `maxExportBatchSize` | Max batch size | `512` |
-
----
-
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| No console traces | `builder.start()` not called | Add `.start()` after `ObservabilityManager.configure()` |
+| No console traces | `useMicrosoftOpenTelemetry()` not initialized early enough | Call it in the entry point before importing LLM or agent modules |
 | Spans missing baggage | Handler not wrapped in baggage scope | Register `BaggageMiddleware` or wrap handler body in `baggageScope.run()` |
 | Token resolver always returns `''` | `RefreshObservabilityToken` not called per turn | Call it at the start of each message handler turn |
 | `Cannot find module '@microsoft/agents-a365-observability'` | Package not installed | Run `npm install @microsoft/agents-a365-observability` |
@@ -724,5 +911,9 @@ setLogger({
 | Spans dropped silently | Missing tenant/agent ID | Ensure `BaggageBuilder` (or `BaggageMiddleware`) populates tenant/agent ID before creating spans |
 | TypeScript error on `agentAuid` in `AgentDetails` | Interface field is `agentAUID` (uppercase UID), not `agentAuid` | Change to `agentAUID: '...'` |
 | `extensions-openai` install fails / peer dep error | Missing `@openai/agents` peer dep | Run `npm install @openai/agents@^0.7.0` first; this is the OpenAI Agents SDK, not the `openai` package |
-| S2S: token resolver never called | `RefreshObservabilityToken` called for S2S | Remove `AgenticTokenCacheInstance.RefreshObservabilityToken` — not used in S2S; token comes from `withTokenResolver` in `ObservabilityManager.configure()` |
+| S2S: AADSTS82001 or AADSTS1002012 | Direct MSAL client credentials not supported | Use the 3-hop FMI chain: Blueprint → FMI path → Agent Identity → Observability API token. |
+| S2S: 401 on export | Token scope mismatch | Ensure Hop 3 scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default`. Also ensure Agent Identity SP has OtelWrite role assigned |
+| S2S: 403 on `observabilityService/` endpoint | Missing app role | Assign `Agent365.Observability.OtelWrite` to the **Agent Identity** SP (not just the Blueprint) via Graph API |
+| S2S: MSI fails locally | No Managed Identity in dev | Set `AGENT365_USE_MANAGED_IDENTITY=false` and provide `AGENT365_CLIENT_SECRET` |
+| S2S: token resolver never called | `RefreshObservabilityToken` called for S2S | Remove `AgenticTokenCacheInstance.RefreshObservabilityToken` — not used in S2S; token comes from `a365.tokenResolver` in `useMicrosoftOpenTelemetry(...)` |
 | `fromTurnContext` not found on `BaggageBuilder` | Static method is on `BaggageBuilderUtils`, not `BaggageBuilder` | Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context)` |

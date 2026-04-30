@@ -1,6 +1,6 @@
 ---
 name: a365-setup
-version: 1.4.2
+version: 1.5.0
 description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
@@ -488,6 +488,8 @@ Once all tools above are confirmed installed, run the Agent 365 CLI's built-in c
 a365 setup requirements
 ```
 
+> **Note:** `a365 setup requirements` works without `a365.config.json` — no project config file is needed for this step.
+
 This validates Azure connectivity, Authentication, PowerShell version, and Tenant Enrollment in one pass. Fix any reported issues before proceeding. To check a single category:
 
 ```bash
@@ -537,6 +539,7 @@ On Windows machines, `a365 setup all` may authenticate via **Windows Account Man
 - **WAM dialog not appearing (headless or no desktop):** The `a365 CLI` will hang waiting for a dialog that can never be shown. Fix: ensure `az login --allow-no-subscriptions` has already populated the Azure CLI token cache before running `a365 setup all` — the CLI will then use the cached token and skip WAM.
 - **WAM hangs with no dialog:** Kill the process (`Ctrl+C`), run `az login --allow-no-subscriptions --tenant <tenant-id>` to refresh the cache, then retry.
 - **WAM error "no_accounts_found" or similar:** Run `az login --allow-no-subscriptions` again, confirm `az account show` returns the correct account, then retry.
+- **Conditional Access Policy (CAP):** If WAM or browser auth is blocked by CAP (AADSTS53003, AADSTS53000), the CLI automatically falls back to device code flow — no user action is needed.
 
 
 
@@ -604,6 +607,7 @@ Mark Todo 3 as completed when the delegated skill finishes.
 ```bash
 a365 setup all --agent-name <agent_name> --dry-run   # preview
 a365 setup all --agent-name <agent_name>              # apply
+a365 setup all --agent-name <agent_name> --authmode s2s  # S2S auth mode
 ```
 
 **Custom Engine Agent (CEA) with Teams/Copilot integration:**
@@ -638,15 +642,15 @@ For teams where the developer is not a Global Administrator, use the two-step ha
 # Step 1 — Developer runs (produces a blueprint ID in output):
 a365 setup all --agent-name <agent_name>
 
-# Step 2 — Global Admin runs (config-free, blueprint ID from step 1 output):
-a365 setup admin --blueprint-id <blueprint-id>
+# Step 2 — Global Admin grants consent via Entra portal or PowerShell:
+# Option A: Entra portal > App registrations > Blueprint app > API permissions > Grant admin consent
+# Option B: Copy the PowerShell script printed in the a365 setup all summary output and run as GA
 
 # Retrieve the blueprint ID at any time:
 a365 status --field agentBlueprintId
 ```
 
-`setup admin` creates Observability API and Power Platform API grants only when called with
-`--blueprint-id`. For full grants from config, use `--config-dir <path>`.
+> **Note:** `a365 setup admin` has been removed in CLI 1.1. Use the Entra portal or the PowerShell instructions printed by `a365 setup all` instead.
 
 ---
 
@@ -657,7 +661,7 @@ a365 status --field agentBlueprintId
 If you need to re-publish or re-register an existing AI Teammate agent without re-running the full `make-ai-teammate` flow, the steps are in `make-ai-teammate` Phase 10:
 - Manifest review (`manifest/manifest.json`)
 - `a365 publish`
-- Teams Developer Portal configuration (`a365 config display -g --field agentBlueprintId`)
+- Teams Developer Portal configuration (read `agentBlueprintId` from `a365.generated.config.json`)
 - Create agent instance via Teams > Apps > Request Instance
 - Admin approval at [admin.cloud.microsoft/#/agents/all/requested](https://admin.cloud.microsoft/#/agents/all/requested)
 

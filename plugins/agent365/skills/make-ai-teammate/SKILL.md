@@ -1,6 +1,6 @@
 ---
 name: make-ai-teammate
-version: 1.4.2
+version: 1.5.0
 description: >
   Transforms a non-M365 agent into a Microsoft Agent 365 AI Teammate. Supports all major
   frameworks across .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents
@@ -742,7 +742,7 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
-**Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry.
+**Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 
 After completion:
 - Show the **Setup Summary table** verbatim from CLI output.
@@ -753,9 +753,9 @@ a365 status --field agentBlueprintId
 ```
 
 **Global Administrator consent** — if the CLI output includes a "Permission Grants" action item:
-> "A Global Administrator must grant consent. Have them run:  
-> `a365 setup admin --blueprint-id <blueprintId>`  
-> Alternatively, a PowerShell script is shown in the CLI output above."
+> "A Global Administrator must grant consent via the Entra portal:  
+> [Entra portal](https://entra.microsoft.com) > App registrations > Blueprint app > API permissions > Grant admin consent.  
+> Alternatively, copy and run the PowerShell script shown in the CLI output above."
 
 ---
 
@@ -788,7 +788,7 @@ Stop until the user confirms whether to continue.
 a365 publish
 ```
 
-Packages the manifest and uploads the agent to the Teams App Catalog.
+Packages the manifest into `manifest.zip` and uploads the agent to the Teams App Catalog. The CLI prints upload instructions for Microsoft 365 Admin Center (Agents > All agents > Upload custom agent) if direct upload is not possible.
 
 | Output | Action |
 |--------|--------|
@@ -918,13 +918,13 @@ Your agent now has:
 Useful commands:
   a365 status                               — show Blueprint state and AGENTIC_APP_ID
   a365 status --field agentBlueprintId      — retrieve Blueprint ID
-  a365 setup admin --blueprint-id <id>      — GA consent handoff
   a365 create-instance --blueprint-id <id>  — re-create Agentic User if needed
   devtunnel host <name> --port 3978         — restart dev tunnel for local testing
 
 Next steps:
-  1. If admin consent is still pending: have a Global Admin run
-       a365 setup admin --blueprint-id <blueprintId>
+  1. If admin consent is still pending: have a Global Admin grant consent via Entra portal
+     (App registrations > Blueprint app > API permissions > Grant admin consent)
+     or run the PowerShell script from the setup output
   2. Run the test-local skill for guided local testing with AgentsPlayground
   3. Add observability:  run the instrument-observability skill  (if not done)
   4. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)

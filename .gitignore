@@ -1,6 +1,9 @@
 # A365 generated config — contains sensitive IDs, never commit
 a365.generated.config.json
 
+# Bug bash working notes — local only
+BUGBASH.md
+
 # Environment variables
 .env
 .env.local

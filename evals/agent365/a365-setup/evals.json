@@ -124,7 +124,7 @@
       "id": 7,
       "prompt": "Make this an AI Teammate agent",
       "description": "AI Teammate path — verifies CLI + prerequisites then delegates to make-ai-teammate",
-      "expected_output": "The skill selects AI Teammate path, creates 3 todos (CLI, Prerequisites, invoke make-ai-teammate), validates CLI and Azure prerequisites (Steps 1-2), then reads make-ai-teammate/SKILL.md and follows it from the beginning. Does NOT run a365 setup all, a365 config init, or a365 publish inline.",
+      "expected_output": "The skill selects AI Teammate path, creates 3 todos (CLI, Prerequisites, invoke make-ai-teammate), validates CLI and Azure prerequisites (Steps 1-2), then reads make-ai-teammate/SKILL.md and follows it from the beginning. Does NOT run a365 setup all or a365 publish inline.",
       "files": [],
       "expectations": [
         "Phase 1B: 4-option capabilities menu shown: Discoverability, Observability, Tools (WorkIQ), AI Teammate",
@@ -134,7 +134,6 @@
         "Step 1: a365 CLI is verified and installed if needed",
         "Step 2: Azure CLI login confirmed, custom client app validated, build tools verified",
         "Step 3: make-ai-teammate SKILL.md is read and followed",
-        "a365 config init is done by make-ai-teammate Phase 9, not by a365-setup",
         "a365 setup all is run by make-ai-teammate Phase 9, not by a365-setup",
         "a365 publish is run by make-ai-teammate Phase 10, not by a365-setup"
       ]
@@ -176,8 +175,8 @@
     {
       "id": 10,
       "prompt": "Run a365 setup for this AI Teammate agent",
-      "description": "AI Teammate path — verifies correct CLI flags: a365 setup all --aiteammate, a365 status, and a365 setup admin for GA consent handoff",
-      "expected_output": "The skill selects AI Teammate path, validates CLI and prerequisites, delegates to make-ai-teammate. make-ai-teammate runs a365 setup all --aiteammate (not just a365 setup all), shows the Setup Summary, runs a365 status to confirm Blueprint state, and provides a365 setup admin --blueprint-id <id> for the Global Administrator consent handoff.",
+      "description": "AI Teammate path — verifies correct CLI flags: a365 setup all --aiteammate, a365 status, and Entra portal consent handoff for GA",
+      "expected_output": "The skill selects AI Teammate path, validates CLI and prerequisites, delegates to make-ai-teammate. make-ai-teammate runs a365 setup all --aiteammate (not just a365 setup all), shows the Setup Summary, runs a365 status to confirm Blueprint state, and provides Entra portal or PowerShell instructions for the Global Administrator consent handoff.",
       "files": [],
       "expectations": [
         "Phase 1C: isOwnIdentity = true (AI Teammate path selected)",
@@ -187,7 +186,7 @@
         "make-ai-teammate Phase 9: a365 setup all --aiteammate is run — NOT just a365 setup all (the --aiteammate flag is required for Digital Worker / AI Teammate blueprint type)",
         "make-ai-teammate Phase 9: Setup Summary table shown verbatim from CLI output",
         "make-ai-teammate Phase 9: a365 status is run after setup to confirm Blueprint state and AGENTIC_APP_ID",
-        "make-ai-teammate Phase 9: a365 setup admin --blueprint-id <id> command is shown to the user for the Global Administrator consent handoff",
+        "make-ai-teammate Phase 9: Entra portal instructions or PowerShell script from setup output shown for Global Administrator consent handoff",
         "a365 setup all without --aiteammate is NOT used for the AI Teammate path",
         "a365 publish is NOT run by a365-setup"
       ]
