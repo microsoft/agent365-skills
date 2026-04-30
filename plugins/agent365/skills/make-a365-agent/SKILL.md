@@ -1,4 +1,4 @@
----
+﻿---
 name: make-a365-agent
 version: 1.5.0
 description: >
@@ -241,12 +241,12 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **If the CLI printed an admin consent action item (Permission Grants):** Show all options:
-   - Option A — **Entra portal** (no CLI needed): [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions > Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c` > add both Delegated and Application `Agent365.Observability.OtelWrite` > Grant admin consent
-   - Option B — **PowerShell script** printed in the `a365 setup all` summary output (copy and run as GA)
-
-   Tell the user:
-   > "If admin consent is required, have a Global Administrator use Option A (Entra portal) or the PowerShell script shown in the setup output above."
+2. **If the CLI printed an admin consent action item (Permission Grants) or any role assignment failed (403):**
+   - **Extract the PowerShell admin consent script** from the CLI output and display it in a fenced code block so the user can copy it easily. The CLI typically prints a `Connect-AzAccount` / `New-AzADServicePrincipalAppRoleAssignment` script block — find and display it verbatim.
+   - If no PowerShell script was printed, provide the manual Entra portal steps:
+     [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions > Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c` > add both Delegated and Application `Agent365.Observability.OtelWrite` > Grant admin consent
+   - Tell the user:
+     > "⚠️ The OtelWrite app role assignment requires **Global Administrator**. Copy the PowerShell script above and have a Global Admin run it — without this, trace exports will fail with HTTP 403."
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.
