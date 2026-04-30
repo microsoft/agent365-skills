@@ -3,7 +3,7 @@
 **Version:** 1.4.2  
 **Skills:** make-ai-teammate · a365-setup · make-a365-agent · add-workiq-tools · instrument-observability · test-local
 
-Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/biswapm/Sample-Agents) as starting points. These repos contain minimal agents with no A365 instrumentation — ideal for testing that the skills add everything from scratch. Mark each scenario **✅ Pass**, **❌ Fail**, or **⚠️ Partial** and note issues.
+Use the sample repos from [Agent365-Samples](https://github.com/microsoft/Agent365-Samples) as starting points. Mark each scenario **✅ Pass**, **❌ Fail**, or **⚠️ Partial** and note issues.
 
 ---
 
@@ -14,18 +14,18 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify the entry-point skill installs prerequisites, detects the stack, asks capability questions, and delegates to the right downstream skill.
 
 ### Setup
-- Clone a plain vanilla Node.js LangChain agent:
+- Clone a Node.js LangChain sample agent:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/nodejs/langchain
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/nodejs/langchain/sample-agent
   npm install
   ```
 - Do **not** pre-install a365 CLI (test the install flow)
 
 ### Steps
-1. Open the project in VS Code (Agent mode), GitHub CLI, or Claude Code — see Setup Guide above
+1. Open the project in VS Code or Claude Code
 2. Say: `"Run a365 setup"`
-3. When asked which capabilities to enable, select **Register only**
+3. When asked which capabilities to enable, select **Discoverability only**
 
 ### Expected
 - Skill detects Node.js LangChain
@@ -52,10 +52,10 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify the skill adds the Express + CloudAdapter hosting layer to a bare OpenAI Agents SDK project and runs `a365 setup all --aiteammate`.
 
 ### Setup
-- Clone a plain vanilla Node.js OpenAI Agents SDK agent:
+- Clone the Node.js OpenAI Agents SDK sample:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/nodejs/openai-agents
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/nodejs/openai/sample-agent
   npm install
   ```
 - A365 CLI installed, Azure CLI logged in
@@ -90,10 +90,10 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify CEA registration with the `--m365` flag and `setup permissions bot` handoff.
 
 ### Setup
-- Clone a plain vanilla .NET AgentFramework agent:
+- Clone the .NET AgentFramework sample:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/dotnet
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/dotnet/agent-framework/sample-agent
   dotnet restore
   ```
 - Agent already deployed to Azure (has a public `/api/messages` endpoint)
@@ -108,7 +108,7 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 ### Expected
 - Dry-run preview shown before any changes
 - `a365 setup all --m365` completes — Blueprint created, MCP Platform endpoint registered
-- Skill prompts with Entra portal consent steps or PowerShell handoff to GA
+- Skill prompts for `a365 setup admin --blueprint-id <id>` or PowerShell handoff to GA
 - CEA guard fires if AI Teammate path is selected (blocks with clear error)
 
 ### Actual
@@ -129,17 +129,17 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify S2S scaffold files are created and OTel wiring is correct for an autonomous Python agent.
 
 ### Setup
-- Clone a plain vanilla Python LangChain agent:
+- Clone the Python LangChain sample:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/python/langchain
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/python/langchain/sample-agent
   pip3 install -r requirements.txt 2>/dev/null || pip install -r requirements.txt
   ```
 - `a365-setup` already run (`agentType: "system-agent"` in `.a365-workspace-detection.json`)
 
 ### Steps
 1. Say: `"Add A365 observability to this agent"`
-2. When asked agent kind → **Agent (Non AI Teammate)**
+2. When asked agent kind → **Standard Agent (Non Digital Worker)**
 3. When asked auth mode → **Autonomous (S2S)**
 
 ### Expected
@@ -168,10 +168,10 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify MCP server selection, `ToolingManifest.json` update, and `McpToolRegistrationService` wiring.
 
 ### Setup
-- Use the .NET agent from Scenario 3, or clone fresh:
+- Use the .NET sample from Scenario 2 or clone fresh:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/dotnet
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/dotnet/agent-framework/sample-agent
   dotnet restore
   ```
 - Blueprint exists, `a365-setup` run previously
@@ -185,7 +185,7 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 - `a365 develop list-available` output shown
 - `a365 develop add-mcp-servers` run — `ToolingManifest.json` updated with Mail + Calendar servers
 - `McpToolRegistrationService` registered in DI and `GetMcpToolsAsync()` wired in the agent turn handler
-- GA handoff instructions shown: `a365 setup permissions mcp` with Entra portal consent steps
+- GA handoff instructions shown: `a365 setup permissions mcp` or `a365 setup admin --blueprint-id <id>`
 - All added code marked `// A365 WorkIQ — added by add-workiq-tools skill`
 
 ### Actual
@@ -205,10 +205,10 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 **Goal:** Verify the skill builds the agent, starts it, launches AgentsPlayground, and guides through a test conversation.
 
 ### Setup
-- Use the Node.js LangChain agent from Scenario 1 or 2, or clone fresh:
+- Use the Node.js LangChain sample from Scenario 1 or Scenario 2:
   ```bash
-  git clone https://github.com/biswapm/Sample-Agents
-  cd Sample-Agents/nodejs/langchain
+  git clone https://github.com/microsoft/Agent365-Samples
+  cd Agent365-Samples/nodejs/langchain/sample-agent
   npm install
   ```
 - `agentsplayground` CLI not yet installed (test the install flow)
@@ -252,23 +252,23 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 
 ---
 
-## Setup Guide
+## VS Code Setup (Fresh Machine — No GitHub CLI or Claude Code)
 
-Pick the client you want to test with. All three clients share the same prerequisite install and repo clone steps.
-
----
-
-### Common Prerequisites (all clients)
-
+### 1. Install prerequisites
 ```powershell
+winget install Microsoft.VisualStudioCode
 winget install OpenJS.NodeJS.LTS
 winget install Git.Git
 winget install Microsoft.DotNet.SDK.8   # only needed for .NET scenarios
 # Restart terminal after installs
 ```
 
-### Clone repos side by side
+### 2. Install GitHub Copilot Chat in VS Code
+1. Open VS Code → `Ctrl+Shift+X` → search **GitHub Copilot Chat** → Install
+2. Sign in with a GitHub account that has a Copilot subscription
+3. Open Copilot Chat with `Ctrl+Shift+I` and confirm it works
 
+### 3. Clone both repos side by side
 ```bash
 # Pick a working folder, e.g. C:\bugbash
 mkdir C:\bugbash
@@ -277,132 +277,35 @@ cd C:\bugbash
 # Clone the skills repo
 git clone https://github.com/microsoft/agent365-skills
 
-# Clone the plain-vanilla sample agents
-git clone https://github.com/biswapm/Sample-Agents
+# Clone the sample agents
+git clone https://github.com/microsoft/Agent365-Samples
 ```
 
-### Install skills into your agent project
-
+### 4. Install skills into your sample agent project
 ```bash
-# Navigate to the agent you want to test (adjust path to match the Sample-Agents folder structure)
-cd C:\bugbash\Sample-Agents\nodejs\langchain
-npm install   # (or: dotnet restore / pip install -r requirements.txt)
+# Navigate to the sample agent you want to test (e.g. Node.js LangChain)
+cd C:\bugbash\Agent365-Samples\nodejs\langchain\sample-agent
+npm install
 
-# Run the skills installer — use the ACTUAL path to the cloned skills repo
+# Run the installer — use the ACTUAL path to the cloned skills repo
 node C:\bugbash\agent365-skills\scripts\install.js
 ```
+This copies all 6 skills into `.agents/skills/` in the sample agent folder. VS Code discovers them automatically.
 
-This copies all 6 skills into `.agents/skills/` inside the agent folder. All three clients pick them up from there automatically.
-
----
-
-## Option A — VS Code + GitHub Copilot Chat (Agent Mode)
-
-### 1. Install VS Code and Copilot Chat
-```powershell
-winget install Microsoft.VisualStudioCode
-```
-1. Open VS Code → `Ctrl+Shift+X` → search **GitHub Copilot Chat** → Install
-2. Sign in with a GitHub account that has a Copilot subscription
-3. Confirm Copilot Chat opens with `Ctrl+Shift+I`
-
-### 2. Open the agent project
+### 5. Open the sample agent in VS Code
 ```bash
-code C:\bugbash\Sample-Agents\nodejs\langchain
+code C:\bugbash\Agent365-Samples\nodejs\langchain\sample-agent
 ```
 
-### 3. Verify skills are loaded
+### 6. Verify skills are loaded
 1. Open Copilot Chat (`Ctrl+Shift+I`)
 2. Switch to **Agent** mode — click the model dropdown → select **Agent**
-3. Type `/` — the 6 skills should appear:
-   `make-ai-teammate` · `a365-setup` · `make-a365-agent` · `add-workiq-tools` · `instrument-observability` · `test-local`
-4. If skills don't appear: `Ctrl+Shift+P` → **Chat: Open Chat Customizations** → Skills tab → confirm `.agents/skills/` entries are listed
+3. Type `/` — the 6 skills should appear: `make-ai-teammate`, `a365-setup`, `make-a365-agent`, `add-workiq-tools`, `instrument-observability`, `test-local`
+4. If skills don't appear: `Ctrl+Shift+P` → **Chat: Open Chat Customizations** → Skills tab
 
-### 4. Run a scenario
-In **Agent** mode, type a trigger phrase, e.g.:
+### 7. Run a scenario
+Type a trigger phrase in agent mode, e.g.:
 ```
 Run a365 setup
 ```
 The skill walks you through interactively. The a365 CLI and Azure CLI will be offered for install if missing.
-
----
-
-## Option B — GitHub CLI (Copilot on the Command Line)
-
-### 1. Install GitHub CLI and sign in
-```powershell
-winget install GitHub.cli
-```
-```bash
-gh auth login           # sign in with your GitHub account
-gh extension install github/gh-copilot   # install the Copilot CLI extension
-gh copilot --version    # confirm it's installed
-```
-
-### 2. Navigate to the agent project
-```bash
-cd C:\bugbash\Sample-Agents\nodejs\langchain
-```
-
-### 3. Run a scenario
-Skills are triggered via `gh copilot suggest` with a natural-language prompt:
-```bash
-gh copilot suggest "Run a365 setup"
-gh copilot suggest "Make this agent an AI Teammate"
-gh copilot suggest "Instrument observability for this agent"
-```
-
-> **Note:** GitHub Copilot CLI reads `.agents/skills/` in the current folder. Ensure `node C:\bugbash\agent365-skills\scripts\install.js` was run first.
-
----
-
-## Option C — Claude Code (Plugin Mode)
-
-### 1. Install Claude Code
-```powershell
-npm install -g @anthropic-ai/claude-code
-claude --version    # confirm install
-```
-
-### 2. Launch Claude Code with the skills plugin
-```bash
-cd C:\bugbash\Sample-Agents\nodejs\langchain
-
-claude --plugin-dir C:\bugbash\agent365-skills\plugins\agent365
-```
-
-> This registers all 6 skills as slash commands inside the Claude Code session.
-
-### 3. Verify skills are loaded
-Inside the Claude Code session, type:
-```
-/help
-```
-You should see the 6 skill commands listed:
-`/agent365:make-ai-teammate` · `/agent365:a365-setup` · `/agent365:make-a365-agent` · `/agent365:add-workiq-tools` · `/agent365:instrument-observability` · `/agent365:test-local`
-
-### 4. Run a scenario
-Use either the slash command or a natural-language trigger phrase:
-```
-/agent365:a365-setup
-```
-or simply:
-```
-Run a365 setup
-```
-Stop hooks run automatically at session end and will block if required steps were skipped.
-
----
-
-## Folder Structure Reference — Sample-Agents
-
-| Framework | Path |
-|-----------|------|
-| Node.js LangChain | `Sample-Agents/nodejs/langchain` |
-| Node.js OpenAI Agents SDK | `Sample-Agents/nodejs/openai-agents` |
-| Node.js Claude SDK | `Sample-Agents/nodejs/claude` |
-| .NET AgentFramework | `Sample-Agents/dotnet` |
-| Python LangChain | `Sample-Agents/python/langchain` |
-| Python OpenAI | `Sample-Agents/python/openai` |
-
-> Adjust paths to match the actual folder names in [biswapm/Sample-Agents](https://github.com/biswapm/Sample-Agents).

@@ -469,6 +469,15 @@ public class MyAgent : AgentApplication
 {
     private readonly Agent365ObservabilityContext _obs;
 
+    // CallerDetails identifies the blueprint sponsor — required for S2S traces to appear
+    // in the Agent 365 portal. Without this, autonomous agent traces are not attributable.
+    private readonly CallerDetails _callerDetails = new CallerDetails(
+        userDetails: new UserDetails(
+            userId: "<<sponsor-user-id>>",
+            userName: "<<sponsor-display-name>>",
+            userEmail: "<<sponsor-email>>"
+        ));
+
     public MyAgent(AgentApplicationOptions options, Agent365ObservabilityContext obs)
         : base(options)
     {
@@ -492,11 +501,12 @@ public class MyAgent : AgentApplication
             .FromTurnContext(turnContext)
             .Build();
 
-        // Step 2: start the invoke scope (no .FromTurnContext chaining here).
+        // Step 2: start the invoke scope with CallerDetails (required for traces to show up).
         using var scope = InvokeAgentScope.Start(
             new Request(turnContext.Activity.Text),
             new InvokeAgentScopeDetails(endpoint: new Uri("https://your-agent-endpoint")),
-            _obs.AgentDetails);
+            _obs.AgentDetails,
+            _callerDetails);
 
         // ... existing agent message handling logic ...
     }
