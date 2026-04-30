@@ -1,4 +1,4 @@
----
+﻿---
 name: instrument-observability
 version: 1.5.0
 description: >
@@ -564,6 +564,7 @@ All new lines marked with the language-appropriate comment:
    A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
    Use_Custom_Resolver=false
    ```
+   - **S2S path only:** Also add `AGENT365_USE_S2S_ENDPOINT=true` — this tells the distro to use the `/observabilityService/...` endpoint path instead of `/observability/...`.
 
 4. **If `.env` does not exist**, create it with the variables above.
 
@@ -580,6 +581,7 @@ All new lines marked with the language-appropriate comment:
    ```dotenv
    ENABLE_A365_OBSERVABILITY_EXPORTER=false
    ```
+   - **S2S path only:** Also add `AGENT365_USE_S2S_ENDPOINT=true` — this tells the distro to use the `/observabilityService/...` endpoint path instead of `/observability/...`.
 
 3. **If `.env` does not exist**, create it with the variable above.
 
@@ -726,9 +728,11 @@ This skill is safe to rerun. On subsequent runs:
 
 ### OtelWrite App Role Assignment
 
-As of CLI 1.1, `a365 setup all` automatically grants `Agent365.Observability.OtelWrite` to the Agent Identity SP as both a delegated and application permission. No manual assignment is needed for newly provisioned agents.
+`a365 setup all` **attempts** to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the logged-in user is not a Global Admin, the assignment silently fails with 403 and trace exports will return HTTP 403 from the observability service.
 
-For agents provisioned with an older CLI version, grant the permission via Entra portal:
+**The CLI prints a PowerShell admin consent script** in its output when the assignment fails. When running `a365 setup all`, **always scan the output for this script block** and display it to the user in a fenced code block so they can copy it and hand it to a Global Admin.
+
+If the script was not captured, grant the permission manually via Entra portal (requires Global Admin):
 1. [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions
 2. Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c`
 3. Add both **Delegated** and **Application** `Agent365.Observability.OtelWrite` > Grant admin consent
@@ -751,6 +755,44 @@ rm body.json
 The Node.js SDK (`@microsoft/agents-a365-observability@0.2.0-preview.5`) and .NET SDK (`0.3.4-beta`) include `/otlp/` in the S2S export URL path. The Power Platform PFAT gateway returns `401 MSAuth10AuthenticatorTypeUnknown` on this path. Python SDK `0.1.0` does NOT include `/otlp/` and works correctly.
 
 **Status:** Awaiting SDK fix. No workaround should be applied in generated code — this is an SDK-level issue.
+
+### S2S Endpoint Path — `useS2SEndpoint` Not Passed by Distro
+
+The `@microsoft/opentelemetry` distro creates `Agent365Exporter` internally but does NOT pass `useS2SEndpoint: true`. For S2S agents, the exporter defaults to the OBO path (`/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`), but S2S requires `/observabilityService/...`.
+
+**Fix (applied to distro source):**
+
+1. `A365Configuration` — add `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support
+2. `distro.js` — pass `a365Config.useS2SEndpoint` when constructing `Agent365Exporter`
+
+**For generated agent code:** Set the env var in `.env`:
+```
+AGENT365_USE_S2S_ENDPOINT=true
+```
+
+This is a distro-level fix. The `useMicrosoftOpenTelemetry()` call does NOT need a custom `spanProcessors` array — the built-in exporter reads the env var via `A365Configuration` and passes it to `Agent365Exporter`.
+
+**URL paths:**
+- OBO: `observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`
+- S2S: `observabilityService/tenants/{tenantId}/otlp/agents/{agentId}/traces`
+
+### Node.js MSAL `fmiPath` Not Supported (AADSTS82008)
+
+No published version of `@azure/msal-node` (v3.x or v5.x) serializes the `fmiPath` parameter to the token endpoint request body. Passing `fmiPath` in `acquireTokenByClientCredential()` options (even with `as any`) is silently ignored, resulting in:
+
+```
+AADSTS82008: All agentic applications requesting a token exchange token must include the fmipath parameter on the token request.
+```
+
+**Workaround (implemented in `nodejs-observability.md`):** For the client-secret local-dev path (`acquireT1ViaClientSecret`), use a direct HTTP POST to `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token` with `fmi_path={agentId}` as a URL-encoded form parameter. The MSI path still uses MSAL + `ManagedIdentityCredential` which handles FMI via a different mechanism.
+
+**Status:** Awaiting `@azure/msal-node` to ship native `fmiPath` support. Remove the HTTP workaround once available.
+
+### Node.js LangChain Instrumentor Initialization Order
+
+`LangChainTraceInstrumentor.instrument(LangChainCallbacks)` requires `ObservabilityManager` to be fully initialized. Calling it as a standalone statement after `useMicrosoftOpenTelemetry()` throws `"ObservabilityManager is not configured yet"` when `a365.enabled: true`.
+
+**Workaround:** Use `instrumentationOptions: { langchain: {} }` inside the `useMicrosoftOpenTelemetry()` options object. This ensures the distro initializes the manager and the LangChain instrumentor in the correct order.
 
 ---
 

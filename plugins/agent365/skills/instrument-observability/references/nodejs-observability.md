@@ -1,4 +1,4 @@
-# Node.js — A365 Observability Reference
+﻿# Node.js — A365 Observability Reference
 
 Authoritative package versions and code patterns for instrumenting A365 observability
 into a Node.js agent. All samples mirror the official Microsoft Learn docs (updated 2026-04-30).
@@ -94,7 +94,16 @@ No OBO user token is required.
 >   - `true` (production) — MSI → Blueprint FIC → Agent Identity → API
 >   - `false` (local dev) — Client Secret → Blueprint FIC → Agent Identity → API
 
-> **Note:** As of CLI 1.1, `a365 setup all` automatically grants `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application). No manual role assignment is needed for newly provisioned agents.
+> **IMPORTANT — MSAL `fmiPath` limitation (as of 2026-04-30):** No published version of
+> `@azure/msal-node` (v3.x or v5.x) serializes the `fmiPath` parameter to the token endpoint.
+> Passing `fmiPath` via `acquireTokenByClientCredential()` with `as any` results in
+> `AADSTS82008: All agentic applications requesting a token exchange token must include the
+> fmipath parameter`. **Workaround:** For the client-secret path (`acquireT1ViaClientSecret`),
+> use a direct HTTP POST to the `/oauth2/v2.0/token` endpoint with `fmi_path` as a form
+> parameter. The MSI path (`acquireT1ViaMsi`) still uses MSAL since `ManagedIdentityCredential`
+> handles FMI differently. This workaround will be removed once MSAL ships native `fmiPath` support.
+
+> **Note:** `a365 setup all` attempts to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the assignment fails (403), a Global Admin must manually grant the role via Entra portal — otherwise trace exports will return HTTP 403.
 
 #### Step 1 — Create `observability/token-cache.ts`
 
@@ -246,24 +255,33 @@ async function acquireT1ViaMsi(authority: string, blueprintClientId: string, age
 }
 
 async function acquireT1ViaClientSecret(authority: string, blueprintClientId: string, blueprintClientSecret: string, agentId: string): Promise<string> {
-  const blueprintApp = new ConfidentialClientApplication({
-    auth: {
-      clientId: blueprintClientId,
-      authority,
-      clientSecret: blueprintClientSecret,
-    },
+  // Direct HTTP request — @azure/msal-node does not yet serialize fmiPath to the token endpoint.
+  // Use native fetch to POST with fmi_path form parameter until MSAL ships support.
+  const tokenUrl = `${authority}/oauth2/v2.0/token`;
+  const params = new URLSearchParams({
+    client_id: blueprintClientId,
+    client_secret: blueprintClientSecret,
+    scope: FMI_SCOPES[0],
+    grant_type: 'client_credentials',
+    fmi_path: agentId,
   });
 
-  const result = await blueprintApp.acquireTokenByClientCredential({
-    scopes: FMI_SCOPES,
-    azureRegion: undefined,
-    fmiPath: agentId,
-  } as any); // fmiPath is available in MSAL Node but not yet in stable types
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
 
-  if (!result?.accessToken) {
-    throw new Error('FMI T1 via client secret failed: no access token returned');
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`FMI T1 via client secret failed (${response.status}): ${errorBody}`);
   }
-  return result.accessToken;
+
+  const data = await response.json() as { access_token?: string };
+  if (!data.access_token) {
+    throw new Error('FMI T1 via client secret failed: no access_token in response');
+  }
+  return data.access_token;
 }
 ```
 
@@ -312,6 +330,7 @@ const agentDetails: AgentDetails = {
 // ── Observability ────────────────────────────────────────────────────────────
 // Microsoft OpenTelemetry distro with A365 exporter.
 // Token resolver reads from in-memory cache populated by the background token service.
+// AGENT365_USE_S2S_ENDPOINT=true env var routes exports to /observabilityService/... path.
 useMicrosoftOpenTelemetry({
   a365: A365_ENABLED
     ? {
@@ -319,6 +338,9 @@ useMicrosoftOpenTelemetry({
         tokenResolver: (agentId, tenantId) => tokenResolver(agentId, tenantId) ?? '',
       }
     : undefined,
+  instrumentationOptions: {
+    langchain: {},   // replace with your framework's instrumentation or omit entirely
+  },
 });
 
 // Start background token service (skipped when credentials not configured)
@@ -357,6 +379,7 @@ AGENT365_CLIENT_SECRET=
 AGENT365_AGENT_NAME=my-agent
 AGENT365_AGENT_DESCRIPTION=
 AGENT365_USE_MANAGED_IDENTITY=true
+AGENT365_USE_S2S_ENDPOINT=true
 ```
 
 Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and credential source differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
@@ -782,6 +805,29 @@ instrumentor.enable();
 ```
 
 ### LangChain
+
+> **IMPORTANT:** `LangChainTraceInstrumentor.instrument()` requires `ObservabilityManager` to be
+> fully initialized first. Calling it **after** `useMicrosoftOpenTelemetry()` as a separate
+> statement will throw `"ObservabilityManager is not configured yet"` if `a365.enabled` is `true`.
+>
+> **Preferred approach:** Use `instrumentationOptions: { langchain: {} }` inside the
+> `useMicrosoftOpenTelemetry()` call. This ensures correct initialization order:
+>
+> ```typescript
+> useMicrosoftOpenTelemetry({
+>   a365: { enabled: true, tokenResolver: ... },
+>   instrumentationOptions: {
+>     langchain: {},
+>   },
+> });
+> ```
+>
+> **Alternative (conditional):** If you must call `instrument()` separately, guard it:
+> ```typescript
+> if (process.env.ENABLE_A365_OBSERVABILITY_EXPORTER === 'true') {
+>   LangChainTraceInstrumentor.instrument(LangChainCallbacks);
+> }
+> ```
 
 ```typescript
 import { LangChainTraceInstrumentor } from '@microsoft/agents-a365-observability-extensions-langchain';
