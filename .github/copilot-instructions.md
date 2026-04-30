@@ -57,7 +57,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Discoverability, Observability, Tools (WorkIQ), or AI Teammate (Digital Worker)
+1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Register, Observability, WorkIQ, or AI Teammate
    - **CEA guard:** if the project is a Custom Engine Agent and the user selects AI Teammate, blocks the selection and re-presents options 1–3 (CEA is not supported as AI Teammate)
 2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and the collected `authMode` — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking
 3. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
@@ -76,9 +76,9 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "provision agent with a365"
 - "run a365 setup all"
 - "create a365 blueprint"
-- "discoverability setup"
+- "Registration setup"
 - "observability setup"
-- "register agent for discoverability"
+- "register this agent"
 - "set up agent for observability"
 - "add workiq to this agent"
 - "make this a custom engine agent"
@@ -104,7 +104,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "add work intelligence tools"
 - "add microsoft 365 tools"
 - "wire up workiq"
-- "add mcp tools to this agent"
+- "add MCP servers to this agent"
 - "add work iq mail"
 - "add work iq calendar"
 
@@ -235,7 +235,7 @@ Skills are **additive and idempotent** — never delete or restructure existing 
 
 ```
 a365-setup  →  make-ai-teammate    (AI Teammate path)
-            →  make-a365-agent     (Discoverability / Observability / WorkIQ paths)
+            →  make-a365-agent     (Registration / Observability / WorkIQ paths)
 
 make-ai-teammate  →  instrument-observability  (Strongly Recommended)
                   →  add-workiq-tools          (Optional)

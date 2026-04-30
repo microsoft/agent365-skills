@@ -94,7 +94,7 @@ const isPython  = !isDotnet && !isNodejs && (
   reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
 );
 
-// ── Check 2: Agent code is wired to load MCP tools ──────────────────────────
+// ── Check 2: Agent code is wired to load MCP servers ──────────────────────────
 
 if (isDotnet) {
   const csFiles = findFiles(cwd, ['.cs']).filter(f => !f.includes('obj') && !f.includes('bin'));

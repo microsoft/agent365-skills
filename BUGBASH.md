@@ -25,7 +25,7 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 ### Steps
 1. Open the project in VS Code (Agent mode), GitHub CLI, or Claude Code — see Setup Guide above
 2. Say: `"Run a365 setup"`
-3. When asked which capabilities to enable, select **Discoverability only**
+3. When asked which capabilities to enable, select **Register only**
 
 ### Expected
 - Skill detects Node.js LangChain
@@ -139,7 +139,7 @@ Use the plain-vanilla agent starters from [Sample-Agents](https://github.com/bis
 
 ### Steps
 1. Say: `"Add A365 observability to this agent"`
-2. When asked agent kind → **Standard Agent (Non Digital Worker)**
+2. When asked agent kind → **Agent (Non AI Teammate)**
 3. When asked auth mode → **Autonomous (S2S)**
 
 ### Expected

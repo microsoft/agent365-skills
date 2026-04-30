@@ -6,7 +6,7 @@ description: >
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
   instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — required for
   store publishing), and updates configuration files. Asks a two-stage question — agent kind
-  (AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker)) and auth mode — to determine
+  (AI Teammate or Agent (Non AI Teammate)) and auth mode — to determine
   the correct token path: OBO (user-delegated / agentic-identity / Assistive) or Autonomous S2S
   (FMI 3-hop token chain with Power Platform scope supported for .NET, Node.js, and Python — each language
   gets a scaffold token-service file that acquires and refreshes the Observability API token via the FMI chain). Non-destructive and idempotent.
@@ -30,7 +30,7 @@ hooks:
       prompt: |
         Before ending, verify ALL of the following:
         1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. agentType (ai-teammate/AI Teammate (Digital Worker) or system-agent/Standard Agent (Non Digital Worker)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
+        2. agentType (ai-teammate/AI Teammate or system-agent/Agent (Non AI Teammate)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
         3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
         4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
         5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); per-turn token refresh (RegisterObservability/.RefreshObservabilityToken/cache_agentic_token) implemented. For S2S path — all languages: no per-turn token refresh call; token comes from the scaffold token-service file started at startup. .NET additionally: baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist. Node.js S2S: observability/observability-token-service.ts exists; startTokenService() called before useMicrosoftOpenTelemetry(). Python S2S: observability/observability_token_service.py exists; run_token_service() task created before use_microsoft_opentelemetry().
@@ -118,9 +118,9 @@ Reply **yes** to confirm, or describe any corrections.
 
 If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
 
-Store `agentType` (`ai-teammate` = AI Teammate (Digital Worker), or `system-agent` = Standard Agent (Non Digital Worker)) and `authMode`:
-- **AI Teammate (Digital Worker):** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
-- **Standard Agent (Non Digital Worker):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
+Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
+- **AI Teammate:** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
+- **Agent (Non AI Teammate):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 
@@ -661,7 +661,7 @@ If yes, invoke the `test-local` skill.
    ✅ A365 observability instrumented successfully!
 
    **Agent type:** [.NET AgentFramework | Node.js | Python]
-   **Agent kind:** [AI Teammate (Digital Worker) | Standard Agent (Non Digital Worker)]
+   **Agent kind:** [AI Teammate | Agent (Non AI Teammate)]
    **Auth mode:** [Access data as signed-in user | Its own persistent identity | Runs autonomously]
    **Packages installed:** [list packages]
    **Files modified:** [list files]

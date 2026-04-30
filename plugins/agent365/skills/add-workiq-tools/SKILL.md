@@ -51,7 +51,7 @@ hooks:
 > - "add work iq mail to this agent"
 > - "add work iq calendar to this agent"
 > - "let this agent read emails and calendar events"
-> - "wire up workiq mcp tools"
+> - "wire up workiq MCP servers"
 
 ---
 

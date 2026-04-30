@@ -4,7 +4,7 @@ version: 1.5.0
 description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
-  for non-AI-Teammate agents (Discoverability, Observability paths). Verifies and installs the CLI,
+  for non-AI-Teammate agents (Register, Observability paths). Verifies and installs the CLI,
   validates Azure prerequisites, then delegates to make-a365-agent or make-ai-teammate at Step 3.
   Does NOT run a365 setup all inline — setup is run by the delegated skill. Supports .NET AgentFramework,
   Node.js LangChain, and Python agents.
@@ -142,7 +142,7 @@ Wait for the answer. Store as `authMode`:
 - If 2 → `authMode = "s2s"`
 - If 3 → `authMode = "both"`
 
-> **Note:** WorkIQ MCP tools require delegated (OBO) permissions — they are not available for S2S-only agents.
+> **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
 
 ---
 
@@ -165,13 +165,13 @@ Present only the options that apply — **omit WorkIQ when `authMode = "s2s"`** 
 
 Wait for the answer. Store as `capabilities`.
 
-> **Note:** Options can be combined — e.g. a user can say "1 and 2" for Discoverability + Observability.
+> **Note:** Options can be combined — e.g. a user can say "1 and 2" for Register + Observability.
 
 ### Phase 1C: Determine Path and Create Todos
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isAITeammate = true` if the user selected **AI Teammate (Digital Worker)**, else `isAITeammate = false`.
+1. Set `isAITeammate = true` if the user selected **AI Teammate**, else `isAITeammate = false`.
    - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported.
      Tell the user: "CEA is supported as an Agent (Non AI Teammate) — AI Teammate is not supported for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
@@ -580,7 +580,7 @@ The `make-ai-teammate` skill handles everything: code generation, a365.config.js
 
 ---
 
-**Standard paths** (`isAITeammate = false` — Discoverability, Observability, WorkIQ):
+**Standard paths** (`isAITeammate = false` — Register, Observability, WorkIQ):
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-a365-agent/SKILL.md` and follow it from the beginning.
 
@@ -616,7 +616,7 @@ a365 setup all --agent-name <agent_name> --m365       # registers endpoint via M
 a365 setup permissions bot                            # required after setup all for CEA agents
 ```
 
-**AI Teammate (Digital Worker):**
+**AI Teammate:**
 ```bash
 a365 setup all --agent-name <agent_name> --aiteammate
 # --aiteammate: blueprint + permissions only; run a365 create-instance separately

@@ -13,8 +13,8 @@ This plugin instruments and configures A365 agents. It contains six skills:
 |-------|---------|---------|
 | `make-ai-teammate` | `/agent365:make-ai-teammate` | "make this agent an AI Teammate", "add AI Teammate hosting", "transform agent to Teams agent" |
 | `a365-setup` | `/agent365:a365-setup` | "run a365 setup", "create blueprint", "register agent" |
-| `make-a365-agent` | `/agent365:make-a365-agent` | "provision agent with a365", "discoverability setup", "observability setup", "register agent for discoverability" |
-| `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add mcp tools to this agent" |
+| `make-a365-agent` | `/agent365:make-a365-agent` | "provision agent with a365", "Registration setup", "observability setup", "register this agent" |
+| `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add MCP servers to this agent" |
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
@@ -32,7 +32,7 @@ make-ai-teammate  ────────────────────�
             when isAITeammate = true, delegates back to make-ai-teammate)
 
 a365-setup  →  make-ai-teammate    (AI Teammate path)
-            →  make-a365-agent     (Discoverability / Observability / WorkIQ paths)
+            →  make-a365-agent     (Registration / Observability / WorkIQ paths)
 
 make-a365-agent  →  instrument-observability  (Observability paths)
                  →  add-workiq-tools          (WorkIQ paths)
@@ -41,7 +41,7 @@ test-local  (no prerequisite)
 ```
 `make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all --aiteammate` (add `--m365` for M365-registered AI Teammates), reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
 `a365-setup` verifies the CLI and Azure prerequisites (Steps 1–2), then delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
-`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Discoverability, Observability, WorkIQ); add `--m365` for CEA agents and follow with `a365 setup permissions bot`. Supports `--authmode obo|s2s|both` to control permission type. Admin consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell from setup output. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
+`make-a365-agent` runs `a365 setup all` for non-AI Teammate paths (Register, Observability, WorkIQ); add `--m365` for CEA agents and follow with `a365 setup permissions bot`. Supports `--authmode obo|s2s|both` to control permission type. Admin consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell from setup output. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
 `add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.json` to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
@@ -220,10 +220,10 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 
 `shared/agent-detection.md` contains the **Agent Type and Auth Mode Detection** section used by both `instrument-observability` and `add-workiq-tools`. It implements a two-stage question flow:
 
-- **Stage 1 — Agent kind:** AI Teammate (Digital Worker) or Standard Agent (Non Digital Worker) (pre-filled from `usesTeamsOrCopilot` cache if available).
+- **Stage 1 — Agent kind:** AI Teammate or Agent (Non AI Teammate) (pre-filled from `usesTeamsOrCopilot` cache if available).
 - **Stage 2 — Auth mode:** depends on agent kind:
-  - AI Teammate (Digital Worker) → `user-delegated` (signed-in user OBO) or `agentic-identity` (agent's own Azure AD user)
-  - Standard Agent (Non Digital Worker) → `agentic-identity` (Assistive / OBO) or `S2S` (Autonomous / Service Principal, no user token)
+  - AI Teammate → `user-delegated` (signed-in user OBO) or `agentic-identity` (agent's own Azure AD user)
+  - Agent (Non AI Teammate) → `agentic-identity` (Assistive / OBO) or `S2S` (Autonomous / Service Principal, no user token)
 
 All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = S2S` and the skill is `add-workiq-tools`, a compatibility warning is surfaced before Phase 4 (WorkIQ requires a user token).
 
