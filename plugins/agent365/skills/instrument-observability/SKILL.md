@@ -297,7 +297,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability initialization following the reference pattern in `nodejs-observability.md`:
    - Add imports for `ObservabilityManager` from `@microsoft/agents-a365-observability`
    - **OBO path**: Call `useMicrosoftOpenTelemetry({ a365: { enabled: true, tokenResolver } })` from `@microsoft/opentelemetry` **before** any LLM/framework imports. The `tokenResolver` reads from `AgenticTokenCacheInstance`.
-   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry()` with the S2S workaround pattern from `nodejs-observability.md`: supply a custom `BatchSpanProcessor(Agent365Exporter({ useS2SEndpoint: true, tokenResolver }))` via `spanProcessors` when `AGENT365_USE_S2S_ENDPOINT=true`. Do **NOT** include `A365SpanProcessor` — it reads OTel baggage from `parentContext` which is always empty for autonomous S2S agents and interferes with the pipeline. Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env`. Also run `npm install @microsoft/opentelemetry @azure/msal-node @azure/identity @opentelemetry/sdk-trace-base`.
+   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry()` with the S2S workaround pattern from `nodejs-observability.md` (custom `Agent365Exporter` + `A365SpanProcessor` via `spanProcessors` when `AGENT365_USE_S2S_ENDPOINT=true`). Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env`. Also run `npm install @microsoft/opentelemetry @azure/msal-node @azure/identity @opentelemetry/sdk-trace-base`.
    - Optionally register `adapter.use(new BaggageMiddleware())` (OBO path) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -801,14 +801,15 @@ The `@microsoft/opentelemetry` distro creates `Agent365Exporter` internally but 
 
 **Node.js (`@microsoft/opentelemetry` v0.1.0-beta.1):**
 
-**Workaround for generated agent code:** Pass a custom `spanProcessors` array to `useMicrosoftOpenTelemetry()` with only `BatchSpanProcessor(Agent365Exporter({ useS2SEndpoint: true, tokenResolver }))`. Do **NOT** include `A365SpanProcessor` — it reads OTel baggage from `parentContext`, which is always empty for autonomous S2S agents, and interferes with the pipeline. Also set both env vars:
+1. `A365Configuration` — add `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support
+2. `distro.js` — pass `a365Config.useS2SEndpoint` when constructing `Agent365Exporter`
+
+**For generated agent code:** Set the env var in `.env`:
 ```
 AGENT365_USE_S2S_ENDPOINT=true
-ENABLE_A365_OBSERVABILITY_EXPORTER=false
 ```
-`ENABLE_A365_OBSERVABILITY_EXPORTER=false` is required because this env var has highest precedence and overrides the programmatic `a365: undefined` setting, which would otherwise re-create the broken built-in exporter (missing `useS2SEndpoint`).
 
-**SDK-level fix (pending):** `A365Configuration` needs `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support; `distro.js` needs to pass it when constructing `Agent365Exporter`. Remove the `spanProcessors` workaround once this SDK fix ships.
+This is a distro-level fix. The `useMicrosoftOpenTelemetry()` call does NOT need a custom `spanProcessors` array — the built-in exporter reads the env var via `A365Configuration` and passes it to `Agent365Exporter`.
 
 **.NET (`Microsoft.OpenTelemetry` v1.0.0-beta.1):**
 
