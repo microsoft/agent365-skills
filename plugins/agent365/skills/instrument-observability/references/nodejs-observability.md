@@ -314,6 +314,7 @@ import {
   useMicrosoftOpenTelemetry,
   shutdownMicrosoftOpenTelemetry,
   Agent365Exporter,
+  A365SpanProcessor,
 } from '@microsoft/opentelemetry';
 import type { AgentDetails, CallerDetails, UserDetails } from '@microsoft/opentelemetry';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
@@ -370,9 +371,7 @@ export const callerDetails: CallerDetails = {
 //
 // SDK workaround (v0.1.0-beta.1): The distro does not pass `useS2SEndpoint`
 // to Agent365Exporter. When AGENT365_USE_S2S_ENDPOINT=true, we supply our own
-// BatchSpanProcessor(Agent365Exporter) via `spanProcessors` instead.
-// Do NOT include A365SpanProcessor — it reads OTel baggage from parentContext,
-// which is empty for autonomous S2S agents and interferes with the pipeline.
+// A365SpanProcessor + Agent365Exporter via `spanProcessors` instead.
 // IMPORTANT: Set ENABLE_A365_OBSERVABILITY_EXPORTER=false in .env to prevent
 // the env var from overriding the programmatic `enabled` setting.
 const a365TokenResolver = (agentId: string, tenantId: string) =>
@@ -380,6 +379,7 @@ const a365TokenResolver = (agentId: string, tenantId: string) =>
 
 const s2sSpanProcessors = A365_ENABLED && USE_S2S_ENDPOINT
   ? [
+      new A365SpanProcessor(),
       new BatchSpanProcessor(
         new Agent365Exporter({
           useS2SEndpoint: true,
