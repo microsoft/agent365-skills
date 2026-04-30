@@ -1,6 +1,5 @@
 {
   "chat.agentSkillsLocations": {
-    "plugins/agent365/skills": true,
-    ".agents/skills": true
+    "plugins/agent365/skills": true
   }
 }

@@ -193,6 +193,16 @@ function installAgentsSkills() {
     return;
   }
 
+  // When running inside the source repo itself (plugins/agent365/skills is already
+  // under TARGET_DIR), register the source path directly — no copy needed.
+  const relSkillsRoot = path.relative(TARGET_DIR, skillsRoot).replace(/\\/g, '/');
+  const isSourceRepo  = !relSkillsRoot.startsWith('..') && !path.isAbsolute(relSkillsRoot);
+  if (isSourceRepo) {
+    writeVSCodeSkillsLocation(relSkillsRoot);
+    ok(`Skills served directly from ${relSkillsRoot} — no copy needed.`);
+    return;
+  }
+
   const destRoot = path.join(TARGET_DIR, '.agents', 'skills');
   let installed = 0;
   let skipped   = 0;
