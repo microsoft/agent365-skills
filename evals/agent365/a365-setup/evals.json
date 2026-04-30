@@ -11,7 +11,7 @@
       "expectations": [
         "Phase 1A: Agent stack, language, and agent type (CEA vs Agent (Non AI Teammate)) are detected",
         "Phase 1B: Detection summary shows Stack, Language, and Agent type",
-        "Phase 1B: authMode question asked BEFORE capabilities menu — user selects OBO/S2S/Both",
+        "Phase 1B: authMode question asked BEFORE capabilities menu — user selects OBO or S2S",
         "Phase 1B: authMode written to .a365-workspace-detection.json",
         "Phase 1B: Capabilities menu shows all 4 options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1C: 3 todos created: Step 1 (Install and Verify All Prerequisites), Step 2 (Configure Azure Identity), Step 3 (Run the make-a365-agent skill)",

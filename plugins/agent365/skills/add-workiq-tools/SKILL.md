@@ -114,7 +114,18 @@ Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delega
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
 
-The `authMode` value is used in Phase 4 to annotate which identity is used for M365 tool access. **If `authMode = S2S`, the WorkIQ guard in the shared section must be surfaced before proceeding to Phase 4.**
+**If `authMode = S2S`, stop immediately and exit:**
+
+```
+❌  WorkIQ tools are not available for S2S (autonomous) agents.
+    WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
+    cannot be used for WorkIQ API calls.
+
+    To use WorkIQ, switch your agent to Assistive mode (agentic-identity / OBO)
+    and re-run this skill.
+```
+
+Do **not** proceed to Phase 0C or any further phases. Mark all tasks cancelled and end the session.
 
 ---
 

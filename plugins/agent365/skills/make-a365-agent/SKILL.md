@@ -181,7 +181,7 @@ Set `messagingEndpoint = "${tunnelUrl}/api/messages"`.
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --dry-run
 ```
 
-> **`--authmode` flag:** If the user's auth mode is known from `.a365-workspace-detection.json`, append `--authmode obo`, `--authmode s2s`, or `--authmode both` to all `setup all` commands. This controls how the agent identity SP receives permissions (OBO = principal-scoped delegated grants, S2S = application app-role assignments requiring GA, both = both).
+> **`--authmode` flag:** If the user's auth mode is known from `.a365-workspace-detection.json`, append `--authmode obo` or `--authmode s2s` to all `setup all` commands. This controls how the agent identity SP receives permissions (OBO = principal-scoped delegated grants, S2S = application app-role assignments requiring GA).
 
 Show the full dry-run output to the user, then ask:
 
@@ -201,7 +201,6 @@ cd "<project_dir>" && a365 setup all --agent-name <agent_name>
 # With explicit auth mode (append based on .a365-workspace-detection.json authMode)
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode obo
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode s2s
-cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode both
 
 # Custom Engine Agent (CEA) with Teams/Copilot integration — add --m365
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --m365

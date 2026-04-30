@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. authMode was collected from the user (OBO/S2S/Both) and written to .a365-workspace-detection.json.
+        5. authMode was collected from the user (OBO/S2S) and written to .a365-workspace-detection.json.
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -133,14 +133,11 @@ How will your agent authenticate when calling downstream APIs?
   2. Service-to-service (S2S) — the agent acts as its own identity (application permissions)
      Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
      (e.g. reading all mailboxes, managing SharePoint sites).
-
-  3. Both (OBO and S2S)
 ```
 
 Wait for the answer. Store as `authMode`:
 - If 1 → `authMode = "obo"`
 - If 2 → `authMode = "s2s"`
-- If 3 → `authMode = "both"`
 
 > **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
 
@@ -179,7 +176,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Write `authMode` as collected (`"obo"`, `"s2s"`, or `"both"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
+   - Write `authMode` as collected (`"obo"` or `"s2s"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
 
 3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)

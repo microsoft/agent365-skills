@@ -57,7 +57,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Register, Observability, WorkIQ, or AI Teammate
+1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated or S2S/autonomous) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Register, Observability, WorkIQ, or AI Teammate
    - **CEA guard:** if the project is a Custom Engine Agent and the user selects AI Teammate, blocks the selection and re-presents options 1–3 (CEA is not supported as AI Teammate)
 2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and the collected `authMode` — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking
 3. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
@@ -86,7 +86,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 **Summary of what this skill does:**
 1. Collects agent name (supports `default` → `developer` fallback; passes name verbatim — no case normalization) and project directory; asks whether the agent is cloud-hosted or local/dev-tunnel (guides through `devtunnel create/host` if local)
 2. Shows a dry-run preview of all `a365` operations before applying anything
-3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s|both` to control permission type. Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
+3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s` to control permission type. Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
 4. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
 5. Guides the Global Administrator consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell script from `a365 setup all` output
 
@@ -110,7 +110,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.json` so subsequent skills skip re-asking
-   - **S2S warning:** if `authMode = S2S`, surfaces a compatibility warning before proceeding (WorkIQ tools require a user token — S2S autonomous agents have limited WorkIQ access)
+   - **S2S block:** if `authMode = S2S`, the skill exits immediately — WorkIQ is not available for S2S (autonomous) agents (requires a delegated OBO token at runtime)
 2. Runs `a365 develop list-available` to show the MCP server catalog
 3. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
 4. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
