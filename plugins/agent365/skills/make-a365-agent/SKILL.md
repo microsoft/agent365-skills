@@ -129,6 +129,7 @@ Where will your agent run?
 
   1. Azure / Cloud — the agent has (or will have) a public HTTPS endpoint already
   2. Local / Dev Tunnel — the agent runs on localhost and needs a dev tunnel for a public URL
+  3. Skip - I just want to set up the Blueprint and Entra ID permissions for now, without registering an endpoint yet
 ```
 
 **If Cloud (option 1):** Ask for the full HTTPS endpoint URL (e.g. `https://myagent.azurewebsites.net/api/messages`). Store as `messagingEndpoint`.

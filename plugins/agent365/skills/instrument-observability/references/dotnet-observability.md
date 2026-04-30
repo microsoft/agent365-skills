@@ -37,6 +37,8 @@ Install commands:
 dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1
 dotnet add package Azure.Identity
 dotnet add package Microsoft.Identity.Client
+# Required: v1.0.0-beta.1 depends on Microsoft.Extensions.Logging v10.0.0
+dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
 ```
 
 Install commands (individual packages / OBO path):
@@ -59,6 +61,13 @@ dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
 
 Use this pattern for Agent (Non AI Teammate) agents that run without a signed-in user (Autonomous / S2S).
 Requires two scaffold files in `Observability/` — create these before wiring Program.cs.
+
+> **⚠️ Known issues (v1.0.0-beta.1):**
+> - **TFM:** `Microsoft.OpenTelemetry` v1.0.0-beta.1 depends on `Microsoft.Extensions.Logging` v10.0.0. Projects targeting `net8.0` get a runtime `FileNotFoundException`. Fix: add `dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"` and upgrade TFM to `net9.0`.
+> - **UseS2SEndpoint:** The distro does NOT set `UseS2SEndpoint = true` on the internal `Agent365Exporter`. You MUST set `o.Agent365.Exporter.UseS2SEndpoint = true` in the `UseMicrosoftOpenTelemetry` options callback, or the exporter posts to `/observability/` (OBO path) instead of `/observabilityService/` (S2S path), causing HTTP 401.
+> - **InferenceCallDetails:** The `providerName` parameter is required (not optional). Constructor: `(InferenceOperationType operationName, string model, string providerName, ...)`.
+> - **ExecuteToolScope.RecordResponse:** Takes `string`, not `Response` object.
+> - **UseManagedIdentity:** Set `false` for local dev. MSI only works on Azure infrastructure.
 
 ### Scaffold: `Observability/ObservabilityServiceExtensions.cs`
 
@@ -309,6 +318,9 @@ builder.UseMicrosoftOpenTelemetry(o =>
         ? ExportTarget.Agent365 | ExportTarget.Console
         : ExportTarget.Agent365;
 
+    // ⚠️ Required for S2S: distro does NOT set this automatically in v1.0.0-beta.1
+    o.Agent365.Exporter.UseS2SEndpoint = true;
+
     o.Agent365.Exporter.TokenResolver = async (agentId, tenantId) =>
     {
         return tokenCache != null
@@ -467,16 +479,10 @@ using Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes;
 
 public class MyAgent : AgentApplication
 {
+    // CallerDetails is read from Agent365Observability:Sponsor config — injected via
+    // Agent365ObservabilityContext singleton (see ObservabilityServiceExtensions).
+    // For autonomous agents, use the Blueprint sponsor's identity.
     private readonly Agent365ObservabilityContext _obs;
-
-    // CallerDetails identifies the blueprint sponsor — required for S2S traces to appear
-    // in the Agent 365 portal. Without this, autonomous agent traces are not attributable.
-    private readonly CallerDetails _callerDetails = new CallerDetails(
-        userDetails: new UserDetails(
-            userId: "<<sponsor-user-id>>",
-            userName: "<<sponsor-display-name>>",
-            userEmail: "<<sponsor-email>>"
-        ));
 
     public MyAgent(AgentApplicationOptions options, Agent365ObservabilityContext obs)
         : base(options)
@@ -506,9 +512,52 @@ public class MyAgent : AgentApplication
             new Request(turnContext.Activity.Text),
             new InvokeAgentScopeDetails(endpoint: new Uri("https://your-agent-endpoint")),
             _obs.AgentDetails,
-            _callerDetails);
+            _obs.CallerDetails);
 
         // ... existing agent message handling logic ...
+    }
+}
+```
+
+```csharp
+// ObservabilityServiceExtensions.cs — DI registration with dynamic CallerDetails from config
+public sealed class Agent365ObservabilityContext
+{
+    public AgentDetails AgentDetails { get; }
+    public CallerDetails CallerDetails { get; }
+    internal Agent365ObservabilityContext(AgentDetails d, CallerDetails c)
+    {
+        AgentDetails = d;
+        CallerDetails = c;
+    }
+}
+
+public static class ObservabilityServiceExtensions
+{
+    public static IServiceCollection AddAgent365Observability(this IServiceCollection services)
+    {
+        services.AddSingleton<Agent365ObservabilityContext>(sp =>
+        {
+            var obs = sp.GetRequiredService<IConfiguration>().GetSection("Agent365Observability");
+            var agentDetails = new AgentDetails(
+                agentId:          obs["AgentId"]          ?? "local-dev",
+                agentName:        obs["AgentName"]        ?? "unknown",
+                agentDescription: obs["AgentDescription"] ?? "",
+                agentBlueprintId: obs["AgentBlueprintId"] ?? "",
+                tenantId:         obs["TenantId"]         ?? "local-dev");
+
+            // Read sponsor/caller details from config — enables trace visibility in MAC portal
+            var sponsor = obs.GetSection("Sponsor");
+            var callerDetails = new CallerDetails(
+                userDetails: new UserDetails(
+                    userId:    sponsor["UserId"]    ?? obs["ClientId"] ?? "unknown",
+                    userName:  sponsor["UserName"]  ?? obs["AgentName"] ?? "Blueprint Sponsor",
+                    userEmail: sponsor["UserEmail"] ?? ""));
+
+            return new Agent365ObservabilityContext(agentDetails, callerDetails);
+        });
+        // ... rest of DI registration
+        return services;
     }
 }
 ```
@@ -579,6 +628,11 @@ using Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts;
 using Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes;
 
 // Use the same agentDetails and request instances from InvokeAgentScope above
+var userDetails = new UserDetails(
+    userId: "user-123",
+    userEmail: "jane.doe@contoso.com",
+    userName: "Jane Doe"
+);
 
 var toolCallDetails = new ToolCallDetails(
     toolName: "summarize",
@@ -592,7 +646,8 @@ var toolCallDetails = new ToolCallDetails(
 using var scope = ExecuteToolScope.Start(
     request: request,
     details: toolCallDetails,
-    agentDetails: agentDetails
+    agentDetails: agentDetails,
+    userDetails: userDetails
 );
 
 // ... your tool logic here ...
@@ -607,6 +662,11 @@ using Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts;
 using Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes;
 
 // Use the same agentDetails and request instances from InvokeAgentScope above
+var userDetails = new UserDetails(
+    userId: "user-123",
+    userEmail: "jane.doe@contoso.com",
+    userName: "Jane Doe"
+);
 
 var inferenceDetails = new InferenceCallDetails(
     operationName: InferenceOperationType.Chat,
@@ -620,7 +680,8 @@ var inferenceDetails = new InferenceCallDetails(
 using var scope = InferenceScope.Start(
     request: request,
     details: inferenceDetails,
-    agentDetails: agentDetails
+    agentDetails: agentDetails,
+    userDetails: userDetails
 );
 
 // ... your inference logic here ...
@@ -693,7 +754,12 @@ using var scope = OutputScope.Start(
     "AgentId": "<<AGENT_IDENTITY_ID>>",
     "ClientId": "<<BLUEPRINT_APP_ID>>",
     "ClientSecret": "<<BLUEPRINT_CLIENT_SECRET>>",
-    "UseManagedIdentity": true
+    "UseManagedIdentity": true,
+    "Sponsor": {
+      "UserId": "<<BLUEPRINT_APP_ID>>",
+      "UserName": "<<BLUEPRINT_NAME>>",
+      "UserEmail": "<<BLUEPRINT_SPONSOR_EMAIL>>"
+    }
   },
   "Logging": {
     "LogLevel": {
@@ -706,6 +772,8 @@ using var scope = OutputScope.Start(
 ```
 
 > **S2S auth note:** `UseManagedIdentity` defaults to `true`. In production (Azure), the service uses Managed Identity and the `ClientSecret` is only needed as a local-dev fallback. Set to `false` in `appsettings.Development.json` if you always want client-secret auth locally.
+>
+> **Sponsor note:** For S2S / autonomous agents, the `Sponsor` section provides the `CallerDetails` required for MAC portal trace visibility. Use the Blueprint app ID as `UserId`, the Blueprint display name as `UserName`, and the agent sponsor's email as `UserEmail`.
 
 > **Critical:** The `Logging.LogLevel` section is **required** for observability events to be
 > captured in console output and forwarded to Microsoft Defender. Without this, the SDK is
@@ -834,6 +902,7 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 
 **What `a365 setup` does NOT add:**
 - `Logging.LogLevel` configuration (required for Defender visibility)
+- `Agent365Observability:Sponsor` values for `CallerDetails` (required for S2S / autonomous agent trace visibility in MAC portal)
 
 **When instrumenting observability:**
 1. Preserve existing `EnableAgent365Exporter`, `AgentBlueprintId`, `TenantId` values
@@ -863,6 +932,10 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | S2S: FMI Hop 3 → 401 on export | Wrong scope or missing role | FMI Hop 3 scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default`; Agent Identity SP needs `OtelWrite` role assigned via Graph API |
 | S2S: MSI fails locally | No Managed Identity available in dev | Set `UseManagedIdentity: false` in appsettings.Development.json, ensure `ClientSecret` is populated |
 | S2S: `UseMicrosoftOpenTelemetry` not found | Unified distro not installed | Run `dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1` |
+| S2S: Runtime `FileNotFoundException` for `Microsoft.Extensions.Logging v10.0.0` | `Microsoft.OpenTelemetry` v1.0.0-beta.1 depends on v10 logging | Run `dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"` and upgrade TFM to `net9.0` |
+| S2S: HTTP 401 on span export (correct token) | `UseS2SEndpoint` not set — exporter posts to `/observability/` instead of `/observabilityService/` | Set `o.Agent365.Exporter.UseS2SEndpoint = true` in `UseMicrosoftOpenTelemetry` options |
+| S2S: CS7036 on `InferenceCallDetails` — missing `providerName` | `providerName` is required (not optional) | Use: `new InferenceCallDetails(operationName: ..., model: ..., providerName: "Azure OpenAI")` |
+| S2S: CS1503 on `ExecuteToolScope.RecordResponse` | Method takes `string`, not `Response` | Use: `toolScope.RecordResponse(resultString)` |
 | S2S: `InvokeAgentScopeDetails` constructor error | No parameterless constructor exists | Pass at least `endpoint`: `new InvokeAgentScopeDetails(endpoint: new Uri("..."))` |
 | S2S: `InvokeAgentScope` has no `FromTurnContext` | `FromTurnContext` is a `BaggageBuilder` extension only | Create `BaggageBuilder` separately: `new BaggageBuilder().FromTurnContext(tc).Build()` |
 | Build error: `Azure.AI.OpenAI` version conflict with `Extensions.OpenAI` | Package requires `Azure.AI.OpenAI >= 2.7.0-beta.2` | Run `dotnet add package Azure.AI.OpenAI --version 2.7.0-beta.2` before adding the extension |

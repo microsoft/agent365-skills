@@ -69,13 +69,15 @@ useMicrosoftOpenTelemetry({
       ? (agentId: string, tenantId: string) => tokenResolver(agentId, tenantId) ?? ''
       : (agentId: string, tenantId: string) => AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
   },
-  instrumentationOptions: {
-    langchain: {},
-  },
+  // instrumentationOptions is optional — omit unless you need framework-specific auto-instrumentation.
+  // The @microsoft/agents-a365-observability-extensions-langchain package has a peer dep conflict
+  // with @langchain/core@^0.3.0, so manual scopes (InvokeAgentScope, InferenceScope, etc.) are preferred.
 });
 ```
 
-> If you are not using LangChain, replace `instrumentationOptions.langchain` with the matching instrumentation(s) for your stack, or omit `instrumentationOptions` entirely.
+> **Auto-instrumentation:** `instrumentationOptions: { langchain: {} }` is optional and only useful
+> if `@microsoft/agents-a365-observability-extensions-langchain` is installed (requires `@langchain/core@^1.1.32`).
+> For most agents, manual scopes are sufficient and avoid the peer dependency conflict.
 
 ### S2S configuration (`authMode: S2S`)
 
@@ -104,6 +106,22 @@ No OBO user token is required.
 > handles FMI differently. This workaround will be removed once MSAL ships native `fmiPath` support.
 
 > **Note:** `a365 setup all` attempts to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the assignment fails (403), a Global Admin must manually grant the role via Entra portal — otherwise trace exports will return HTTP 403.
+
+> **IMPORTANT — SDK `useS2SEndpoint` bug (v0.1.0-beta.1):** The `@microsoft/opentelemetry`
+> distro does **not** pass `useS2SEndpoint` to `Agent365Exporter`. The exporter defaults
+> `useS2SEndpoint` to `false`, sending spans to `/observability/` instead of
+> `/observabilityService/`. S2S tokens are rejected (HTTP 401) on the non-S2S endpoint.
+> **Workaround:** Create a custom `Agent365Exporter` with `useS2SEndpoint: true` via
+> `spanProcessors` and do **not** pass `a365` options to the distro (see Step 3 entry point).
+> Also set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env` — this env var has highest
+> precedence and overrides programmatic `enabled: false`, re-creating the broken built-in exporter.
+
+> **Auto-instrumentation note:** The `instrumentationOptions: { langchain: {} }` option is
+> **not required** for autonomous agents. The distro attempts OpenAI Agents auto-instrumentation
+> by default (logs a benign `ERR_MODULE_NOT_FOUND` warning for `@openai/agents` if not installed).
+> The optional `@microsoft/agents-a365-observability-extensions-langchain` package has a peer
+> dependency on `@langchain/core@^1.1.32` which conflicts with `@langchain/core@^0.3.0` used
+> by most LangChain projects — skip it and use manual scopes instead.
 
 #### Step 1 — Create `observability/token-cache.ts`
 
@@ -289,11 +307,16 @@ async function acquireT1ViaClientSecret(authority: string, blueprintClientId: st
 
 ```typescript
 // authMode: S2S — service principal, no user OBO.
+import { configDotenv } from 'dotenv';
+configDotenv();
+
 import {
   useMicrosoftOpenTelemetry,
   shutdownMicrosoftOpenTelemetry,
+  Agent365Exporter,
 } from '@microsoft/opentelemetry';
-import type { AgentDetails } from '@microsoft/opentelemetry';
+import type { AgentDetails, CallerDetails, UserDetails } from '@microsoft/opentelemetry';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 import { tokenResolver } from './observability/token-cache';
 import { startTokenService } from './observability/observability-token-service';
@@ -306,7 +329,11 @@ const CLIENT_ID = process.env.AGENT365_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.AGENT365_CLIENT_SECRET || '';
 const AGENT_NAME = process.env.AGENT365_AGENT_NAME || 'my-agent';
 const AGENT_DESCRIPTION = process.env.AGENT365_AGENT_DESCRIPTION || '';
+const SPONSOR_USER_ID = process.env.agent365Observability__sponsorUserId || CLIENT_ID || '';
+const SPONSOR_USER_NAME = process.env.agent365Observability__sponsorUserName || AGENT_NAME;
+const SPONSOR_USER_EMAIL = process.env.agent365Observability__sponsorUserEmail || '';
 const USE_MANAGED_IDENTITY = (process.env.AGENT365_USE_MANAGED_IDENTITY || 'true').toLowerCase() === 'true';
+const USE_S2S_ENDPOINT = (process.env.AGENT365_USE_S2S_ENDPOINT || 'false').toLowerCase() === 'true';
 
 function hasA365Credentials(): boolean {
   const requiredValues = [TENANT_ID, AGENT_ID, CLIENT_ID];
@@ -319,7 +346,7 @@ function hasA365Credentials(): boolean {
 const A365_ENABLED = hasA365Credentials();
 
 // ── Agent Details ────────────────────────────────────────────────────────────
-const agentDetails: AgentDetails = {
+export const agentDetails: AgentDetails = {
   agentId: AGENT_ID || 'local-dev',
   agentName: AGENT_NAME,
   agentDescription: AGENT_DESCRIPTION,
@@ -327,23 +354,56 @@ const agentDetails: AgentDetails = {
   tenantId: TENANT_ID || 'local-dev',
 };
 
+export const userDetails: UserDetails = {
+  userId: SPONSOR_USER_ID || 'unknown',
+  userName: SPONSOR_USER_NAME || 'Blueprint Sponsor',
+  userEmail: SPONSOR_USER_EMAIL,
+};
+
+export const callerDetails: CallerDetails = {
+  userDetails,
+};
+
 // ── Observability ────────────────────────────────────────────────────────────
 // Microsoft OpenTelemetry distro with A365 exporter.
 // Token resolver reads from in-memory cache populated by the background token service.
-// AGENT365_USE_S2S_ENDPOINT=true env var routes exports to /observabilityService/... path.
+//
+// SDK workaround (v0.1.0-beta.1): The distro does not pass `useS2SEndpoint`
+// to Agent365Exporter. When AGENT365_USE_S2S_ENDPOINT=true, we supply our own
+// BatchSpanProcessor(Agent365Exporter) via `spanProcessors` instead.
+// Do NOT include A365SpanProcessor — it reads OTel baggage from parentContext,
+// which is empty for autonomous S2S agents and interferes with the pipeline.
+// IMPORTANT: Set ENABLE_A365_OBSERVABILITY_EXPORTER=false in .env to prevent
+// the env var from overriding the programmatic `enabled` setting.
+const a365TokenResolver = (agentId: string, tenantId: string) =>
+  tokenResolver(agentId, tenantId) ?? '';
+
+const s2sSpanProcessors = A365_ENABLED && USE_S2S_ENDPOINT
+  ? [
+      new BatchSpanProcessor(
+        new Agent365Exporter({
+          useS2SEndpoint: true,
+          tokenResolver: a365TokenResolver,
+        })
+      ),
+    ]
+  : [];
+
 useMicrosoftOpenTelemetry({
-  a365: A365_ENABLED
+  // When using S2S workaround, don't pass a365 options (avoids duplicate exporter
+  // or noisy console fallback). Otherwise let the distro create its own exporter.
+  a365: A365_ENABLED && !USE_S2S_ENDPOINT
     ? {
         enabled: true,
-        tokenResolver: (agentId, tenantId) => tokenResolver(agentId, tenantId) ?? '',
+        tokenResolver: a365TokenResolver,
       }
     : undefined,
-  instrumentationOptions: {
-    langchain: {},   // replace with your framework's instrumentation or omit entirely
-  },
+  spanProcessors: s2sSpanProcessors,
 });
 
-// Start background token service (skipped when credentials not configured)
+// ... import app modules AFTER observability init ...
+
+// Start background token service after server is listening
 if (A365_ENABLED) {
   startTokenService({
     tenantId: TENANT_ID,
@@ -352,19 +412,15 @@ if (A365_ENABLED) {
     blueprintClientSecret: CLIENT_SECRET,
     useManagedIdentity: USE_MANAGED_IDENTITY,
   });
-} else {
-  console.warn(
-    '[A365 Observability] Credentials not configured — skipping token service. ' +
-    "Run 'a365 setup all' to enable A365 observability export."
-  );
 }
 
-// ... rest of agent startup ...
-
 // Graceful shutdown:
-process.on('SIGTERM', () => {
+function shutdown(signal: string) {
+  console.log(`${signal} received — shutting down`);
   shutdownMicrosoftOpenTelemetry().finally(() => process.exit(0));
-});
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 ```
 
 #### S2S environment variables
@@ -378,8 +434,15 @@ AGENT365_CLIENT_ID=
 AGENT365_CLIENT_SECRET=
 AGENT365_AGENT_NAME=my-agent
 AGENT365_AGENT_DESCRIPTION=
+agent365Observability__sponsorUserId=<<Blueprint ID>>
+agent365Observability__sponsorUserName=<<Blueprint Name>>
+agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
 AGENT365_USE_MANAGED_IDENTITY=true
 AGENT365_USE_S2S_ENDPOINT=true
+# IMPORTANT: Must be false when using the S2S workaround (AGENT365_USE_S2S_ENDPOINT=true),
+# because this env var overrides the programmatic `enabled` setting in A365Configuration.
+# The custom Agent365Exporter with useS2SEndpoint handles export instead.
+ENABLE_A365_OBSERVABILITY_EXPORTER=false
 ```
 
 Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and credential source differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
@@ -557,6 +620,13 @@ try {
 }
 ```
 
+> **TIP:** For S2S autonomous agents, export `callerDetails` and `userDetails` from the entry
+> point module so all scope files can import them alongside `agentDetails`.
+> Read sponsor details from env vars:
+> - `agent365Observability__sponsorUserId` (fallback: `clientId`)
+> - `agent365Observability__sponsorUserName` (fallback: `agentName`)
+> - `agent365Observability__sponsorUserEmail`
+
 #### InvokeAgentScope with ScopeUtils (hosting path — auto-populates from TurnContext)
 
 ```typescript
@@ -590,7 +660,7 @@ try {
 ```typescript
 import { ExecuteToolScope, ToolCallDetails } from '@microsoft/opentelemetry';
 
-// Use the same agentDetails and request instances from InvokeAgentScope above.
+// Use the same agentDetails, userDetails, and request instances from InvokeAgentScope above.
 
 const toolDetails: ToolCallDetails = {
   toolName: 'email-search',
@@ -605,7 +675,7 @@ const toolDetails: ToolCallDetails = {
   },
 };
 
-const scope = ExecuteToolScope.start(request, toolDetails, agentDetails);
+const scope = ExecuteToolScope.start(request, toolDetails, agentDetails, userDetails);
 
 try {
   return await scope.withActiveSpanAsync(async () => {
@@ -664,6 +734,7 @@ import type {
   AgentDetails,
   InferenceDetails,
   Request,
+  UserDetails,
 } from '@microsoft/opentelemetry';
 
 const inferenceDetails: InferenceDetails = {
@@ -681,8 +752,14 @@ const agentDetails: AgentDetails = {
   tenantId: context.activity?.recipient?.tenantId || 'sample-tenant',
 };
 
+const userDetails: UserDetails = {
+  userId: process.env.agent365Observability__sponsorUserId || context.activity?.from?.id || 'blueprint-app-id',
+  userName: process.env.agent365Observability__sponsorUserName || context.activity?.from?.name || agentName,
+  userEmail: process.env.agent365Observability__sponsorUserEmail || '',
+};
+
 let response = '';
-const scope = InferenceScope.start(request, inferenceDetails, agentDetails);
+const scope = InferenceScope.start(request, inferenceDetails, agentDetails, userDetails);
 try {
   await scope.withActiveSpanAsync(async () => {
     response = await invokeAgent(prompt);
@@ -735,7 +812,7 @@ try {
 ```typescript
 import { OutputScope, OutputResponse, SpanDetails } from '@microsoft/opentelemetry';
 
-// Use the same agentDetails and request instances from InvokeAgentScope above.
+// Use the same agentDetails, userDetails, and request instances from InvokeAgentScope above.
 
 // Get the parent context from the originating scope
 const parentContext = invokeScope.getSpanContext();
@@ -748,7 +825,7 @@ const scope = OutputScope.start(
   request,
   response,
   agentDetails,
-  undefined, // userDetails
+  userDetails,
   { parentContext } as SpanDetails
 );
 
@@ -859,6 +936,11 @@ A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
 # Set to true to use a custom token resolver instead of AgenticTokenCacheInstance.
 # Default: false (use built-in cache). Set to true for local testing with custom auth.
 Use_Custom_Resolver=false
+
+# Sponsor / CallerDetails for MAC portal trace visibility (S2S / autonomous agents).
+agent365Observability__sponsorUserId=<<Blueprint ID>>
+agent365Observability__sponsorUserName=<<Blueprint Name>>
+agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
 # ─────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -866,6 +948,9 @@ Use_Custom_Resolver=false
 |---|---|---|
 | `ENABLE_A365_OBSERVABILITY_EXPORTER` | `false` | `true` |
 | `Use_Custom_Resolver` | `true` (optional) | `false` |
+| `agent365Observability__sponsorUserId` | `<<Blueprint ID>>` | `<<Blueprint ID>>` |
+| `agent365Observability__sponsorUserName` | `<<Blueprint Name>>` | `<<Blueprint Name>>` |
+| `agent365Observability__sponsorUserEmail` | `<<Blueprint Sponsor Email>>` | `<<Blueprint Sponsor Email>>` |
 | `NODE_ENV` | `development` | `production` |
 
 ---
@@ -929,8 +1014,8 @@ setLogger({
 | `AgenticTokenCacheInstance.RefreshObservabilityToken(...)` | `@microsoft/agents-a365-observability-hosting` | Refresh and cache token for the current turn |
 | `getObservabilityAuthenticationScope()` | `@microsoft/agents-a365-runtime` | Returns the OAuth2 scope string for the observability API. **Deprecated** in v0.2.0-preview.5 — still functional; modern replacement is `defaultObservabilityConfigurationProvider.getConfiguration().observabilityAuthenticationScopes` |
 | `InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails)` | `@microsoft/opentelemetry` | Start agent invocation telemetry scope |
-| `ExecuteToolScope.start(request, toolDetails, agentDetails)` | `@microsoft/opentelemetry` | Start tool execution telemetry scope |
-| `InferenceScope.start(request, inferenceDetails, agentDetails)` | `@microsoft/opentelemetry` | Start LLM inference telemetry scope |
+| `ExecuteToolScope.start(request, toolDetails, agentDetails, userDetails)` | `@microsoft/opentelemetry` | Start tool execution telemetry scope |
+| `InferenceScope.start(request, inferenceDetails, agentDetails, userDetails)` | `@microsoft/opentelemetry` | Start LLM inference telemetry scope |
 | `OutputScope.start(request, response, agentDetails, userDetails, spanDetails)` | `@microsoft/opentelemetry` | Start output telemetry scope (async scenarios) |
 | `setLogger(logger)` | `@microsoft/agents-a365-observability` | Optional custom exporter logger |
 | `ExporterEventNames` | `@microsoft/agents-a365-observability` | Event names emitted by the exporter logger |
