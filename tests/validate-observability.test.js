@@ -147,7 +147,7 @@ describe('validate-observability — Node.js', () => {
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
-      assert.match(r.reason, /ObservabilityManager/);
+      assert.match(r.reason, /useMicrosoftOpenTelemetry/);
     } finally { cleanup(dir); }
   });
 
@@ -236,7 +236,7 @@ describe('validate-observability — Python', () => {
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
-      assert.match(r.reason, /configure/);
+      assert.match(r.reason, /use_microsoft_opentelemetry/);
     } finally { cleanup(dir); }
   });
 

@@ -88,22 +88,24 @@ if (isUnknown) {
 // ── .NET validation ─────────────────────────────────────────────────────────
 
 if (isDotnet) {
-  // 1. Package installed (Runtime is the required core package)
+  // 1. Package installed (Runtime or unified OpenTelemetry distro)
   const hasObservabilityPkg = csprojFiles.some(f =>
-    fileContains(f, 'Microsoft.Agents.A365.Observability.Runtime'));
+    fileContains(f, 'Microsoft.Agents.A365.Observability.Runtime') ||
+    fileContains(f, 'Microsoft.OpenTelemetry'));
   if (!hasObservabilityPkg) {
-    issues.push('Microsoft.Agents.A365.Observability.Runtime package is not referenced in any .csproj');
+    issues.push('Microsoft.Agents.A365.Observability.Runtime or Microsoft.OpenTelemetry package is not referenced in any .csproj');
   }
 
   // 2. Program.cs wired
   // OBO path (user-delegated / agentic-identity): AddA365Tracing + AddAgenticTracingExporter
-  // S2S path: AddA365Tracing + AddAgent365Observability (via scaffold files)
+  // S2S path: UseMicrosoftOpenTelemetry + AddAgent365Observability (preferred) OR AddA365Tracing + AddAgent365Observability (legacy)
   const programFiles = findFiles(cwd, ['Program.cs']);
   const hasOBOWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgenticTracingExporter');
-  const hasS2SWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgent365Observability');
+  const hasS2SWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgent365Observability') ||
+                      anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry', 'AddAgent365Observability');
   const hasProgramWired = hasOBOWired || hasS2SWired;
   if (!hasProgramWired) {
-    issues.push('Program.cs does not call AddA365Tracing() with AddAgenticTracingExporter() (OBO path) or AddAgent365Observability() (S2S path)');
+    issues.push('Program.cs does not call AddA365Tracing() with AddAgenticTracingExporter() (OBO path) or AddAgent365Observability() with AddA365Tracing()/UseMicrosoftOpenTelemetry() (S2S path)');
   }
 
   // 3. Observability context wired in agent code
@@ -141,15 +143,17 @@ if (isDotnet) {
 if (isNodejs) {
   // 1. Core package installed
   const hasNpmPkg = packageJsonFiles.some(f =>
-    fileContains(f, '@microsoft/agents-a365-observability'));
+    fileContains(f, '@microsoft/agents-a365-observability') ||
+    fileContains(f, '@microsoft/opentelemetry'));
   if (!hasNpmPkg) {
-    issues.push('@microsoft/agents-a365-observability is not in package.json');
+    issues.push('@microsoft/opentelemetry (or @microsoft/agents-a365-observability) is not in package.json');
   }
 
-  // 2. ObservabilityManager.configure called
-  const hasObsManager = anyFileContains(tsFiles, 'ObservabilityManager');
+  // 2. useMicrosoftOpenTelemetry called (or legacy ObservabilityManager.configure)
+  const hasObsManager = anyFileContains(tsFiles, 'useMicrosoftOpenTelemetry') ||
+                        anyFileContains(tsFiles, 'ObservabilityManager');
   if (!hasObsManager) {
-    issues.push('No TypeScript/JS file calls ObservabilityManager.configure()');
+    issues.push('No TypeScript/JS file calls useMicrosoftOpenTelemetry()');
   }
 
   // 3. BaggageBuilder or BaggageMiddleware in handler
@@ -159,10 +163,10 @@ if (isNodejs) {
     issues.push('No TypeScript/JS file uses BaggageBuilder or BaggageMiddleware — baggage context missing');
   }
 
-  // 4. Token caching wired (AgenticTokenCacheInstance, custom resolver, or S2S token service)
-  const hasTokenCache = anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
+  // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, or S2S token service)
+  const hasTokenCache = anyFileContains(tsFiles, 'tokenResolver') ||
+                        anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
                         anyFileContains(tsFiles, 'RefreshObservabilityToken') ||
-                        anyFileContains(tsFiles, 'withTokenResolver') ||
                         anyFileContains(tsFiles, 'getS2SObservabilityToken');
   if (!hasTokenCache) {
     issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
@@ -171,13 +175,15 @@ if (isNodejs) {
   // 4a. S2S scaffold: token service file must exist when authMode is S2S
   if (authMode === 'S2S') {
     const hasS2SScaffold = anyFileContains(tsFiles, 'observability-token-service') ||
-                           anyFileContains(tsFiles, 'startObservabilityTokenService');
+                           anyFileContains(tsFiles, 'startObservabilityTokenService') ||
+                           anyFileContains(tsFiles, 'startTokenService');
     if (!hasS2SScaffold) {
-      issues.push('S2S: observability/observability-token-service.ts scaffold or startObservabilityTokenService() not found');
+      issues.push('S2S: observability/observability-token-service.ts scaffold or startTokenService() not found');
     }
-    const hasS2SEndpoint = anyFileContains(tsFiles, 'useS2SEndpoint');
+    const hasS2SEndpoint = anyFileContains(tsFiles, 'useS2SEndpoint') ||
+                           anyFileContains(tsFiles, 'useMicrosoftOpenTelemetry');
     if (!hasS2SEndpoint) {
-      issues.push('S2S: useS2SEndpoint not set to true in observability configuration');
+      issues.push('S2S: useMicrosoftOpenTelemetry() or useS2SEndpoint not found in observability configuration');
     }
   }
 
@@ -192,8 +198,9 @@ if (isNodejs) {
 // ── Python validation ───────────────────────────────────────────────────────
 
 if (isPython) {
-  // 1. Core package installed (hyphenated distribution names as they appear in requirements.txt/pyproject.toml)
+  // 1. Core package installed
   const pyObservabilityPackages = [
+    'microsoft-opentelemetry',
     'microsoft-agents-a365-observability-core',
     'microsoft-agents-a365-observability-hosting',
     'microsoft-agents-a365-observability-runtime',
@@ -203,31 +210,34 @@ if (isPython) {
     pyObservabilityPackages.some(pkg => fileContains(f, pkg)));
   if (!hasPyPkg) {
     issues.push(
-      'No Microsoft Agent 365 observability distribution found in requirements.txt or pyproject.toml ' +
-      '(expected one of: ' + pyObservabilityPackages.join(', ') + ')'
+      'No Microsoft observability distribution found in requirements.txt or pyproject.toml ' +
+      '(expected microsoft-opentelemetry or a microsoft-agents-a365-observability-* package)'
     );
   }
 
-  // 2. configure() called in a Python file
-  const hasConfigure = anyFileContains(pyFiles, 'from microsoft_agents_a365.observability.core import') &&
-                       anyFileContains(pyFiles, 'configure(');
+  // 2. use_microsoft_opentelemetry() called (or legacy configure())
+  const hasConfigure = anyFileContains(pyFiles, 'use_microsoft_opentelemetry') ||
+                       (anyFileContains(pyFiles, 'from microsoft_agents_a365.observability.core import') &&
+                        anyFileContains(pyFiles, 'configure('));
   if (!hasConfigure) {
-    issues.push('No Python file calls configure() from microsoft_agents_a365.observability.core');
+    issues.push('No Python file calls use_microsoft_opentelemetry()');
   }
 
-  // 3. BaggageBuilder or BaggageMiddleware used
+  // 3. BaggageBuilder or BaggageMiddleware used (OBO path) OR use_microsoft_opentelemetry (S2S distro handles context internally)
   const hasBaggage = anyFileContains(pyFiles, 'BaggageBuilder') ||
                      anyFileContains(pyFiles, 'BaggageMiddleware') ||
-                     anyFileContains(pyFiles, 'populate_baggage');
+                     anyFileContains(pyFiles, 'populate_baggage') ||
+                     anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
   if (!hasBaggage) {
-    issues.push('No Python file uses BaggageBuilder, BaggageMiddleware, or populate_baggage — baggage context missing');
+    issues.push('No Python file uses BaggageBuilder, BaggageMiddleware, populate_baggage, or use_microsoft_opentelemetry — baggage context missing');
   }
 
-  // 4. Token cache wired (AgenticTokenCache, manual token_resolver, or S2S token service)
+  // 4. Token cache wired (AgenticTokenCache, manual token_resolver, S2S token service, or new distro handles it)
   const hasTokenCache = anyFileContains(pyFiles, 'AgenticTokenCache') ||
                         anyFileContains(pyFiles, 'token_resolver') ||
                         anyFileContains(pyFiles, 'get_observability_authentication_scope') ||
-                        anyFileContains(pyFiles, 'get_s2s_observability_token');
+                        anyFileContains(pyFiles, 'get_s2s_observability_token') ||
+                        anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
   if (!hasTokenCache) {
     issues.push('No Python file wires a token resolver — observability exports will fail');
   }
@@ -235,13 +245,15 @@ if (isPython) {
   // 4a. S2S scaffold: token service file must exist when authMode is S2S
   if (authMode === 'S2S') {
     const hasS2SScaffold = anyFileContains(pyFiles, 'observability_token_service') ||
-                           anyFileContains(pyFiles, 'start_observability_token_service');
+                           anyFileContains(pyFiles, 'start_observability_token_service') ||
+                           anyFileContains(pyFiles, 'run_token_service');
     if (!hasS2SScaffold) {
-      issues.push('S2S: observability/observability_token_service.py scaffold or start_observability_token_service() not found');
+      issues.push('S2S: observability/observability_token_service.py scaffold or run_token_service() not found');
     }
-    const hasS2SEndpoint = anyFileContains(pyFiles, 'use_s2s_endpoint');
+    const hasS2SEndpoint = anyFileContains(pyFiles, 'use_s2s_endpoint') ||
+                           anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
     if (!hasS2SEndpoint) {
-      issues.push('S2S: use_s2s_endpoint not set to True in observability configuration');
+      issues.push('S2S: use_microsoft_opentelemetry() or use_s2s_endpoint not found in observability configuration');
     }
   }
 

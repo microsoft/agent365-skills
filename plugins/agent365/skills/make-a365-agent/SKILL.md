@@ -1,8 +1,8 @@
 ---
 name: make-a365-agent
-version: 1.4.2
+version: 1.5.0
 description: >
-  Provisions a non-AI Teammate agent with Agent 365 — use this skill for Discoverability
+  Provisions a non-AI Teammate agent with Agent 365 — use this skill for Register
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.
   After setup, always offers instrument-observability (optional) and add-workiq-tools (optional)
   as add-ons regardless of capability path. Supports .NET AgentFramework, Node.js, and Python agents.
@@ -43,9 +43,9 @@ hooks:
 
 > **Trigger phrases** — any of these will activate this skill:
 > - "provision this agent with agent 365"
-> - "register this agent for discoverability"
-> - "make this agent findable in the m365 catalog"
-> - "discoverability setup for this agent"
+> - "register this agent"
+> - "make this agent findable in the Agent 365 catalog"
+> - "Registration setup for this agent"
 > - "make this a custom engine agent"
 > - "run a365 setup all"
 > - "create a365 blueprint for this agent"
@@ -80,16 +80,16 @@ the session already has `capabilities`, `agentStack`, `programmingLanguage`, and
 ```
 What capabilities would you like to enable? (options can be combined)
 
-  1. Discoverability — make the agent findable in the M365 catalog
+  1. Register — make the agent findable in the Agent 365 catalog
   2. Observability — end-to-end activity tracing for every message, LLM call,
      and tool use, visible in the Agent 365 portal and Microsoft Defender
-  3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
-  4. AI Teammate (Digital Worker) — the agent needs a first-class M365 identity
+  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  4. AI Teammate — the agent needs a first-class M365 identity
      (Agentic User with UPN, mailbox, presence). Handled by a different skill.
 ```
 
-   - If the user selects **option 4 (AI Teammate / Digital Worker)** — stop here and tell them:
-     > "AI Teammate (Digital Worker) setup is handled by the `make-ai-teammate` skill. Run `/agent365:a365-setup` and select the AI Teammate path, or invoke `make-ai-teammate` directly."
+   - If the user selects **option 4 (AI Teammate)** — stop here and tell them:
+     > "AI Teammate setup is handled by the `make-ai-teammate` skill. Run `/agent365:a365-setup` and select the AI Teammate path, or invoke `make-ai-teammate` directly."
    - Otherwise store the answer as `capabilities` and continue.
 
 **Create all todos for this session:**
@@ -180,6 +180,8 @@ Set `messagingEndpoint = "${tunnelUrl}/api/messages"`.
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --dry-run
 ```
 
+> **`--authmode` flag:** If the user's auth mode is known from `.a365-workspace-detection.json`, append `--authmode obo`, `--authmode s2s`, or `--authmode both` to all `setup all` commands. This controls how the agent identity SP receives permissions (OBO = principal-scoped delegated grants, S2S = application app-role assignments requiring GA, both = both).
+
 Show the full dry-run output to the user, then ask:
 
 > "Here's what `a365 setup all` will create. Does this look correct? Type **yes** to proceed or **no** to abort."
@@ -192,8 +194,13 @@ Show the full dry-run output to the user, then ask:
 Choose the right flags based on the detected agent type:
 
 ```bash
-# Standard Agent (Non Digital Worker) — default
+# Agent (Non AI Teammate) — default
 cd "<project_dir>" && a365 setup all --agent-name <agent_name>
+
+# With explicit auth mode (append based on .a365-workspace-detection.json authMode)
+cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode obo
+cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode s2s
+cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode both
 
 # Custom Engine Agent (CEA) with Teams/Copilot integration — add --m365
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --m365
@@ -208,7 +215,7 @@ This is required for Messaging Bot API grants and must follow `setup all` (which
 This command:
 - Creates the Agent 365 Blueprint in Entra ID (agent identity + app registration)
 - Grants required Entra ID permissions
-- For Discoverability: makes the agent findable in the M365 catalog
+- For registration: makes the agent findable in the Agent 365 catalog
 - For Custom Engine Agents (`--m365`): registers the endpoint via MCP Platform
 
 Monitor output carefully:
@@ -217,6 +224,7 @@ Monitor output carefully:
 
 > **Windows Account Manager (WAM):** If you see `"Authenticating via Windows Account Manager..."` in the output, a native Windows sign-in dialog has appeared. Do NOT kill the process. Tell the user: "A Windows sign-in dialog has appeared — please complete it. Setup will continue automatically after you sign in."
 > - If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions` to populate the token cache, then retry.
+> - **Conditional Access Policy (CAP):** If WAM/browser auth is blocked by CAP (AADSTS53003, AADSTS53000), the CLI automatically falls back to device code flow — no user action needed.
 
 **Handle these conditions:**
 
@@ -224,6 +232,7 @@ Monitor output carefully:
 |-----------|--------|
 | `Graph API Forbidden / Authorization_RequestDenied` | Stop. Resolve permission issue (return to a365-setup Step 2 or grant the role). Then re-run. |
 | Interactive browser auth required | If headless, instruct user to use `az login --device-code` first. |
+| `managerApplications` error / blueprint rejected | Blueprint was created before May 2025 and lacks `managerApplications`. Delete and re-run `a365 setup all`, or patch via Graph API. |
 
 `a365 setup all` is idempotent — safe to re-run after fixing an issue.
 
@@ -233,12 +242,11 @@ After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
 2. **If the CLI printed an admin consent action item (Permission Grants):** Show all options:
-   - Option A (Entra portal steps)
-   - Option B (PowerShell script)
-   - Option C — **simplest path** — GA runs: `a365 setup admin --blueprint-id <id from setup output>`
+   - Option A — **Entra portal** (no CLI needed): [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions > Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c` > add both Delegated and Application `Agent365.Observability.OtelWrite` > Grant admin consent
+   - Option B — **PowerShell script** printed in the `a365 setup all` summary output (copy and run as GA)
 
    Tell the user:
-   > "If admin consent is required, have a Global Admin use Option C (preferred) or the PowerShell script above."
+   > "If admin consent is required, have a Global Administrator use Option A (Entra portal) or the PowerShell script shown in the setup output above."
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.
@@ -303,7 +311,7 @@ Show the user a summary:
 
 Your agent now has:
   • Blueprint:       Created in Entra ID (run `a365 status --field agentBlueprintId` to retrieve)
-  • Discoverability: Agent appears in the M365 catalog
+  • Register: Agent appears in the Agent 365 catalog
   [• Observability:  OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:   M365 data access via MCP]                     (if added)
 

@@ -320,7 +320,7 @@ header('Done');
 console.log('\n  Skills installed! Try these trigger phrases:\n');
 console.log('    💡 "Make this agent an AI Teammate"');
 console.log('    💡 "Run a365 setup for this agent"');
-console.log('    💡 "Discoverability setup for this agent"');
+console.log('    💡 "Registration setup for this agent"');
 console.log('    💡 "Add workiq tools to this agent"');
 console.log('    💡 "Instrument observability for this agent"');
 console.log('    💡 "Add A365 observability to this Python agent"');

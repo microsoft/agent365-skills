@@ -1,9 +1,9 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.4.2-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for Discoverability or Observability paths, wiring WorkIQ MCP tools, instrumenting observability, and local testing with AgentsPlayground.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -84,11 +84,11 @@ gh copilot suggest "Instrument observability for this agent"
 ```
 a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 │
-├─ AI Teammate (Digital Worker)  → make-ai-teammate  (adds hosting layer + DW identity)
+├─ AI Teammate  → make-ai-teammate  (adds hosting layer + AI Teammate identity)
 │     user OBO or OBO Agent Identity                ├─ instrument-observability  (optional, offered automatically)
 │     (always OBO-based)                            └─ add-workiq-tools          (optional, offered automatically)
 │
-└─ Standard Agent (Non Digital Worker) → make-a365-agent  (Blueprint + Entra permissions)
+└─ Agent (Non AI Teammate) → make-a365-agent  (Blueprint + Entra permissions)
       Assistive (OBO) or                       ├─ instrument-observability  (optional, offered automatically)
       Autonomous (S2S)                         └─ add-workiq-tools          (optional, Assistive only)
 
@@ -110,9 +110,9 @@ test-local  ← standalone; run at any point to test your agent locally
 
 ## Skills
 
-### `make-ai-teammate` — Transform Any Agent into an AI Teammate (Digital Worker)
+### `make-ai-teammate` — Transform Any Agent into an AI Teammate
 
-An **AI Teammate** is a **Digital Worker (DW)** — an agent with a first-class M365 identity. It has an Agentic User with a UPN, mailbox, and presence in your tenant, and behaves like a real colleague inside Teams, Outlook, and other Microsoft 365 apps. It is designed for ongoing, human-like teamwork.
+An **AI Teammate** is an agent with a first-class M365 identity. It has an Agentic User with a UPN, mailbox, and presence in your tenant, and behaves like a real colleague inside Teams, Outlook, and other Microsoft 365 apps. It is designed for ongoing, human-like teamwork.
 
 **Before this skill:** Your agent is a standalone script or HTTP server with no Teams presence.
 
@@ -136,8 +136,8 @@ Detects your agent stack and asks which capabilities you want, then delegates to
 
 | Path | Delegated to |
 |------|-------------|
-| **AI Teammate (Digital Worker)** | `make-ai-teammate` — adds A365 hosting layer + DW identity (Blueprint created by a365-setup) |
-| **Standard Agent (Non Digital Worker)** — Discoverability / Observability / WorkIQ | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
+| **AI Teammate** | `make-ai-teammate` — adds A365 hosting layer + AI Teammate identity (Blueprint created by a365-setup) |
+| **Agent (Non AI Teammate)** — Registration / Observability / WorkIQ | `make-a365-agent` — Blueprint provisioning + optional observability/WorkIQ |
 
 Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azure CLI login, checks Entra ID roles, and confirms language-specific build tools. After prerequisites are confirmed, all remaining work is handed off.
 
@@ -151,13 +151,13 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 ---
 
-### `make-a365-agent` — Provision Standard Agent (Non Digital Worker) Agents
+### `make-a365-agent` — Provision Agent (Non AI Teammate) Agents
 
-Provisions a **Standard Agent (Non Digital Worker)** with Agent 365. A Standard Agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
+Provisions an **Agent (Non AI Teammate)** with Agent 365. A Standard Agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
-> **Taxonomy:** Standard Agent (Non Digital Worker) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Standard Agent (Non Digital Worker), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
+> **Taxonomy:** Agent (Non AI Teammate) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Agent (Non AI Teammate), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
 >
-> CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate (Digital Worker).
+> CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate.
 
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required
@@ -166,8 +166,8 @@ Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirm
 
 | Capability | What it does |
 |-----------|-------------|
-| **Discoverability** | Blueprint + Entra permissions. Agent appears in the M365 catalog. |
-| **Discoverability + Observability** | Same, then invokes `instrument-observability`. |
+| **Register** | Blueprint + Entra permissions. Agent appears in the Agent 365 catalog. |
+| **Register + Observability** | Same, then invokes `instrument-observability`. |
 | **Observability** (Custom Engine Agent / Standard Agent) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
 | **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
 
@@ -175,18 +175,18 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 
 **Trigger phrases:**
 ```
-"Register this agent for discoverability"    "Discoverability setup for this agent"
-"Make this agent findable in the M365 catalog"
+"register this agent"    "Registration setup for this agent"
+"Make this agent findable in the Agent 365 catalog"
 "Make this a custom engine agent"            "Run a365 setup all"
 "Create A365 blueprint for this agent"
 ```
 
 ---
 
-### `add-workiq-tools` — Add WorkIQ MCP Tools
+### `add-workiq-tools` — Add WorkIQ MCP servers
 
 > **Prerequisite:** `a365-setup` must be run first.
-> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates (Digital Worker) and Standard Agent (Non Digital Worker) Assistive (OBO). Not available for Standard Agent Autonomous (S2S).
+> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates and Agent (Non AI Teammate) Assistive (OBO). Not available for Standard Agent Autonomous (S2S).
 
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
@@ -213,8 +213,8 @@ Instruments OpenTelemetry-based tracing, context propagation, and the A365 expor
 wiring any code, asks a two-stage question to determine **agent kind** and **auth mode** — the answers drive which token path is wired:
 
 **Stage 1 — Agent kind:**
-- **AI Teammate (Digital Worker)**: has Agentic User with UPN; then asks whether it uses `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity). **Both support Observability and WorkIQ.**
-- **Standard Agent (Non Digital Worker)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
+- **AI Teammate**: has Agentic User with UPN; then asks whether it uses `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity). **Both support Observability and WorkIQ.**
+- **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
 
 **Wiring by auth mode:**
 - **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
@@ -295,22 +295,22 @@ I have a Python agent using AgentFramework. Make it a Microsoft Agent 365
 AI Teammate with aiohttp hosting and email notification handling.
 ```
 
-**Register for Discoverability only (no Teams hosting):**
+**Registration only (no Teams hosting):**
 ```
-Register this agent so it shows up in the M365 catalog.
-I'll handle hosting myself — Discoverability setup only.
+Register this agent so it shows up in the Agent 365 catalog.
+I'll handle hosting myself — registration only.
 ```
 
-**Discoverability + Observability:**
+**Registration + Observability:**
 ```
-Register this agent for discoverability and add A365 observability so I can
+Register this agent and add A365 observability so I can
 track LLM calls and tool invocations in Microsoft Defender.
 ```
 
-**Custom Engine Agent (Standard Agent / Non Digital Worker) — add observability and WorkIQ:**
+**Custom Engine Agent (Agent (Non AI Teammate)) — add observability and WorkIQ:**
 ```
 This is a Custom Engine Agent already available in Microsoft Teams and Copilot.
-It is a Standard Agent (Non Digital Worker) — not an AI Teammate.
+It is an Agent (Non AI Teammate) — not an AI Teammate.
 Add A365 observability and WorkIQ Mail, Calendar, and Teams tools.
 ```
 
@@ -320,9 +320,9 @@ Add Work IQ Mail and Work IQ Calendar to this agent.
 Our blueprint already exists — tell me what to give our Global Administrator.
 ```
 
-**Standard Agent (Non Digital Worker) with S2S observability (.NET):**
+**Agent (Non AI Teammate) with S2S observability (.NET):**
 ```
-This is a .NET Standard Agent (Non Digital Worker) that runs autonomously — no signed-in user.
+This is a .NET Agent (Non AI Teammate) that runs autonomously — no signed-in user.
 Add A365 observability with S2S auth (MSAL client credentials).
 ```
 
@@ -335,12 +335,12 @@ Check which Agent 365 capabilities have already been applied to this agent and t
 
 ## What's Included
 
-- **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP tools, observability instrumentation, and local testing with AgentsPlayground
+- **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP servers, observability instrumentation, and local testing with AgentsPlayground
 - **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
-- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate (Digital Worker) vs Standard Agent (Non Digital Worker)) and auth mode (user-delegated / agentic-identity / S2S); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
+- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (user-delegated / agentic-identity / S2S); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
-- **WorkIQ MCP tools** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
+- **WorkIQ MCP servers** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365
 
 ---
 

@@ -5,8 +5,8 @@
     {
       "id": 1,
       "prompt": "Run a365 setup for this agent",
-      "description": "Discoverability path (Standard Agent) — .NET AgentFramework, delegated from a365-setup",
-      "expected_output": "Skill reads context (capabilities=Discoverability, usesTeamsOrCopilot=0) from session. Creates 3 todos (Register, Add Observability optional, Add WorkIQ optional). Runs a365 setup all --dry-run, confirms, runs setup. Shows Setup Summary verbatim. Then always offers observability (Phase 3) and WorkIQ (Phase 4) as optional add-ons.",
+      "description": "Register path (Standard Agent) — .NET AgentFramework, delegated from a365-setup",
+      "expected_output": "Skill reads context (capabilities=Register, usesTeamsOrCopilot=0) from session. Creates 3 todos (Register, Add Observability optional, Add WorkIQ optional). Runs a365 setup all --dry-run, confirms, runs setup. Shows Setup Summary verbatim. Then always offers observability (Phase 3) and WorkIQ (Phase 4) as optional add-ons.",
       "files": [],
       "expectations": [
         "Phase 0: capabilities, agentStack, programmingLanguage, usesTeamsOrCopilot loaded from session context or detection cache",

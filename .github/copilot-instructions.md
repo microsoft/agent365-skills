@@ -57,7 +57,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "publish agent"
 
 **Summary of what this skill does:**
-1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Discoverability, Observability, Tools (WorkIQ), or AI Teammate (Digital Worker)
+1. Detects agent stack and language; shows detection summary; asks `authMode` (OBO/delegated, S2S/autonomous, or Both) **before** presenting capabilities — WorkIQ is hidden from the menu when `authMode = "s2s"` (WorkIQ requires a user token); then asks which capabilities to enable: Register, Observability, WorkIQ, or AI Teammate
    - **CEA guard:** if the project is a Custom Engine Agent and the user selects AI Teammate, blocks the selection and re-presents options 1–3 (CEA is not supported as AI Teammate)
 2. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and the collected `authMode` — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking
 3. Runs a full system prerequisite scan (parallel version checks) and prompts the user to install any missing tools: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools (Node.js/npm or Python/uv). Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
@@ -76,9 +76,9 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "provision agent with a365"
 - "run a365 setup all"
 - "create a365 blueprint"
-- "discoverability setup"
+- "Registration setup"
 - "observability setup"
-- "register agent for discoverability"
+- "register this agent"
 - "set up agent for observability"
 - "add workiq to this agent"
 - "make this a custom engine agent"
@@ -86,9 +86,9 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 **Summary of what this skill does:**
 1. Collects agent name (supports `default` → `developer` fallback; passes name verbatim — no case normalization) and project directory; asks whether the agent is cloud-hosted or local/dev-tunnel (guides through `devtunnel create/host` if local)
 2. Shows a dry-run preview of all `a365` operations before applying anything
-3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process
+3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s|both` to control permission type. Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
 4. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
-5. Guides the Global Administrator consent handoff: `a365 setup admin --blueprint-id <id>` (preferred) or PowerShell script
+5. Guides the Global Administrator consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell script from `a365 setup all` output
 
 **Normally delegated to from `a365-setup`** after CLI and Azure prerequisites are confirmed. Can also be invoked directly.
 
@@ -104,7 +104,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "add work intelligence tools"
 - "add microsoft 365 tools"
 - "wire up workiq"
-- "add mcp tools to this agent"
+- "add MCP servers to this agent"
 - "add work iq mail"
 - "add work iq calendar"
 
@@ -114,7 +114,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 2. Runs `a365 develop list-available` to show the MCP server catalog
 3. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
 4. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
-5. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; use `a365 setup admin --blueprint-id <id>` for the full consent handoff)
+5. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; supports V1/V2 mixed manifests, use `--remove-legacy-scopes` for V2 migration)
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.json` to skip re-detection.
 
@@ -152,13 +152,13 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 **Summary of what this skill does:**
 1. Loads detection cache; asks a two-stage question (agent kind + auth mode) if not already cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.json` so `add-workiq-tools` and future runs skip re-asking
-2. Installs the observability packages (`Microsoft.Agents.A365.Observability.Runtime` + `Microsoft.Agents.A365.Observability.Hosting` for .NET; `@microsoft/agents-a365-runtime` + `@microsoft/agents-a365-observability` for all Node.js agents, plus `@microsoft/agents-a365-observability-hosting` for hosting-path scenarios; `microsoft-agents-a365-runtime` + `microsoft-agents-a365-observability-core` for all Python agents, plus `microsoft-agents-a365-observability-hosting` for hosting-path scenarios — **Python requires `--pre` flag for 0.3.x API**)
-3. **OBO path** (user-delegated / agentic-identity): wires `AddAgenticTracingExporter()` and per-turn `RegisterObservability(agentId, tenantId, new AgenticTokenStruct(userAuthorization, turnContext, "AGENTIC"), scopes)` — four arguments required
-4. **S2S path (all languages)**: Creates a scaffold token-service file that acquires/refreshes the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials every 50 min.
-   - **.NET**: creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`; wires `AddAgent365Observability()`; in the message handler uses `new BaggageBuilder().FromTurnContext(turnContext).Build()` (separate `using var`) and `InvokeAgentScope.Start(request, new InvokeAgentScopeDetails(endpoint: new Uri(...)), agentDetails)` (separate `using var`) — **NOT chained; `FromTurnContext()` is a `BaggageBuilder` extension only**
-   - **Node.js**: creates `observability/observability-token-service.ts`; calls `await startObservabilityTokenService()` before `ObservabilityManager.configure()`; sets `exporterOptions.useS2SEndpoint = true`
-   - **Python**: creates `observability/observability_token_service.py`; schedules `start_observability_token_service()` as `asyncio.create_task()`; sets `use_s2s_endpoint=True` in `Agent365ExporterOptions`
-5. Updates `appsettings.json` (for .NET) with `Agent365Observability` section; S2S adds `ClientId` + `ClientSecret`; creates `appsettings.Development.json` with exporter disabled
+2. Installs the observability packages: unified distros for all paths — `Microsoft.OpenTelemetry` for .NET, `@microsoft/opentelemetry` for Node.js, `microsoft-opentelemetry` for Python. Legacy individual packages (`Microsoft.Agents.A365.Observability.*`, `@microsoft/agents-a365-*`, `microsoft-agents-a365-observability-*`) still accepted by the validator but no longer generated.
+3. **OBO path** (user-delegated / agentic-identity): calls `useMicrosoftOpenTelemetry()` (Node.js/Python) or `UseMicrosoftOpenTelemetry()` + `AddAgenticTracingExporter()` (.NET) with token resolver wired to per-turn token refresh
+4. **S2S path (all languages)**: Creates a scaffold token-service file that acquires/refreshes the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL with FMI path support every 50 min.
+   - **.NET**: creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`; uses MSAL `ConfidentialClientApplicationBuilder` with `.WithFmiPath()` for FMI 3-hop chain; wires `UseMicrosoftOpenTelemetry()` + `AddAgent365Observability()`; in the message handler uses `new BaggageBuilder().FromTurnContext(turnContext).Build()` (separate `using var`) and `InvokeAgentScope.Start(request, new InvokeAgentScopeDetails(endpoint: new Uri(...)), agentDetails, callerDetails)` (separate `using var`) — **NOT chained; `FromTurnContext()` is a `BaggageBuilder` extension only**; `CallerDetails` with blueprint sponsor identity is **required** for S2S traces to appear
+   - **Node.js**: creates `observability/observability-token-service.ts` + `observability/token-cache.ts`; uses MSAL with `fmiPath` for FMI chain; calls `useMicrosoftOpenTelemetry({ a365: { enabled: true, tokenResolver } })` from `@microsoft/opentelemetry`
+   - **Python**: creates `observability/observability_token_service.py` + `observability/token_cache.py`; uses MSAL with `fmi_path` for FMI chain; calls `use_microsoft_opentelemetry(enable_a365=True, a365_token_resolver=...)` from `microsoft.opentelemetry`
+5. Updates `appsettings.json` (for .NET) with `Agent365Observability` section; S2S adds `ClientId`, `ClientSecret`, and `UseManagedIdentity: true`; creates `appsettings.Development.json` with exporter disabled. Note: `a365 setup all` (CLI 1.1+) auto-writes placeholder sections — skill checks for existing placeholders before creating from scratch.
 6. Validates the build passes
 
 **Auth mode note:** All three `authMode` values use `authHandlerName: "AGENTIC"` in SDK code — the difference is Azure AD provisioning, not code structure. S2S is supported for .NET, Node.js, and Python.
@@ -235,7 +235,7 @@ Skills are **additive and idempotent** — never delete or restructure existing 
 
 ```
 a365-setup  →  make-ai-teammate    (AI Teammate path)
-            →  make-a365-agent     (Discoverability / Observability / WorkIQ paths)
+            →  make-a365-agent     (Registration / Observability / WorkIQ paths)
 
 make-ai-teammate  →  instrument-observability  (Strongly Recommended)
                   →  add-workiq-tools          (Optional)

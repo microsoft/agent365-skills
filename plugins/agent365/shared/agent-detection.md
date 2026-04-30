@@ -20,8 +20,8 @@ The skill MUST detect and store these three variables before asking ANY question
 3. **`usesTeamsOrCopilot`** — Does this agent have M365 / Teams / Copilot integration markers?
    - Possible values: `1` (M365 CEA detected) or `0` (no M365 integration detected)
    - Detection: Check for CEA signals across file presence, packages, and config (see below)
-   - Note: `0` does not mean the agent is not a Standard Agent (Non Digital Worker) — it may be a non-M365 CEA, a background
-     automation agent, Agent Builder agent, SharePoint agent, or other Standard Agent (Non Digital Worker) type. It simply means
+   - Note: `0` does not mean the agent is not an Agent (Non AI Teammate) — it may be a non-M365 CEA, a background
+     automation agent, Agent Builder agent, SharePoint agent, or other Agent (Non AI Teammate) type. It simply means
      no Teams/Copilot markers were detected, so the M365 CEA registration path is not triggered.
 
 ### Agent Stack Detection Logic
@@ -86,7 +86,7 @@ BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 
 ```
 Step 1: Unsupported? (M365/Teams/BizChat non-AI-teammate) → STOP
-Step 2: Digital worker?                                    → Warn, special publish path
+Step 2: AI Teammate?                                    → Warn, special publish path
 Step 3: Supported type? (dotnet-agentframework, dotnet-semantic-kernel, nodejs-langchain, python-agentframework) → Full support
 Step 4: Near-match? (nodejs-openai, nodejs-claude, nodejs-google-adk, nodejs-semantic-kernel, python-openai, python-claude, python-google-adk, python-langchain, python-semantic-kernel) → Best-effort + confirm
 Step 5: Unknown (no signals)                               → Ask user
@@ -126,20 +126,20 @@ explicitly listed CEA markers above are sufficient exceptions: the structural fi
 Teams AI SDK package references (`@microsoft/teams-ai`, `Microsoft.Teams.AI`, `teams-ai`).
 Do not treat generic Bot Framework packages as standalone CEA markers.
 
-- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent (Standard Agent / Non Digital Worker). **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
+- **M365 signal found AND any CEA marker found** → This is a Custom Engine Agent (Agent (Non AI Teammate)). **Do NOT block.** Set `usesTeamsOrCopilot = 1`, continue to Step 2.
 - **M365 signal found AND NO CEA marker found** → Likely a Teams/BizChat/Copilot channel bot. **STOP** (see message below), unless user explicitly confirms CEA or AI Teammate intent.
 
 > Tell the user (STOP case only):
 > "This agent is configured for Teams channels, BizChat, or Microsoft Copilot.
 > Non-AI-teammate channel bots cannot be registered as A365 blueprints.
-> Only AI Teammate (Digital Worker) agents and Custom Engine Agents (as Non-DW) are supported.
+> Only AI Teammate agents and Custom Engine Agents (as Non AI Teammate) are supported.
 > If this detection is wrong (e.g., this is a Custom Engine Agent), confirm explicitly."
 
 Write marker: `.a365setup-m365-blocked` (setup) or skip instrumentation (observability).
 
 ---
 
-## Step 2 — Digital Worker Detection
+## Step 2 — AI Teammate Detection
 
 ```
 Glob: **/ToolingManifest.json
@@ -148,13 +148,13 @@ Grep: "digital_worker"  in ToolingManifest.json
 Grep: "digitalWorker"   in *.json
 ```
 
-**If digital worker detected:**
+**If AI Teammate detected:**
 - Observability instrumentation: continue, but flag in summary
 - Setup/publish: `a365 setup all` + `a365 publish` → manual admin upload to MAC (no API yet)
 
 Write markers: `.a365obs-digital-worker`, `.a365setup-digital-worker`
 
-### Digital worker manual upload path
+### AI Teammate manual upload path
 
 ```
 After a365 publish:
@@ -316,7 +316,7 @@ The agent has both an Entra app registration AND an existing A365 Blueprint. You
 
 ### registrationType 3 — All other agents
 
-Standard A365 agent with no M365 custom engine configuration. Fresh setup or Discoverability-only registration.
+Standard A365 agent with no M365 custom engine configuration. Fresh setup or Register-only registration.
 
 | Signal | Detection |
 |--------|-----------|
@@ -326,9 +326,9 @@ Standard A365 agent with no M365 custom engine configuration. Fresh setup or Dis
 
 **Pre-fill:** `registrationType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
 
-### Discoverability detection signals
+### Registration detection signals
 
-Agents needing Discoverability capability (registrationType 3, non-AI Teammate) typically show these signals:
+Agents needing Register capability (registrationType 3, non-AI Teammate) typically show these signals:
 
 | Signal | Meaning |
 |--------|---------|
@@ -337,7 +337,7 @@ Agents needing Discoverability capability (registrationType 3, non-AI Teammate) 
 | No `manifest/manifest.json` | Agent has never been published |
 | Agent has observable business logic | Standard LLM agent with no Teams/M365 channel config |
 
-If all four signals are true and the user hasn't specified AI Teammate intent, suggest: **"Would you like to register this agent for Discoverability only, or deploy it as an AI Teammate?"**
+If all four signals are true and the user hasn't specified AI Teammate intent, suggest: **"Would you like to register this agent for registration only, or deploy it as an AI Teammate?"**
 
 ---
 
@@ -443,26 +443,26 @@ Write marker: `.a365obs-appid-warned` to avoid repeating the warning.
 ### Stage 1 — What kind of agent is this?
 
 Pre-fill from cache if `usesTeamsOrCopilot` is already known:
-- `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate (Digital Worker)**, ask to confirm
-- `usesTeamsOrCopilot = 0` → suggest **B — Standard Agent (Non Digital Worker)**, ask to confirm
+- `usesTeamsOrCopilot = 1` → suggest **A — AI Teammate**, ask to confirm
+- `usesTeamsOrCopilot = 0` → suggest **B — Agent (Non AI Teammate)**, ask to confirm
 
 ```
 AskUserQuestion:
   question: |
     🤖 First — what kind of agent is this?
 
-    A — AI Teammate (Digital Worker)
+    A — AI Teammate
         Has a first-class M365 identity — an Agentic User with a UPN, mailbox, and
         presence in your tenant. Behaves like a real colleague inside Teams and Outlook.
         Designed for ongoing, human-like teamwork.
 
-    B — Standard Agent (Non Digital Worker)
+    B — Agent (Non AI Teammate)
         No Agentic User identity (no UPN). Task-oriented, system-oriented, or assistive.
         Uses an Entra App ID or Agent Blueprint + Agent Identity.
         Appears as a system or service agent, not as a virtual teammate.
   options:
-    - "A — AI Teammate (Digital Worker)"
-    - "B — Standard Agent (Non Digital Worker)"
+    - "A — AI Teammate"
+    - "B — Agent (Non AI Teammate)"
 ```
 
 Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
@@ -497,12 +497,12 @@ AskUserQuestion:
 
 ---
 
-### Stage 2b — If Standard Agent (Non Digital Worker)
+### Stage 2b — If Agent (Non AI Teammate)
 
 ```
 AskUserQuestion:
   question: |
-    How does this Standard Agent (Non Digital Worker) execute?
+    How does this Agent (Non AI Teammate) execute?
 
     1 — Autonomous (S2S / Service Principal)
         Agent runs independently as itself — no signed-in user required.
@@ -531,10 +531,10 @@ AskUserQuestion:
 
 | `agentType` | Label | `authMode` |
 |------------|-------|-----------|
-| `ai-teammate` (Digital Worker) | Access data as the signed-in user | `user-delegated` |
-| `ai-teammate` (Digital Worker) | Its own persistent identity in your org | `agentic-identity` |
-| `system-agent` (Standard Agent / Non Digital Worker) | Autonomous (S2S / Service Principal) | `S2S` |
-| `system-agent` (Standard Agent / Non Digital Worker) | Assistive (OBO) | `agentic-identity` |
+| `ai-teammate` | Access data as the signed-in user | `user-delegated` |
+| `ai-teammate` | Its own persistent identity in your org | `agentic-identity` |
+| `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `S2S` |
+| `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `agentic-identity` |
 
 ---
 
@@ -542,10 +542,10 @@ AskUserQuestion:
 
 | Agent kind | `authMode` | Observability | WorkIQ tools |
 |-----------|-----------|---------------|-------------|
-| AI Teammate (DW) | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
-| AI Teammate (DW) | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
-| Standard Agent (Non Digital Worker) | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Standard Agent (Non Digital Worker) | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
+| AI Teammate | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
+| AI Teammate | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
+| Agent (Non AI Teammate) | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
+| Agent (Non AI Teammate) | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
 
 ---
 
@@ -565,12 +565,12 @@ Add this inline comment wherever the auth handler is wired:
 
 The `agentic-identity` authMode is used in two distinct contexts:
 
-- **AI Teammate (Digital Worker)** — The agentic user IS the DW's identity: a real Azure AD user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
+- **AI Teammate** — The agentic user IS the AI Teammate's identity: a real Azure AD user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
   > "An AI Teammate requires an agentic user provisioned in Azure AD.
   > Follow the identity setup guide:
   > https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
 
-- **Non-DW agent (Assistive OBO)** — No agentic user (no UPN). The agent uses its own Entra App ID or Agent Blueprint identity to facilitate the OBO flow on behalf of the signed-in user.
+- **Non AI Teammate agent (Assistive OBO)** — No agentic user (no UPN). The agent uses its own Entra App ID or Agent Blueprint identity to facilitate the OBO flow on behalf of the signed-in user.
 
 `user-delegated` has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `S2S` authenticates with the agent blueprint's own credentials (service principal).
 

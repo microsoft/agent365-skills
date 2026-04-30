@@ -1,6 +1,6 @@
 ---
 name: add-workiq-tools
-version: 1.4.2
+version: 1.5.0
 description: >
   Adds WorkIQ MCP tool servers to an existing .NET AgentFramework, Node.js, or Python agent
   using the A365 CLI. Runs a365 develop list-available to show the catalog, adds selected servers
@@ -51,7 +51,7 @@ hooks:
 > - "add work iq mail to this agent"
 > - "add work iq calendar to this agent"
 > - "let this agent read emails and calendar events"
-> - "wire up workiq mcp tools"
+> - "wire up workiq MCP servers"
 
 ---
 
@@ -189,6 +189,8 @@ If not found, note this — user will need to run `a365 setup` at some point. Do
 a365 develop list-available
 ```
 
+> **Note:** `a365 develop list-available` does not require `a365.config.json` — it reads the environment from `A365_ENVIRONMENT` env var (defaults to `prod`). The output now includes a `Version` column showing `V1` or `V2` for each server.
+
 Show the output to the user. The catalog includes WorkIQ servers (mail, calendar, Teams, SharePoint,
 OneDrive, Word, user/presence, Copilot) and Dataverse/Dynamics 365.
 
@@ -229,6 +231,9 @@ Run the command **once** with all selected names space-separated:
 
 ```bash
 a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+
+# If running from a different directory, use --project-path:
+a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar" --project-path "<project_dir>"
 ```
 
 (Adjust to include whichever servers the user selected.)
@@ -244,7 +249,7 @@ This command creates `ToolingManifest.json` if it does not exist, or adds the se
 a365 develop list-configured
 ```
 
-Confirm each selected server now appears in the output.
+Confirm each selected server now appears in the output. The `Version` column shows `V1` or `V2` based on the server's scope pattern.
 
 If a server was already configured, that is expected — the CLI is idempotent.
 
@@ -445,7 +450,13 @@ If yes, tell the user:
 >
 > **Step 2 — Admin runs (from the project directory where `a365.config.json` lives):**
 > ```bash
-> a365 setup permissions mcp  # grants OAuth2 grants for all servers in manifest
+> a365 setup permissions mcp  # grants OAuth2 grants for all servers in manifest (handles V1 + V2 mixed manifests)
+> ```
+>
+> **MCP V1/V2 migration:** If migrating from V1 to V2 servers and the admin wants to remove legacy shared-audience scopes:
+> ```bash
+> a365 setup permissions mcp --remove-legacy-scopes --dry-run  # preview what would be removed
+> a365 setup permissions mcp --remove-legacy-scopes            # apply
 > ```
 >
 > **Step 3 — After admin confirms permissions are granted, continue testing.**

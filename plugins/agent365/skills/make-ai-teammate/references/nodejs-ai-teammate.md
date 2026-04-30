@@ -642,7 +642,7 @@ OPENAI_MODEL=gpt-4o
 # Option C: Claude (Anthropic)
 ANTHROPIC_API_KEY=
 
-# ── WorkIQ MCP Tools ──────────────────────────────────────────────────────────
+# ── WorkIQ MCP servers ──────────────────────────────────────────────────────────
 # Single fallback dev token (from: a365 develop get-token)
 BEARER_TOKEN=
 # V2 per-server tokens (preferred, SDK reads BEARER_TOKEN_<SERVER_NAME_UPPER>)
