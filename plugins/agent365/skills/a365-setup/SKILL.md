@@ -52,7 +52,7 @@ hooks:
 > - "connect this agent to agent 365"
 > - "make this agent an a365 agent"
 > - "make this agent an ai teammate"
-> - "make this agent discoverable in m365"
+> - "make this agent discoverable in Agent 365"
 > - "create a365 blueprint"
 > - "start agent 365 setup"
 
@@ -98,7 +98,7 @@ Check the following signals **in parallel** (Glob + Grep).
 - `botbuilder-core` in requirements.txt or pyproject.toml + structural marker → CEA
 - `BOT_ID`, `MicrosoftAppId`, or `TEAMS_APP_ID` in .env/appsettings.json + structural marker → CEA
 
-If no strong standalone signal and no valid pairing → `0` (Standard Agent (Non Digital Worker), no M365 integration detected — may be a non-M365 CEA or other Standard Agent (Non Digital Worker) type)
+If no strong standalone signal and no valid pairing → `0` (Agent (Non AI Teammate), no M365 integration detected — may be a non-M365 CEA or other Agent (Non AI Teammate) type)
 
 ### Phase 1B: User Validation Questions
 
@@ -109,8 +109,8 @@ Here's what we detected about your agent:
   • Stack:         {agentStack}
   • Language:      {programmingLanguage}
   • Agent type:    {usesTeamsOrCopilot == 1
-                     ? "M365 Custom Engine Agent (CEA) — Standard Agent (Non Digital Worker) with Teams/Copilot integration"
-                     : "Standard Agent (Non Digital Worker) — no Teams/Copilot markers detected (may be a non-M365 CEA, background agent, or other Standard Agent (Non Digital Worker) type)"}
+                     ? "M365 Custom Engine Agent (CEA) — Agent (Non AI Teammate) with Teams/Copilot integration"
+                     : "Agent (Non AI Teammate) — no Teams/Copilot markers detected (may be a non-M365 CEA, background agent, or other Agent (Non AI Teammate) type)"}
 
 Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
@@ -118,7 +118,7 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 
 - If the user replies **yes / y**: accept all values and proceed to the final capabilities question below.
 - If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the final capabilities question below.
-- If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Standard Agent (Non Digital Worker) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
+- If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Agent (Non AI Teammate) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
 - If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
 
 **Auth mode question (ask before capabilities):**
@@ -150,16 +150,16 @@ Wait for the answer. Store as `authMode`:
 
 Present only the options that apply — **omit WorkIQ when `authMode = "s2s"`** and omit or note option 4 if CEA was detected:
 
-  1. Discoverability — make the agent findable in the M365 catalog
+  1. Register — make the agent findable in the Agent 365 catalog
   2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
-  3. Tools — add WorkIQ MCP tools (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
      _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
-  4. AI Teammate (Digital Worker) — agent gets a first-class M365 identity (Agentic User with UPN)
-     ⚠️  NOT available for Custom Engine Agents — CEA is supported as Standard Agent (Non Digital Worker) only
+  4. AI Teammate  — agent gets a first-class M365 identity (Agentic User with UPN)
+     ⚠️  NOT available for Custom Engine Agents — CEA is supported as Agent (Non AI Teammate) only
 
 > **CEA guard:** If `usesTeamsOrCopilot = 1` (CEA detected) and the user selects option 4, respond:
-> "Custom Engine Agents are supported as Standard Agent (Non Digital Worker) agents.
->  AI Teammate (Digital Worker) is not supported for CEA.
+> "Custom Engine Agents are supported as Agent (Non AI Teammate) agents.
+>  AI Teammate is not supported for CEA.
 >  Please choose from options 1–3."
 > Then re-present options 1–3 (minus WorkIQ if S2S) and wait for a new answer.
 
@@ -173,7 +173,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 
 1. Set `isAITeammate = true` if the user selected **AI Teammate (Digital Worker)**, else `isAITeammate = false`.
    - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported.
-     Tell the user: "CEA is supported as a Standard Agent (Non Digital Worker) — AI Teammate (Digital Worker) is not supported for CEA."
+     Tell the user: "CEA is supported as an Agent (Non AI Teammate) — AI Teammate is not supported for CEA."
      Set `isAITeammate = false` and route to the Standard/CEA path.
 
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
@@ -183,7 +183,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 
 3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
-   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Standard Agent (Non Digital Worker) / no M365 integration path)
+   - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Agent (Non AI Teammate) / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
 
 Then create all todos for the path and mark Todo 1 in-progress:
@@ -600,7 +600,7 @@ Mark Todo 3 as completed when the delegated skill finishes.
 
 `a365 setup all` is idempotent — safe to re-run after fixing any issue.
 
-**Standard Agent (Non Digital Worker):**
+**Agent (Non AI Teammate):**
 ```bash
 a365 setup all --agent-name <agent_name> --dry-run   # preview
 a365 setup all --agent-name <agent_name>              # apply
