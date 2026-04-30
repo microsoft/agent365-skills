@@ -321,7 +321,8 @@ if (!hasClaude && !hasVSCode && !hasCopilot && !hasGhSkill) {
   else installCopilotInstructions(); // covers VS Code, gh copilot, and unknown hosts
 }
 
-// Always install to .agents/skills/ — works for VS Code agent mode, Copilot CLI, and cloud agent
+// Install to .agents/skills/ for user projects; when running from the source repo, registers
+// plugins/agent365/skills directly instead (see installAgentsSkills for self-repo detection).
 installAgentsSkills();
 
 checkA365();

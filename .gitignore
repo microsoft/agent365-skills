@@ -27,6 +27,9 @@ obj/
 .DS_Store
 Thumbs.db
 
+# Agent Skills open-standard copy (created by install.js in user projects; not needed in source repo)
+.agents/
+
 # Editor
 .vscode/settings.json
 .idea/
