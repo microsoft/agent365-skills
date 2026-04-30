@@ -1,4 +1,4 @@
-﻿---
+---
 name: instrument-observability
 version: 1.5.0
 description: >
@@ -167,6 +167,16 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    dotnet add package Microsoft.Agents.A365.Observability.Hosting
    ```
 
+   **For S2S / autonomous agents using the unified distro** (preferred):
+   ```bash
+   dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1
+   dotnet add package Azure.Identity
+   dotnet add package Microsoft.Identity.Client
+   # Required: v1.0.0-beta.1 depends on Microsoft.Extensions.Logging v10.0.0
+   dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
+   ```
+   > **⚠️ TFM requirement:** If the project targets `net8.0`, upgrade to `net9.0` or later. The `Microsoft.OpenTelemetry` v1.0.0-beta.1 package has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0 which causes a runtime `FileNotFoundException` on `net8.0`. See "Known Issues" section.
+
 2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
 
    **If the user selects `Extensions.OpenAI` — pre-flight check (do this first, as a named step):**
@@ -274,7 +284,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability wiring following the reference pattern in `dotnet-observability.md`:
    - Add using directives for the observability namespaces
    - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
-   - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()` using `ServiceTokenCache` and conditional `ObservabilityTokenService`) and `Observability/ObservabilityTokenService.cs` (background service that acquires the Observability API token via the MSAL FMI 3-hop chain with `.WithFmiPath()` targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback). Then call `builder.Services.AddAgent365Observability();` and `builder.UseMicrosoftOpenTelemetry(...)` with token resolver reading from the `ServiceTokenCache`.
+   - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()` using `ServiceTokenCache` and conditional `ObservabilityTokenService`) and `Observability/ObservabilityTokenService.cs` (background service that acquires the Observability API token via the MSAL FMI 3-hop chain with `.WithFmiPath()` targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback). Then call `builder.Services.AddAgent365Observability();` and `builder.UseMicrosoftOpenTelemetry(...)` with token resolver reading from the `ServiceTokenCache`. **Critical:** Set `o.Agent365.Exporter.UseS2SEndpoint = true` in the options callback — without this, the exporter posts to the wrong path (`/observability/` instead of `/observabilityService/`) and gets HTTP 401. See "Known Issues" section.
    - Optionally register `adapter.Use(new BaggageTurnMiddleware())` (OBO path only) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -287,7 +297,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 2. **Edit** — Add observability initialization following the reference pattern in `nodejs-observability.md`:
    - Add imports for `ObservabilityManager` from `@microsoft/agents-a365-observability`
    - **OBO path**: Call `useMicrosoftOpenTelemetry({ a365: { enabled: true, tokenResolver } })` from `@microsoft/opentelemetry` **before** any LLM/framework imports. The `tokenResolver` reads from `AgenticTokenCacheInstance`.
-   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry({ a365: { enabled: true, tokenResolver } })` from `@microsoft/opentelemetry` and `startTokenService(config)`. Also run `npm install @microsoft/opentelemetry @azure/msal-node @azure/identity`.
+   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry()` with the S2S workaround pattern from `nodejs-observability.md`: supply a custom `BatchSpanProcessor(Agent365Exporter({ useS2SEndpoint: true, tokenResolver }))` via `spanProcessors` when `AGENT365_USE_S2S_ENDPOINT=true`. Do **NOT** include `A365SpanProcessor` — it reads OTel baggage from `parentContext` which is always empty for autonomous S2S agents and interferes with the pipeline. Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env`. Also run `npm install @microsoft/opentelemetry @azure/msal-node @azure/identity @opentelemetry/sdk-trace-base`.
    - Optionally register `adapter.use(new BaggageMiddleware())` (OBO path) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -463,6 +473,10 @@ Follow the reference patterns in `dotnet-observability.md` for:
 - **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons
 - **`ExecuteToolScope`** — wrap each tool call to capture tool name, arguments, result
 - **`OutputScope`** — use for async response scenarios where output isn't captured synchronously
+- `CallerDetails` must be passed to `InvokeAgentScope.Start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- For S2S autonomous agents, read sponsor details from config (`Agent365Observability:Sponsor` section) and construct `CallerDetails` with `UserDetails(userId, userName, userEmail)`
+- Pass `UserDetails` directly (not wrapped in `CallerDetails`) to `InferenceScope.Start()` and `ExecuteToolScope.Start()` as the optional 4th parameter
+- The `Agent365ObservabilityContext` singleton should hold both `AgentDetails` and `CallerDetails` properties
 
 ### For Node.js
 
@@ -471,6 +485,10 @@ Follow the reference patterns in `nodejs-observability.md` for:
 - **`InferenceScope`** — wrap each LLM call. Use `ScopeUtils.populateInferenceScopeFromTurnContext` if available
 - **`ExecuteToolScope`** — wrap each tool call. Use `ScopeUtils.populateExecuteToolScopeFromTurnContext` if available
 - **`OutputScope`** — for async scenarios
+- `CallerDetails` must be passed to `InvokeAgentScope.start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- For S2S autonomous agents, read sponsor details from env vars (`agent365Observability__sponsorUserId`, `agent365Observability__sponsorUserName`, `agent365Observability__sponsorUserEmail`) and construct the `CallerDetails` object
+- Pass `UserDetails` directly to `InferenceScope.start()` and `ExecuteToolScope.start()` as the optional 4th parameter
+- Export `callerDetails` (for `InvokeAgentScope`) and `userDetails` (for `InferenceScope`/`ExecuteToolScope`) from the entry point module alongside `agentDetails`
 
 ### For Python
 
@@ -479,6 +497,10 @@ Follow the reference patterns in `python-observability.md` for:
 - **`InferenceScope`** — wrap each LLM call
 - **`ExecuteToolScope`** — wrap each tool call
 - **`OutputScope`** — for async response scenarios
+- `CallerDetails` / `UserDetails` must be supplied when creating the top-level `InvokeAgentScope` — this is **required** for traces to appear in the MAC portal
+- For S2S autonomous agents, read sponsor details from config or environment and construct `CallerDetails(UserDetails(userId, userName, userEmail))`
+- Pass `UserDetails` directly to `InferenceScope`, `ExecuteToolScope`, and `OutputScope` when their optional user parameter is available
+- Keep shared observability state with both `agent_details` and `caller_details` / `user_details` so nested scopes can reuse them consistently
 
 All new lines marked with the language-appropriate comment:
 - C# / JavaScript / TypeScript: `// A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -503,7 +525,7 @@ All new lines marked with the language-appropriate comment:
 
 2. **Check for existing `a365 setup` configuration:**
    - `EnableAgent365Exporter` — always set to `true` in `appsettings.json` (the Development override sets it to `false`; `a365 setup` may have written `false` here, which this skill corrects)
-   - If `Agent365Observability` section exists → **preserve** all existing values (AgentBlueprintId, TenantId, AgentName, AgentDescription)
+   - If `Agent365Observability` section exists → **preserve** all existing values (AgentBlueprintId, TenantId, AgentName, AgentDescription, Sponsor)
    - If missing → add with defaults
 
 3. **Edit** — Add or update observability configuration following the reference pattern:
@@ -516,10 +538,16 @@ All new lines marked with the language-appropriate comment:
        "AgentBlueprintId": "...",      // ← populated by a365 setup (or placeholder if not run)
        "TenantId": "...",
        "AgentName": "",
-       "AgentDescription": ""
+       "AgentDescription": "",
+       "Sponsor": {
+         "UserId": "<<Blueprint ID>>",
+         "UserName": "<<Blueprint Name>>",
+         "UserEmail": "<<Blueprint Sponsor Email>>"
+       },
        // S2S path only — add:
        // "ClientId": "<agent-blueprint-client-id>",
-       // "ClientSecret": "<agent-blueprint-client-secret>"  // MSI tried first in prod; secret is local-dev fallback
+       // "ClientSecret": "<agent-blueprint-client-secret>",  // MSI tried first in prod; secret is local-dev fallback
+       // "UseManagedIdentity": false  // ← set false for local dev (MSI only works on Azure infra)
      },
      "Logging": {
        "LogLevel": {
@@ -530,6 +558,10 @@ All new lines marked with the language-appropriate comment:
      }
    }
    ```
+
+   > **S2S note:** `EnableAgent365Exporter` must be `true` for S2S span export to work. `a365 setup` may write `false` — this skill corrects it. Also set `UseManagedIdentity: false` for local dev since MSI is only available on Azure infrastructure (App Service, AKS, VM). On local machines, MSI fails with `CredentialUnavailableError: Network unreachable`.
+   >
+   > **Sponsor note:** For S2S / autonomous agents, the `Sponsor` section provides `CallerDetails` for MAC portal trace visibility. Use the Blueprint app ID as `UserId`, the Blueprint display name as `UserName`, and the agent sponsor's email as `UserEmail`.
 
    **`appsettings.Development.json`** (create if absent — disables exporter for local dev so traces go to console only):
    ```json
@@ -563,6 +595,11 @@ All new lines marked with the language-appropriate comment:
    SERVICE_NAME=my-agent
    A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
    Use_Custom_Resolver=false
+
+   # Sponsor / CallerDetails for MAC portal trace visibility
+   agent365Observability__sponsorUserId=<<Blueprint ID>>
+   agent365Observability__sponsorUserName=<<Blueprint Name>>
+   agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
    ```
    - **S2S path only:** Also add `AGENT365_USE_S2S_ENDPOINT=true` — this tells the distro to use the `/observabilityService/...` endpoint path instead of `/observability/...`.
 
@@ -760,17 +797,37 @@ The Node.js SDK (`@microsoft/agents-a365-observability@0.2.0-preview.5`) and .NE
 
 The `@microsoft/opentelemetry` distro creates `Agent365Exporter` internally but does NOT pass `useS2SEndpoint: true`. For S2S agents, the exporter defaults to the OBO path (`/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`), but S2S requires `/observabilityService/...`.
 
-**Fix (applied to distro source):**
+**This bug affects BOTH Node.js and .NET SDKs:**
 
-1. `A365Configuration` — add `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support
-2. `distro.js` — pass `a365Config.useS2SEndpoint` when constructing `Agent365Exporter`
+**Node.js (`@microsoft/opentelemetry` v0.1.0-beta.1):**
 
-**For generated agent code:** Set the env var in `.env`:
+**Workaround for generated agent code:** Pass a custom `spanProcessors` array to `useMicrosoftOpenTelemetry()` with only `BatchSpanProcessor(Agent365Exporter({ useS2SEndpoint: true, tokenResolver }))`. Do **NOT** include `A365SpanProcessor` — it reads OTel baggage from `parentContext`, which is always empty for autonomous S2S agents, and interferes with the pipeline. Also set both env vars:
 ```
 AGENT365_USE_S2S_ENDPOINT=true
+ENABLE_A365_OBSERVABILITY_EXPORTER=false
 ```
+`ENABLE_A365_OBSERVABILITY_EXPORTER=false` is required because this env var has highest precedence and overrides the programmatic `a365: undefined` setting, which would otherwise re-create the broken built-in exporter (missing `useS2SEndpoint`).
 
-This is a distro-level fix. The `useMicrosoftOpenTelemetry()` call does NOT need a custom `spanProcessors` array — the built-in exporter reads the env var via `A365Configuration` and passes it to `Agent365Exporter`.
+**SDK-level fix (pending):** `A365Configuration` needs `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support; `distro.js` needs to pass it when constructing `Agent365Exporter`. Remove the `spanProcessors` workaround once this SDK fix ships.
+
+**.NET (`Microsoft.OpenTelemetry` v1.0.0-beta.1):**
+
+The `UseMicrosoftOpenTelemetry()` builder extension does NOT set `UseS2SEndpoint = true` on the `Agent365ExporterOptions` when using the unified distro. Without this, the exporter posts to `/observability/` (OBO path) instead of `/observabilityService/` (S2S path), causing HTTP 401.
+
+**Fix:** Set `UseS2SEndpoint = true` explicitly in the `UseMicrosoftOpenTelemetry` options callback:
+```csharp
+builder.UseMicrosoftOpenTelemetry(o =>
+{
+    o.Exporters = ExportTarget.Agent365 | ExportTarget.Console;
+    o.Agent365.Exporter.UseS2SEndpoint = true;  // ← Required for S2S agents
+    o.Agent365.Exporter.TokenResolver = async (agentId, tenantId) =>
+    {
+        return tokenCache != null
+            ? await tokenCache.GetObservabilityToken(agentId, tenantId)
+            : null;
+    };
+});
+```
 
 **URL paths:**
 - OBO: `observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`
@@ -794,6 +851,68 @@ AADSTS82008: All agentic applications requesting a token exchange token must inc
 
 **Workaround:** Use `instrumentationOptions: { langchain: {} }` inside the `useMicrosoftOpenTelemetry()` options object. This ensures the distro initializes the manager and the LangChain instrumentor in the correct order.
 
+### .NET `Microsoft.OpenTelemetry` v1.0.0-beta.1 Requires .NET 10 Logging
+
+`Microsoft.OpenTelemetry` v1.0.0-beta.1 has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0. On projects targeting `net8.0` or `net9.0`, this causes a runtime `FileNotFoundException` for `Microsoft.Extensions.Logging, Version=10.0.0.0`.
+
+**Workaround:** Add an explicit package reference to the v10 preview of `Microsoft.Extensions.Logging`:
+```bash
+dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
+```
+
+If the project targets `net8.0`, also upgrade the TFM to `net9.0` for best compatibility:
+```xml
+<TargetFramework>net9.0</TargetFramework>
+```
+
+**Status:** This is expected to be resolved when `Microsoft.OpenTelemetry` ships a stable release or when the project targets `net10.0`.
+
+### .NET `InferenceCallDetails` Constructor — `providerName` Is Required
+
+The `InferenceCallDetails` constructor signature is `(InferenceOperationType operationName, string model, string providerName, int? inputTokens, int? outputTokens, string[]? finishReasons, string? conversationId)`. The `providerName` parameter is **required** (not optional). Omitting it causes CS7036.
+
+**Correct usage:**
+```csharp
+new InferenceCallDetails(
+    operationName: InferenceOperationType.Chat,
+    model: "gpt-5.4",
+    providerName: "Azure OpenAI")
+```
+
+### .NET `ExecuteToolScope.RecordResponse` Takes `string`, Not `Response`
+
+`ExecuteToolScope.RecordResponse()` accepts a `string` parameter (the tool result), not a `Response` object. Passing `new Response(...)` causes CS1503.
+
+**Correct usage:**
+```csharp
+toolScope.RecordResponse(resultString);
+```
+
+### .NET `appsettings.json` — S2S Configuration Notes
+
+For S2S / autonomous agents:
+- `EnableAgent365Exporter` must be `true` in `appsettings.json` (not `false` — `a365 setup` may write `false` by default)
+- `UseManagedIdentity` must be `false` for local development (MSI is only available on Azure infrastructure)
+- Both `ClientId` and `ClientSecret` are required under `Agent365Observability` for the FMI 3-hop chain
+
+### CallerDetails Required for MAC Portal Trace Visibility
+
+For S2S / autonomous agents, `CallerDetails` with `UserDetails` (`userId`, `userName`, `userEmail`) must be passed to `InvokeAgentScope.Start()` / `.start()`. Without `CallerDetails`, exported spans reach the observability API (HTTP 200) but do **not** appear in the Microsoft Admin Center (MAC) portal's Advanced Hunting view.
+
+**Node.js API differences:**
+- `InvokeAgentScope.start()` takes `CallerDetails` (wraps `userDetails`) as 4th parameter
+- `InferenceScope.start()` and `ExecuteToolScope.start()` take `UserDetails` directly as 4th parameter
+- `OutputScope.start()` takes `UserDetails` directly as 4th parameter
+
+**.NET API:**
+- `InvokeAgentScope.Start()` takes `CallerDetails` (wraps `UserDetails`) as 4th parameter
+- Other scopes do not take `CallerDetails` directly
+
+**Recommendation:** For autonomous agents without a real user, use the Blueprint sponsor's identity:
+- `UserId` = Blueprint App (Client) ID
+- `UserName` = Blueprint display name
+- `UserEmail` = Agent sponsor's email address
+
 ---
 
 ## References
@@ -802,3 +921,4 @@ AADSTS82008: All agentic applications requesting a token exchange token must inc
 - **.NET Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md`
 - **Node.js Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md`
 - **Python Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md`
+
