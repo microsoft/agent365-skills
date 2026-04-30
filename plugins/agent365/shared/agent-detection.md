@@ -514,7 +514,7 @@ AskUserQuestion:
         → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 
     ✅ Both modes work with Observability
-    ⚠️  Autonomous (S2S) is not supported by WorkIQ tools — WorkIQ requires a user in the loop
+    ❌  Autonomous (S2S) cannot use WorkIQ tools — WorkIQ requires a delegated user token (OBO)
   options:
     - "1 — Autonomous (S2S / Service Principal)"
     - "2 — Assistive (OBO)"
@@ -545,7 +545,7 @@ AskUserQuestion:
 | AI Teammate | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
 | AI Teammate | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
 | Agent (Non AI Teammate) | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Agent (Non AI Teammate) | `S2S` / Autonomous (Service Principal) | ✅ | ⚠️ Not supported — WorkIQ requires a user in the loop |
+| Agent (Non AI Teammate) | `S2S` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
 
 ---
 
@@ -578,16 +578,15 @@ The `agentic-identity` authMode is used in two distinct contexts:
 
 ### WorkIQ guard for `S2S`
 
-If `authMode = S2S` and the current skill is `add-workiq-tools`, surface this before Phase 4:
+If `authMode = S2S` and the current skill is `add-workiq-tools`, **exit immediately**:
 
 ```
-⚠️  WorkIQ tools require a user in the loop.
-    "Runs autonomously" (S2S) is not compatible — WorkIQ delegates M365 permissions
-    on behalf of a user, and without a user token tool calls will fail at runtime.
+❌  WorkIQ tools are not available for S2S (autonomous) agents.
+    WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
+    cannot be used for WorkIQ API calls.
 
-    Options:
-      1. Switch to Assistive (agentic-identity) — agent acts on behalf of the user triggering it
-      2. Proceed anyway — wiring will be added but tool calls will fail at runtime
+    To use WorkIQ, switch your agent to Assistive mode (agentic-identity / OBO)
+    and re-run this skill.
 ```
 
-If user switches: update `authMode = agentic-identity` and continue normally.
+Do **not** proceed. End the session.
