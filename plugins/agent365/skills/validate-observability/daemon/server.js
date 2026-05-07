@@ -30,12 +30,16 @@ async function startServer({ port = 4318, captureDir = process.cwd(), rotationBy
       const remoteAddr = `${req.socket.remoteAddress}:${req.socket.remotePort}`;
       const baseEntry  = { receivedAt: new Date().toISOString(), wireFormat, remoteAddr, urlPath: req.url };
 
-      if (decodeError) {
-        store.append({ ...baseEntry, decodeError, rawBodyB64: body.toString('base64').slice(0, 4096) });
-      } else {
-        for (const span of decoded.spans) {
-          store.append({ ...baseEntry, resource: decoded.resource, scope: decoded.scope, span });
+      try {
+        if (decodeError) {
+          store.append({ ...baseEntry, decodeError, rawBodyB64: body.toString('base64').slice(0, 4096) });
+        } else {
+          for (const span of decoded.spans) {
+            store.append({ ...baseEntry, resource: decoded.resource, scope: decoded.scope, span });
+          }
         }
+      } catch (e) {
+        process.stderr.write(`[validate-observability daemon] persist failure: ${e.message}\n`);
       }
 
       res.writeHead(200, { 'content-type': 'application/x-protobuf' });
