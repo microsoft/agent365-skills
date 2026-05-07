@@ -81,8 +81,28 @@ If `--export <file>`: also write findings to `<file>` after stripping skill-only
 1. **Read** `.a365-workspace-detection.json`. If absent: refuse: *"Run `a365-setup` and `instrument-observability` first."*
 2. **Read** `references/endpoint-override.md` and locate the per-language section that matches the agent's language (`.NET` / `Node.js` / `Python`). That section names the exact dev-only file mutations and code patches the skill applies in step 4.
 3. Pick a port (default 4318; scan upward if busy via `node -e "require('net').createServer().listen(PORT, ()=>process.exit(0)).on('error',()=>process.exit(1))"`).
-4. **Mutate dev-only override config** per `endpoint-override.md`. Record original values in state.json's `mutations` array. **Never modify** `.env`, `appsettings.json`, or `appsettings.Production.json`.
-5. **Spawn daemon**: `node ${CLAUDE_PLUGIN_ROOT}/skills/validate-observability/daemon/server.js --port <port> --capture-dir <agent-cwd>/.a365-observability-capture`. Capture stdout's first JSON line `{ ready: true, port, pid }` within 5 seconds. Write `state.json` with `{ pid, port, mutations }`.
+4. **Mutate dev-only override config** per `references/endpoint-override.md`. The mutation is the SAME variable in all three languages (`A365_OBSERVABILITY_DOMAIN_OVERRIDE`); only the file and the URL scheme differ:
+
+   - **.NET (HTTPS daemon):** write `Agent365Observability:DomainOverride: "https://localhost:<port>"` into `appsettings.Development.json`. Tell the user to also export `$env:A365_OBSERVABILITY_DOMAIN_OVERRIDE='https://localhost:<port>'` in their terminal before running the agent. Print the self-signed cert-trust instructions:
+
+     ```powershell
+     # Option A — trust system-wide (admin):
+     Import-Certificate -FilePath ./tests/fixtures/vo/cert.pem -CertStoreLocation Cert:\LocalMachine\Root
+
+     # Option B — process-local (no admin):
+     $env:DOTNET_SSL_CERT_FILE = "$pwd/tests/fixtures/vo/cert.pem"
+     ```
+
+   - **Node.js (HTTP daemon):** append `A365_OBSERVABILITY_DOMAIN_OVERRIDE=http://localhost:<port>` to `.env.local`.
+
+   - **Python (HTTP daemon):** same as Node.js — append `A365_OBSERVABILITY_DOMAIN_OVERRIDE=http://localhost:<port>` to `.env.local`. Inform the user that the agent will log a "non-HTTPS bearer token" warning per turn — that's expected and harmless in local-test mode.
+
+   Record original values (or "unset") in `state.json`'s `mutations` array. **Never modify** `.env`, `appsettings.json`, or `appsettings.Production.json`.
+5. **Spawn daemon**:
+   - **.NET (HTTPS):** `node ${CLAUDE_PLUGIN_ROOT}/skills/validate-observability/daemon/server.js --port <port> --capture-dir <agent-cwd>/.a365-observability-capture --cert tests/fixtures/vo/cert.pem --key tests/fixtures/vo/key.pem`. If the cert/key fixtures are absent, the skill first runs `bash tests/fixtures/vo/build-tls-fixtures.sh` (or the equivalent on Windows: `tests/fixtures/vo/build-tls-fixtures.ps1` if it exists, else openssl directly).
+   - **Node.js / Python (HTTP):** `node ${CLAUDE_PLUGIN_ROOT}/skills/validate-observability/daemon/server.js --port <port> --capture-dir <agent-cwd>/.a365-observability-capture` (no cert flags).
+
+   Capture stdout's first JSON line `{ ready: true, scheme: "http"|"https", port, pid }` within 5 seconds. Write `state.json` with `{ pid, port, scheme, mutations }`.
 6. **Prompt**: *"Daemon listening on `http://localhost:<port>`. Run one turn through your agent now (start it normally, send a message in AgentsPlayground, etc.). Reply 'go' when the turn is done."*
 7. **On 'go'**: read all entries from `traces.jsonl`. If zero, run the diagnostic checklist (agent restarted? exporter Enabled? `service.name` set? curl the daemon).
 8. **Validate + report** (same engine as Phase 1A).
@@ -109,13 +129,17 @@ Every run prints the markdown report from `report.js`. With zero findings, print
 
 ## Endpoint override mechanism
 
-The verified per-language mechanism is documented in `references/endpoint-override.md`. The
-skill mutates only dev-only files: `.env.local` (Node.js / Python) or
-`appsettings.Development.json` (.NET). For .NET and Node.js a small DEBUG-guarded code
-patch is also applied. Originals are restored on `--stop`.
+The verified per-language mechanism is documented in `references/endpoint-override.md`.
+The skill mutates only dev-only files: `.env.local` (Node.js / Python) or
+`appsettings.Development.json` (.NET). The redirect uses
+`A365_OBSERVABILITY_DOMAIN_OVERRIDE`, an env var all three SDKs already read at
+runtime — no code patch required. The A365 exporter stays fully active so the
+FMI token chain, baggage attribution, and URL derivation continue to run and
+produce traffic the validators can inspect. .NET requires the daemon on HTTPS
+(self-signed cert; trust instructions are printed on first run).
 
-If a future SDK release breaks any of those mechanisms, update `endpoint-override.md`
-and the corresponding step 4 logic.
+If a future SDK release breaks any of these mechanisms, update
+`endpoint-override.md` and the corresponding step 4 / step 5 logic.
 
 ## Idempotency
 
