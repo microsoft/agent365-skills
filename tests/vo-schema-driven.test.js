@@ -83,3 +83,23 @@ test('validateSpan: empty CustomerContent field does not fire rule-privacy_class
   const onInput = findings.find(f => f.ruleId === 'rule-privacy_classification' && f.metadata.field === 'gen_ai.input.messages');
   assert.equal(onInput, undefined, 'empty value should not fire privacy rule');
 });
+
+test('Bytes type checker rejects empty string', () => {
+  const { validateSpan, loadSchema } = require(sdPath);
+  const schema = loadSchema(schemaPath);
+  const span = JSON.parse(JSON.stringify(goodSpan));
+  span.traceId = '';
+  const findings = validateSpan(span, schema);
+  const typeMismatch = findings.find(f => f.ruleId === 'rule-type_conformance' && f.metadata.field === 'traceId');
+  assert.ok(typeMismatch, 'empty Bytes value should fire rule-type_conformance');
+});
+
+test('Bytes type checker rejects odd-length hex string', () => {
+  const { validateSpan, loadSchema } = require(sdPath);
+  const schema = loadSchema(schemaPath);
+  const span = JSON.parse(JSON.stringify(goodSpan));
+  span.traceId = '0123456789abcde';   // 15 chars — odd
+  const findings = validateSpan(span, schema);
+  const typeMismatch = findings.find(f => f.ruleId === 'rule-type_conformance' && f.metadata.field === 'traceId');
+  assert.ok(typeMismatch, 'odd-length Bytes value should fire rule-type_conformance');
+});

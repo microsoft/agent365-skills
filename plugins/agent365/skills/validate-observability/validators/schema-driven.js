@@ -31,7 +31,7 @@ const TYPE_CHECKERS = {
   String:      v => typeof v === 'string',
   Int:         v => typeof v === 'number' && Number.isInteger(v),
   StringArray: v => Array.isArray(v) && v.every(x => typeof x === 'string'),
-  Bytes:       v => typeof v === 'string' && /^[0-9a-f]*$/i.test(v),
+  Bytes:       v => typeof v === 'string' && v.length > 0 && v.length % 2 === 0 && /^[0-9a-f]+$/i.test(v),
   UInt64:      v => typeof v === 'string' && /^\d+$/.test(v),
   Object:      v => v !== null && typeof v === 'object',
 };
@@ -58,7 +58,10 @@ function validateSpan(span, schema) {
     }
     if (present) {
       const checker = TYPE_CHECKERS[f.type];
-      if (checker && !checker(value)) {
+      // For Bytes fields, an empty string is the valid root-span sentinel (e.g. parentSpanId).
+      // Only skip the type check for empty string when the field is not required.
+      const isEmptyByteSentinel = f.type === 'Bytes' && value === '' && !required;
+      if (checker && !checker(value) && !isEmptyByteSentinel) {
         findings.push(RuleResult({
           ruleId: 'rule-type_conformance',
           value: 'type_mismatch',
