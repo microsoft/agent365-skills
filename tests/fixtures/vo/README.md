@@ -38,7 +38,12 @@ deps) but worth running before each release.
 
 The verified per-language mechanism lives in
 `plugins/agent365/skills/validate-observability/references/endpoint-override.md`
-(committed 2026-05-07 from static analysis of the three SDK repos at
-`D:\Agent365-dotnet`, `D:\Agent365-nodejs`, `D:\Agent365-python`). The
-one-shot flow (Phase 1B) is now end-to-end runnable. If a future SDK release
-changes the override surface, refresh that doc and re-run the manual runbook.
+(refreshed 2026-05-07 from static analysis of `D:\Agent365-{dotnet,nodejs,python}`).
+
+**One-line summary:** Set `A365_OBSERVABILITY_DOMAIN_OVERRIDE` in the agent's
+dev-only env (`appsettings.Development.json` for .NET; `.env.local` for Node.js
+/ Python). The daemon listens on HTTPS for .NET (run `bash tests/fixtures/vo/build-tls-fixtures.sh`
+once to generate the localhost cert/key) and HTTP for Node.js / Python.
+
+If a future SDK release changes the override surface, refresh that doc and
+re-run the manual runbook below.
