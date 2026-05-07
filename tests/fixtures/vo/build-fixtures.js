@@ -59,7 +59,17 @@ async function main() {
   fs.writeFileSync(join(__dirname, 'otlp-protobuf-clean.bin'), buf);
   fs.writeFileSync(
     join(__dirname, 'otlp-json-clean.json'),
-    JSON.stringify(REQ, (k, v) => Buffer.isBuffer(v) ? v.toString('base64') : (v && typeof v === 'object' && v.constructor && v.constructor.name === 'Long' ? v.toString() : v), 2)
+    JSON.stringify(REQ, (k, v) => {
+      // Buffer.toJSON() fires before the replacer, converting Buffer → {type:"Buffer",data:[...]}.
+      // Detect that shape and re-encode as base64.
+      if (v && typeof v === 'object' && v.type === 'Buffer' && Array.isArray(v.data)) {
+        return Buffer.from(v.data).toString('base64');
+      }
+      if (v && typeof v === 'object' && v.constructor && v.constructor.name === 'Long') {
+        return v.toString();
+      }
+      return v;
+    }, 2)
   );
   console.log('wrote otlp-protobuf-clean.bin (', buf.length, 'bytes) and otlp-json-clean.json');
 }

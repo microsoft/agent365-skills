@@ -17,12 +17,25 @@ test('decode() — protobuf payload yields uniform shape with one span', async (
   assert.equal(result.scope.name, 'Microsoft.Agents.A365.Observability');
 });
 
-test('decode() — JSON payload yields uniform shape with one span', async () => {
+test('decode() — JSON payload yields uniform shape with normalized IDs', async () => {
   const decoder = require(decoderPath);
   const body = fs.readFileSync(path.join(fixturesDir, 'otlp-json-clean.json'), 'utf8');
   const result = await decoder.decode(body, 'application/json');
   assert.equal(result.spans.length, 1);
   assert.equal(result.wireFormat, 'json');
+  // IDs must be normalized into hex strings (matching what the protobuf path produces).
+  assert.match(result.spans[0].traceId, /^[0-9a-f]{32}$/);
+  assert.match(result.spans[0].spanId,  /^[0-9a-f]{16}$/);
+});
+
+test('decode() — JSON and protobuf inputs produce equivalent normalized IDs', async () => {
+  const decoder = require(decoderPath);
+  const protobufBody = fs.readFileSync(path.join(fixturesDir, 'otlp-protobuf-clean.bin'));
+  const jsonBody     = fs.readFileSync(path.join(fixturesDir, 'otlp-json-clean.json'), 'utf8');
+  const fromPb   = await decoder.decode(protobufBody, 'application/x-protobuf');
+  const fromJson = await decoder.decode(jsonBody,     'application/json');
+  assert.equal(fromPb.spans[0].traceId, fromJson.spans[0].traceId);
+  assert.equal(fromPb.spans[0].spanId,  fromJson.spans[0].spanId);
 });
 
 test('decode() — malformed protobuf body throws DecoderError', async () => {

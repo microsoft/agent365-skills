@@ -25,40 +25,8 @@
           },
           "spans": [
             {
-              "traceId": {
-                "type": "Buffer",
-                "data": [
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239,
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239
-                ]
-              },
-              "spanId": {
-                "type": "Buffer",
-                "data": [
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239
-                ]
-              },
+              "traceId": "ASNFZ4mrze8BI0VniavN7w==",
+              "spanId": "ASNFZ4mrze8=",
               "name": "invoke_agent",
               "kind": 1,
               "startTimeUnixNano": "1714932000000000000",
