@@ -84,6 +84,16 @@ test('validateSpan: empty CustomerContent field does not fire rule-privacy_class
   assert.equal(onInput, undefined, 'empty value should not fire privacy rule');
 });
 
+test('validateSpan: findings populate metadata.spanName for the report formatter', () => {
+  const { validateSpan, loadSchema } = require(sdPath);
+  const schema = loadSchema(schemaPath);
+  const span = JSON.parse(fs.readFileSync(path.join(fixDir, 'span-bad-missing-field.json'), 'utf8'));
+  const findings = validateSpan(span, schema);
+  for (const f of findings) {
+    assert.equal(f.metadata.spanName, span.name, `${f.ruleId} should carry spanName`);
+  }
+});
+
 test('Bytes type checker rejects empty string', () => {
   const { validateSpan, loadSchema } = require(sdPath);
   const schema = loadSchema(schemaPath);
