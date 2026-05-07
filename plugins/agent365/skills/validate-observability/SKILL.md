@@ -82,7 +82,7 @@ If `--export <file>`: also write findings to `<file>` after stripping skill-only
 
 1. **Read** `.a365-workspace-detection.json`. If absent: refuse: *"Run `a365-setup` and `instrument-observability` first."*
 2. **Read** `references/endpoint-override.md` and locate the per-language section that matches the agent's language (`.NET` / `Node.js` / `Python`). That section names the exact dev-only file mutations and code patches the skill applies in step 4.
-3. Pick a port (default 4318; scan upward if busy via `node -e "require('net').createServer().listen(PORT, ()=>process.exit(0)).on('error',()=>process.exit(1))"`).
+3. Pick a port (default 4318; if busy, scan upward by retrying with `port + 1`. Sample probe: `port=4318; node -e "require('net').createServer().listen($port, ()=>process.exit(0)).on('error',()=>process.exit(1))"` — exit code 0 means free, 1 means busy.).
 4. **Mutate dev-only override config** per `references/endpoint-override.md`. The mutation is the SAME variable in all three languages (`A365_OBSERVABILITY_DOMAIN_OVERRIDE`); only the file and the URL scheme differ:
 
    - **.NET (HTTPS daemon):** write `Agent365Observability:DomainOverride: "https://localhost:<port>"` into `appsettings.Development.json`. Tell the user to also export `$env:A365_OBSERVABILITY_DOMAIN_OVERRIDE='https://localhost:<port>'` in their terminal before running the agent. Print the self-signed cert-trust instructions:
