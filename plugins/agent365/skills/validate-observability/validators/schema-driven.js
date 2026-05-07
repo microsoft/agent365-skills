@@ -83,7 +83,7 @@ function validateSpan(span, schema) {
           confidence: 0.5,
           metadata: { field: f.key, classification: f.privacy },
           severity: 'warning',
-          fixHint: `Field "${f.key}" is classified ${f.privacy}. v1 only flags presence; the unredacted-detection heuristic is deferred (spec §12 open question 2). Confirm your redaction policy covers this field.`,
+          fixHint: `Field "${f.key}" carries a ${f.privacy} classification. This rule flags presence only — whether the value is actually unredacted is not yet evaluated. Confirm your redaction policy covers this field before shipping.`,
           spanId: span.spanId,
           traceId: span.traceId,
         }));
