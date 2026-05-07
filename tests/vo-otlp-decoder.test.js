@@ -16,3 +16,11 @@ test('decode() — protobuf payload yields uniform shape with one span', async (
   assert.equal(result.resource['service.name'], 'demo-agent');
   assert.equal(result.scope.name, 'Microsoft.Agents.A365.Observability');
 });
+
+test('decode() — JSON payload yields uniform shape with one span', async () => {
+  const decoder = require(decoderPath);
+  const body = fs.readFileSync(path.join(fixturesDir, 'otlp-json-clean.json'), 'utf8');
+  const result = await decoder.decode(body, 'application/json');
+  assert.equal(result.spans.length, 1);
+  assert.equal(result.wireFormat, 'json');
+});

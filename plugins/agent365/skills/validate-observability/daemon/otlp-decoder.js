@@ -62,6 +62,24 @@ function shapeRequest(req, wireFormat) {
   return out;
 }
 
+function rehydrateBinaryStrings(req) {
+  for (const rs of req.resourceSpans || []) {
+    for (const ss of rs.scopeSpans || []) {
+      for (const sp of ss.spans || []) {
+        if (typeof sp.traceId      === 'string') sp.traceId      = decodeIdString(sp.traceId);
+        if (typeof sp.spanId       === 'string') sp.spanId       = decodeIdString(sp.spanId);
+        if (typeof sp.parentSpanId === 'string') sp.parentSpanId = decodeIdString(sp.parentSpanId);
+      }
+    }
+  }
+}
+
+function decodeIdString(s) {
+  // hex (16 or 32 chars) → Buffer; otherwise treat as base64
+  if (/^[0-9a-f]+$/i.test(s) && (s.length === 16 || s.length === 32)) return Buffer.from(s, 'hex');
+  return Buffer.from(s, 'base64');
+}
+
 async function decode(body, contentType) {
   const ct = (contentType || '').toLowerCase();
   if (ct.includes('application/x-protobuf') || ct.includes('application/protobuf')) {
@@ -70,6 +88,12 @@ async function decode(body, contentType) {
     const msg  = Req.decode(body);
     const obj  = Req.toObject(msg, { bytes: Buffer, longs: String, defaults: true });
     return shapeRequest(obj, 'protobuf');
+  }
+  if (ct.includes('application/json')) {
+    const text = Buffer.isBuffer(body) ? body.toString('utf8') : body;
+    const obj  = JSON.parse(text);
+    rehydrateBinaryStrings(obj);
+    return shapeRequest(obj, 'json');
   }
   throw new Error(`Unsupported content-type: ${contentType}`);
 }
