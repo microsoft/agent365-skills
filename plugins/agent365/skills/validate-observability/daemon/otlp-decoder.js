@@ -5,16 +5,19 @@ const protobuf = require('protobufjs');
 const PROTO_ROOT = path.join(__dirname, 'opentelemetry-proto');
 const PROTO_FILE = path.join(PROTO_ROOT, 'opentelemetry/proto/collector/trace/v1/trace_service.proto');
 
-let _root = null;
-async function loadRoot() {
-  if (_root) return _root;
+let _rootPromise = null;
+function loadRoot() {
+  if (!_rootPromise) _rootPromise = _buildRoot();
+  return _rootPromise;
+}
+
+async function _buildRoot() {
   const r = new protobuf.Root();
   r.resolvePath = (origin, target) => {
     if (target.startsWith('opentelemetry/')) return path.join(PROTO_ROOT, target);
     return target;
   };
   await r.load(PROTO_FILE, { keepCase: false });
-  _root = r;
   return r;
 }
 
