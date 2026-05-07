@@ -55,3 +55,29 @@ test('getCursor() returns zeroed cursor when cursor.json is corrupt', () => {
   assert.equal(c.lastReadCount, 0);
   store.close();
 });
+
+test('readSinceCursor() resets when rotation has happened (lastReadCount > current line count)', () => {
+  const { CaptureStore } = require(storePath);
+  const dir   = freshDir();
+  const store = CaptureStore({ captureDir: dir, rotationBytes: 50 });
+  store.append({ pad: 'x'.repeat(40) });
+  store.append({ pad: 'x'.repeat(40) });   // triggers rotation; current file is now empty
+  store.advanceCursor();                   // lastReadCount = 0 (current file)
+  store.append({ span: { spanId: 'after-rotation' } });
+  const since = store.readSinceCursor();
+  assert.equal(since.length, 1);
+  assert.equal(since[0].span.spanId, 'after-rotation');
+  store.close();
+});
+
+test('readSinceCursor() resets when stale cursor exceeds current file length (cross-rotation)', () => {
+  const { CaptureStore } = require(storePath);
+  const dir   = freshDir();
+  // Simulate a stale cursor.json saved BEFORE a rotation, with a file containing fewer lines.
+  fs.writeFileSync(path.join(dir, 'cursor.json'), JSON.stringify({ lastReadCount: 100, lastReadAt: 't' }));
+  fs.writeFileSync(path.join(dir, 'traces.jsonl'), JSON.stringify({ span: { spanId: 'a' } }) + '\n' + JSON.stringify({ span: { spanId: 'b' } }) + '\n');
+  const store = CaptureStore({ captureDir: dir });
+  const since = store.readSinceCursor();
+  assert.equal(since.length, 2, 'stale cursor should fall back to start of file');
+  store.close();
+});

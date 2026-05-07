@@ -31,7 +31,11 @@ function CaptureStore({ captureDir, rotationBytes = 50 * 1024 * 1024 }) {
 
   function readSinceCursor() {
     const cursor = getCursor();
-    return readAll().slice(cursor.lastReadCount || 0);
+    const all    = readAll();
+    // If rotation happened since the last cursor advance, the current file has
+    // fewer lines than lastReadCount — treat the cursor as 0 in that case.
+    const offset = (cursor.lastReadCount || 0) > all.length ? 0 : (cursor.lastReadCount || 0);
+    return all.slice(offset);
   }
 
   function getCursor() {
