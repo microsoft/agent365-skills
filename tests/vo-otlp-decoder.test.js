@@ -24,3 +24,27 @@ test('decode() — JSON payload yields uniform shape with one span', async () =>
   assert.equal(result.spans.length, 1);
   assert.equal(result.wireFormat, 'json');
 });
+
+test('decode() — malformed protobuf body throws DecoderError', async () => {
+  const decoder = require(decoderPath);
+  await assert.rejects(
+    () => decoder.decode(Buffer.from('not a real protobuf payload'), 'application/x-protobuf'),
+    err => err.name === 'DecoderError' && /failed to decode/i.test(err.message),
+  );
+});
+
+test('decode() — malformed JSON body throws DecoderError', async () => {
+  const decoder = require(decoderPath);
+  await assert.rejects(
+    () => decoder.decode('this is not json {', 'application/json'),
+    err => err.name === 'DecoderError',
+  );
+});
+
+test('decode() — unknown content-type throws DecoderError', async () => {
+  const decoder = require(decoderPath);
+  await assert.rejects(
+    () => decoder.decode(Buffer.from('whatever'), 'text/plain'),
+    err => err.name === 'DecoderError' && /unsupported content-type/i.test(err.message),
+  );
+});

@@ -62,6 +62,14 @@ function shapeRequest(req, wireFormat) {
   return out;
 }
 
+class DecoderError extends Error {
+  constructor(message, cause) {
+    super(message);
+    this.name = 'DecoderError';
+    if (cause) this.cause = cause;
+  }
+}
+
 function rehydrateBinaryStrings(req) {
   for (const rs of req.resourceSpans || []) {
     for (const ss of rs.scopeSpans || []) {
@@ -82,20 +90,24 @@ function decodeIdString(s) {
 
 async function decode(body, contentType) {
   const ct = (contentType || '').toLowerCase();
-  if (ct.includes('application/x-protobuf') || ct.includes('application/protobuf')) {
-    const root = await loadRoot();
-    const Req  = root.lookupType('opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest');
-    const msg  = Req.decode(body);
-    const obj  = Req.toObject(msg, { bytes: Buffer, longs: String, defaults: true });
-    return shapeRequest(obj, 'protobuf');
+  try {
+    if (ct.includes('application/x-protobuf') || ct.includes('application/protobuf')) {
+      const root = await loadRoot();
+      const Req  = root.lookupType('opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest');
+      const msg  = Req.decode(body);
+      const obj  = Req.toObject(msg, { bytes: Buffer, longs: String, defaults: true });
+      return shapeRequest(obj, 'protobuf');
+    }
+    if (ct.includes('application/json')) {
+      const text = Buffer.isBuffer(body) ? body.toString('utf8') : body;
+      const obj  = JSON.parse(text);
+      rehydrateBinaryStrings(obj);
+      return shapeRequest(obj, 'json');
+    }
+  } catch (e) {
+    throw new DecoderError(`failed to decode (${ct || 'no content-type'}): ${e.message}`, e);
   }
-  if (ct.includes('application/json')) {
-    const text = Buffer.isBuffer(body) ? body.toString('utf8') : body;
-    const obj  = JSON.parse(text);
-    rehydrateBinaryStrings(obj);
-    return shapeRequest(obj, 'json');
-  }
-  throw new Error(`Unsupported content-type: ${contentType}`);
+  throw new DecoderError(`unsupported content-type: ${contentType}`);
 }
 
-module.exports = { decode, shapeRequest, flattenAttributes, normalizeSpan };
+module.exports = { decode, shapeRequest, flattenAttributes, normalizeSpan, DecoderError };
