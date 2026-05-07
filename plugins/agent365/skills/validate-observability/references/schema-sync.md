@@ -43,5 +43,9 @@ Each entry in `fields[]`:
                        Each predicate: `{ field, condition: "in" | "not_in",
                                           values: [...], legacy_names?: [...] }`
 
-Empty `required` (`[[]]` or absent) means "always required" / "never required"
-respectively — see `schema-driven.js` predicate evaluator for exact semantics.
+Two sentinel forms exist:
+- `required: [[]]` — a single empty AND-clause is vacuously true → field is **always required**.
+- `required: []` or `required` absent → field is **never required**.
+
+See `schema-driven.js` (`evalRequiredPredicate`) for the canonical
+interpretation.
