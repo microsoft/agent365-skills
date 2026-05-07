@@ -1,6 +1,6 @@
 ---
 name: validate-observability
-version: 0.1.0
+version: 1.5.0
 description: >
   Validates the OpenTelemetry data an Agent 365 SDK actually emits. Spawns a
   local OTLP/HTTP capture daemon, points the agent's dev-only config at it,
@@ -34,6 +34,8 @@ hooks:
         If any item failed, return {"ok": false, "reason": "<specific item>"}. Otherwise {"ok": true}.
       timeout: 30000
 ---
+
+> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 > **Trigger phrases:**
 > - "validate my agent's observability data"
