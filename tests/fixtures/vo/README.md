@@ -36,7 +36,7 @@ deps) but worth running before each release.
 
 ## Pre-release: complete the deferred endpoint-override spike
 
-The one-shot flow (Phase 1B) of the skill cannot run end-to-end until
+**Release blocker:** the one-shot flow (Phase 1B) of the skill cannot run end-to-end until
 `plugins/agent365/skills/validate-observability/references/endpoint-override.md`
 documents the verified per-language mechanism for redirecting OTLP traffic to
 `http://localhost:<port>`. Run Task 0 of the implementation plan to produce that file.
