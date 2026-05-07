@@ -1,0 +1,12 @@
+{
+  "name": "@agent365-skills/validate-observability-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OTLP/HTTP capture daemon for the validate-observability skill.",
+  "main": "server.js",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "protobufjs": "^7.4.0"
+  }
+}
