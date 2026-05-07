@@ -44,3 +44,34 @@ test('server: protobuf POST is decoded and persisted, returns 200', async () => 
     await server.close();
   }
 });
+
+test('server: JSON POST is also captured', async () => {
+  const { startServer } = require(serverPath);
+  const dir    = freshDir();
+  const server = await startServer({ port: 0, captureDir: dir });
+  try {
+    const body = fs.readFileSync(path.join(fixtures, 'otlp-json-clean.json'));
+    const r = await postBinary({ port: server.port, contentType: 'application/json', body });
+    assert.equal(r.status, 200);
+    const lines = fs.readFileSync(path.join(dir, 'traces.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).wireFormat, 'json');
+  } finally {
+    await server.close();
+  }
+});
+
+test('server: malformed body persists a decode_failure entry, still returns 200', async () => {
+  const { startServer } = require(serverPath);
+  const dir    = freshDir();
+  const server = await startServer({ port: 0, captureDir: dir });
+  try {
+    const r = await postBinary({ port: server.port, contentType: 'application/x-protobuf', body: Buffer.from('garbage') });
+    assert.equal(r.status, 200);
+    const lines = fs.readFileSync(path.join(dir, 'traces.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert.equal(lines.length, 1);
+    assert.ok(JSON.parse(lines[0]).decodeError);
+  } finally {
+    await server.close();
+  }
+});
