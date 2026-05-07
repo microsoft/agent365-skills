@@ -72,6 +72,23 @@ function validateSpan(span, schema) {
         }));
       }
     }
+    if (present && (f.privacy === 'CustomerContent' || f.privacy === 'EUII')) {
+      const v = readField(span, f.key);
+      const isEmpty = v == null || v === '' || (Array.isArray(v) && v.length === 0);
+      if (!isEmpty) {
+        findings.push(RuleResult({
+          ruleId: 'rule-privacy_classification',
+          value: 'present',
+          valueType: 'string',
+          confidence: 0.5,
+          metadata: { field: f.key, classification: f.privacy },
+          severity: 'warning',
+          fixHint: `Field "${f.key}" is classified ${f.privacy}. v1 only flags presence; the unredacted-detection heuristic is deferred (spec §12 open question 2). Confirm your redaction policy covers this field.`,
+          spanId: span.spanId,
+          traceId: span.traceId,
+        }));
+      }
+    }
   }
   return findings;
 }

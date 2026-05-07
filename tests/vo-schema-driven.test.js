@@ -31,11 +31,14 @@ test('evalRequiredPredicate: clause fails when any predicate is false', () => {
   assert.equal(evalRequiredPredicate(required, goodSpan), false);
 });
 
-test('validateSpan: clean invoke_agent span produces zero findings', () => {
+test('validateSpan: clean invoke_agent span produces no errors (privacy warnings expected)', () => {
   const { validateSpan, loadSchema } = require(sdPath);
   const schema = loadSchema(schemaPath);
   const findings = validateSpan(goodSpan, schema);
-  assert.equal(findings.length, 0, JSON.stringify(findings, null, 2));
+  // CustomerContent / EUII fields legitimately fire warning-severity privacy findings.
+  // The clean span should have ZERO error-severity findings.
+  const errors = findings.filter(f => f.severity === 'error');
+  assert.equal(errors.length, 0, JSON.stringify(errors, null, 2));
 });
 
 test('validateSpan: missing required field produces a presence_check finding', () => {
@@ -54,4 +57,29 @@ test('validateSpan: wrong-type field produces a type_conformance finding', () =>
   const findings = validateSpan(span, schema);
   const typeFinding = findings.find(f => f.ruleId === 'rule-type_conformance' && f.metadata.field === 'gen_ai.agent.id');
   assert.ok(typeFinding, JSON.stringify(findings, null, 2));
+});
+
+test('validateSpan: customer-content field emits rule-privacy_classification warning', () => {
+  const { validateSpan, loadSchema } = require(sdPath);
+  const schema = loadSchema(schemaPath);
+  // goodSpan has gen_ai.input.messages and gen_ai.output.messages — both CustomerContent.
+  const findings = validateSpan(goodSpan, schema);
+  const privacy = findings.filter(f => f.ruleId === 'rule-privacy_classification');
+  // At minimum, the two messages fields fire.
+  assert.ok(privacy.length >= 2, JSON.stringify(privacy, null, 2));
+  // Severity is warning, not error.
+  for (const f of privacy) assert.equal(f.severity, 'warning');
+  // Confidence is below 1.0 (heuristic).
+  for (const f of privacy) assert.equal(f.confidence, 0.5);
+});
+
+test('validateSpan: empty CustomerContent field does not fire rule-privacy_classification', () => {
+  const { validateSpan, loadSchema } = require(sdPath);
+  const schema = loadSchema(schemaPath);
+  const span = JSON.parse(JSON.stringify(goodSpan));
+  // Empty out one CustomerContent field (the schema lists gen_ai.input.messages as CustomerContent).
+  span.attributes['gen_ai.input.messages'] = '';
+  const findings = validateSpan(span, schema);
+  const onInput = findings.find(f => f.ruleId === 'rule-privacy_classification' && f.metadata.field === 'gen_ai.input.messages');
+  assert.equal(onInput, undefined, 'empty value should not fire privacy rule');
 });
