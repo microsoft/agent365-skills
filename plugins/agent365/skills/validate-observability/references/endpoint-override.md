@@ -1,175 +1,135 @@
 # Endpoint override mechanism per language
 
-This document records, for each supported A365 SDK target, the verified mechanism the
-`validate-observability` skill uses to redirect OTLP traffic from the real A365
-endpoint to a localhost listener during local validation.
+Verified mechanism for the `validate-observability` skill to redirect OTLP traffic
+from the production A365 endpoint to the local capture daemon while **keeping the
+A365 exporter active**. The A365 exporter's FMI token chain, baggage attribution,
+URL derivation, and custom headers must be exercised — that's exactly what the
+validation flow needs to inspect.
 
-**Verification source:** static analysis of the official SDK source repos
+**Verification source:** static analysis of the official SDK source repos on disk
 (`D:\Agent365-dotnet`, `D:\Agent365-nodejs`, `D:\Agent365-python`) on 2026-05-07.
 
 ---
 
-## TL;DR — recommended mechanism (all languages)
+## TL;DR — single mechanism, three small per-language differences
 
-**Disable the A365 exporter; register a vanilla OTLP-HTTP exporter pointed at
-`http://localhost:<port>/v1/traces`.** The skill's capture daemon decodes standard
-OTLP (protobuf or JSON), so a vanilla exporter pairs cleanly. `BaggageBuilder`,
-`InvokeAgentScope`, `InferenceScope`, and `ExecuteToolScope` all operate at the
-OpenTelemetry context layer — they keep working when the A365 exporter is disabled.
+All three A365 SDKs read **`A365_OBSERVABILITY_DOMAIN_OVERRIDE`** at runtime and
+substitute its value for the production domain in the derived URL. Setting it to
+the daemon's loopback URL is sufficient to redirect traffic — no code patch, no
+re-wiring of the exporter, no auth changes. The daemon must speak HTTPS for .NET
+(the .NET exporter rejects `http://` schemes) and may use HTTP for Node.js / Python.
 
-The skill's one-shot mode mutates dev-only override files (`.env.local` /
-`appsettings.Development.json`) per the per-language sections below. A small
-code patch may also be required where noted.
-
-A simpler env-var-only path (`A365_OBSERVABILITY_DOMAIN_OVERRIDE`) exists in all
-three SDKs but has caveats per language — see the bottom of this doc.
+The daemon's existing OTLP-JSON decoder (Task 3) handles the body verbatim — all
+three SDKs send standard-shaped `{resourceSpans: [{resource, scopeSpans:[{scope, spans:[...]}]}]}`
+JSON. The path differs slightly between SDKs (`/otlp/` segment present in .NET +
+Python, absent in Node.js) — the daemon accepts any POST URL by design.
 
 ---
 
 ## .NET
 
-**Mechanism:** disable the A365 exporter; register a vanilla `AddOtlpExporter`.
+**Required: HTTPS daemon.** `Agent365ExporterCore.BuildRequestUri` throws
+`ArgumentException("Plaintext HTTP endpoints are not supported...")` on any
+`http://` URL (Agent365ExporterCore.cs:111). The skill must spawn the daemon with
+`--cert/--key` and `A365_OBSERVABILITY_DOMAIN_OVERRIDE=https://localhost:<port>`.
 
-**Why not env-var only:** `Agent365ExporterCore.BuildRequestUri()` explicitly rejects
-plaintext `http://` URLs (throws `ArgumentException`). The env-var path can only
-target HTTPS, which requires a dev cert on localhost.
-
-**Skill mutations:**
-
-`appsettings.Development.json` — set the exporter flag off. (This file is in
-`.gitignore` and is already used by `instrument-observability` for the same purpose.)
+**Skill mutation — `appsettings.Development.json`:**
 
 ```json
 {
-  "EnableAgent365Exporter": false
+  "Agent365Observability": {
+    "DomainOverride": "https://localhost:4318"
+  }
 }
 ```
 
-**Required code patch** in the agent's entry point (e.g. `Program.cs`) — wrapped
-in a development-only guard so production wiring is untouched. The skill writes
-this block alongside the existing `builder.UseMicrosoftOpenTelemetry(...)` call:
+The .NET SDK reads the env var directly via `Environment.GetEnvironmentVariable("A365_OBSERVABILITY_DOMAIN_OVERRIDE")`
+(Agent365ExporterCore.cs:144). Configuration-binding is not used by the exporter,
+so the skill writes the env var into `appsettings.Development.json` AND ensures
+it's exported into the agent's process environment. The simplest cross-platform
+move: set the env var in the launchSettings or via `Environment.SetEnvironmentVariable`
+in `Program.cs` under `#if DEBUG` — but that's a code change. The cleanest
+config-only path is exporting the env var in the developer's shell before
+running the agent.
 
-```csharp
-#if DEBUG
-if (builder.Configuration.GetValue<bool>("EnableAgent365Exporter") == false)
-{
-    builder.Services.AddOpenTelemetry()
-        .WithTracing(t => t.AddOtlpExporter(opt =>
-        {
-            opt.Endpoint = new Uri("http://localhost:4318/v1/traces");
-            opt.Protocol = OtlpExportProtocol.HttpProtobuf;
-        }));
-}
-#endif
-```
+**Skill mutation summary:**
 
-The `#if DEBUG` guard plus the `EnableAgent365Exporter == false` check means the
-patch is inert in any build that has the A365 exporter on — which is every
-production build by default.
+1. Write `Agent365Observability:DomainOverride: "https://localhost:<port>"` into `appsettings.Development.json`.
+2. Print: *"Set `$env:A365_OBSERVABILITY_DOMAIN_OVERRIDE='https://localhost:<port>'` in your terminal before running the agent."*
+3. Print cert-trust instructions:
+   - **PowerShell (admin):** `Import-Certificate -FilePath ./tests/fixtures/vo/cert.pem -CertStoreLocation Cert:\LocalMachine\Root`
+   - **Or set `$env:DOTNET_SSL_CERT_FILE='./tests/fixtures/vo/cert.pem'`** (alternative; agent process picks up the cert without modifying the trust store)
 
-**On teardown:** the skill restores `EnableAgent365Exporter` to its prior value
-in `appsettings.Development.json`. The code patch can stay (it's gated behind two
-conditions) — or the skill removes it on `--stop` if the dev prefers a clean
-file.
+**Body the daemon receives:** standard OTLP-JSON `ExportTraceServiceRequest` (Agent365ExporterCore.cs:142, ExportFormatter.cs:87-99).
+**URL path:** `https://localhost:<port>/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces?api-version=1` (or `/observabilityService/...` when `UseS2SEndpoint=true`).
+**Headers:** `Authorization: Bearer <FMI token>`, `Content-Type: application/json`. No `x-ms-tenant-id`.
 
 ---
 
 ## Node.js
 
-**Mechanism:** set `ENABLE_A365_OBSERVABILITY_EXPORTER=false`; register a vanilla
-`@opentelemetry/exporter-trace-otlp-http` `OTLPTraceExporter` against localhost.
+**HTTP or HTTPS — both accepted.** The Node.js exporter does not require
+`https://`. The skill spawns the daemon on HTTP for simplicity.
 
-**Why not env-var only:** `Agent365_OBSERVABILITY_DOMAIN_OVERRIDE` works at the
-URL level, but the Node.js `Agent365Exporter` posts a *custom* JSON shape to a
-*non-standard* path (`/observability/tenants/{tenantId}/agents/{agentId}/traces?api-version=1`),
-not standard OTLP-JSON. The skill's daemon expects standard OTLP — switching to a
-vanilla exporter sidesteps the wire-format mismatch.
-
-**Skill mutations:**
-
-`.env.local`:
+**Skill mutation — `.env.local`:**
 
 ```dotenv
-ENABLE_A365_OBSERVABILITY_EXPORTER=false
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+A365_OBSERVABILITY_DOMAIN_OVERRIDE=http://localhost:4318
 ```
 
-**Required code patch** in the agent's entry point (e.g. `index.ts`) — also
-DEV-guarded:
+The SDK reads this in `ObservabilityConfiguration.ts:52` and uses it as-is in
+`Agent365Exporter.ts:172-185`. No code patch.
 
-```ts
-if (process.env.ENABLE_A365_OBSERVABILITY_EXPORTER === 'false' && process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT) {
-  const { NodeTracerProvider } = await import('@opentelemetry/sdk-trace-node');
-  const { BatchSpanProcessor }  = await import('@opentelemetry/sdk-trace-base');
-  const { OTLPTraceExporter }   = await import('@opentelemetry/exporter-trace-otlp-http');
-  const provider = new NodeTracerProvider();
-  provider.addSpanProcessor(new BatchSpanProcessor(new OTLPTraceExporter({
-    url: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-  })));
-  provider.register();
-}
-// useMicrosoftOpenTelemetry({ ... }) is called as normal afterwards;
-// with the A365 exporter disabled, the vanilla exporter is what actually flushes.
-```
-
-**On teardown:** the skill removes the three `.env.local` lines it added (or
-restores their previous values). The code patch can stay — it's a no-op when
-the env vars are unset.
+**Body the daemon receives:** standard OTLP-JSON (Agent365Exporter.ts:188, 295-336).
+**URL path:** `http://localhost:<port>/observability/tenants/{tenantId}/agents/{agentId}/traces?api-version=1` (NO `/otlp/` segment — Node.js SDK builds the path differently from .NET / Python).
+**Headers:** `Authorization: Bearer <token>`, `x-ms-tenant-id: <tid>`, `Content-Type: application/json`.
 
 ---
 
 ## Python
 
-**Mechanism:** disable the A365 exporter; rely on the SDK's built-in
-`ENABLE_OTLP_EXPORTER` path (which honors standard OTel env vars natively).
+**HTTP or HTTPS — both accepted (HTTP triggers a warning).** Skill uses HTTP for
+simplicity, same as Node.js.
 
-**Why this is cleanest for Python:** the SDK already wires a vanilla
-`OTLPSpanExporter()` when `ENABLE_OTLP_EXPORTER=true` is set
-(`config.py` lines 210-215). The exporter respects `OTEL_EXPORTER_OTLP_ENDPOINT`
-and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` per OpenTelemetry SDK defaults. No code
-patch is required in the agent.
-
-**Skill mutations:**
-
-`.env.local`:
+**Skill mutation — `.env.local`:**
 
 ```dotenv
-ENABLE_A365_OBSERVABILITY_EXPORTER=false
-ENABLE_OTLP_EXPORTER=true
-OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+A365_OBSERVABILITY_DOMAIN_OVERRIDE=http://localhost:4318
 ```
 
-**No code patch required.** `BaggageBuilder` and `InvokeAgentScope` use standard
-OpenTelemetry context APIs and operate independently of the exporter — they keep
-working with the disabled-A365 + enabled-OTLP combination.
+The SDK reads this in `exporters/utils.py:149-206` and uses it in
+`agent365_exporter.py:96-99`. The agent process logs a warning about
+non-HTTPS bearer-token transport — that's expected for local-test mode and is
+not actionable.
 
-**On teardown:** the skill removes the three `.env.local` lines it added.
+**Body the daemon receives:** OTLP-JSON-compatible (agent365_exporter.py:234-268).
+Field names are camelCase canonical OTLP. Built via `json.dumps()`, posted via
+`requests.post()` (agent365_exporter.py:15, 62, 169).
+**URL path:** `http://localhost:<port>/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces?api-version=1` (or `/observabilityService/...` for S2S).
+**Headers:** `Authorization: Bearer <FMI token>`, `Content-Type: application/json`. No `x-ms-tenant-id`.
 
 ---
 
-## Alternative: env-var-only path (limited)
+## What the daemon needs (already implemented)
 
-All three SDKs read `A365_OBSERVABILITY_DOMAIN_OVERRIDE` at runtime. Setting it
-to a localhost URL redirects the A365 exporter's POST without a code patch. This
-is the simplest mechanism on the wire, but it has hard caveats:
+- **HTTPS support** — `--cert` and `--key` flags on `server.js` (commit `72bf98a`).
+- **OTLP-JSON decoder** — `otlp-decoder.js` accepts `application/json` bodies and yields the uniform shape (Task 3, commit `c3e6ee2`).
+- **Any-URL POST** — the server stores `req.url` as `urlPath` in the JSONL line and accepts any path. Differences between `/otlp/`-present and absent are preserved for downstream `rule-otlp_path_canonical` to inspect.
 
-| Language | env-var-only works? | Why / why not |
-|---|---|---|
-| .NET | **No** | Exporter rejects `http://` schemes (`Agent365ExporterCore.cs:105`). Would require HTTPS-to-localhost with a dev cert. |
-| Node.js | **Partial** | Works at URL level. Body is custom A365 JSON, not standard OTLP — daemon would need an A365-JSON decoder branch (not built in v1). |
-| Python | **Yes** | Body is the A365 shape but Python's flag activates a separate vanilla OTLP exporter; it bypasses the issue. Setting both `A365_OBSERVABILITY_DOMAIN_OVERRIDE` and the OTel env vars is redundant — prefer the OTel-env-var path. |
+The skill's existing common-mistakes rule pack already inspects:
+- `rule-s2s_endpoint_path` — checks `urlPath` for `/observability/` vs `/observabilityService/`
+- `rule-otlp_path_canonical` — flags spans where `urlPath` contains `/otlp/` (Node.js / .NET SDK bug)
+- `rule-fmi_token_audience` — checks `microsoft.a365.exporter.token_aud` resource attribute when present
 
-**Recommendation:** use the per-language sections above. Revisit `A365_OBSERVABILITY_DOMAIN_OVERRIDE`
-only if v2 of this skill ships an A365-JSON decoder branch.
+These rules now operate on real Agent365Exporter output, not on a vanilla-OTel substitute.
 
 ---
 
 ## Citations
 
-- **.NET:** `D:\Agent365-dotnet\src\Observability\Runtime\Tracing\Exporters\Agent365ExporterCore.cs:105` (HTTP rejection), `:144` (env-var override), `Builder.cs:62` (`EnableAgent365Exporter` flag), `Builder.cs:124` (console fallback when disabled).
-- **Node.js:** `D:\Agent365-nodejs\packages\agents-a365-observability\src\tracing\exporter\Agent365Exporter.ts:172-185, 245` (custom JSON path), `src\configuration\ObservabilityConfiguration.ts:52` (env-var override), `src\tracing\exporter\utils.ts:163-183` (URL resolution).
-- **Python:** `D:\Agent365-python\libraries\microsoft-agents-a365-observability-core\microsoft_agents_a365\observability\core\config.py:210-215` (`ENABLE_OTLP_EXPORTER` gate, standard OTel env-var support), `exporters\utils.py:149-206` (`A365_OBSERVABILITY_DOMAIN_OVERRIDE`), `middleware\baggage_builder.py` (independent of exporter).
+- **.NET:** `D:\Agent365-dotnet\src\Observability\Runtime\Tracing\Exporters\Agent365ExporterCore.cs:92-93` (URL paths), `:111` (HTTPS-only enforcement), `:142` (content-type), `:144` (env-var read), `:170` (Authorization header). `ExportFormatter.cs:87-99` (body construction), `:351-472` (camelCase serialization).
+- **Node.js:** `D:\Agent365-nodejs\packages\agents-a365-observability\src\tracing\exporter\Agent365Exporter.ts:172-185` (URL composition), `:188` (content-type), `:215` (Authorization), `:224` (`x-ms-tenant-id`), `:295-336` (body shape). `src\configuration\ObservabilityConfiguration.ts:52` (env-var read).
+- **Python:** `D:\Agent365-python\libraries\microsoft-agents-a365-observability-core\microsoft_agents_a365\observability\core\exporters\agent365_exporter.py:15, 62, 109, 111, 119, 169, 234-268` (HTTP, body, headers). `exporters\utils.py:149-206, 209-232` (env-var, URL composition).
 
 ---
 
@@ -177,6 +137,5 @@ only if v2 of this skill ships an A365-JSON decoder branch.
 
 This file resolves spec §12 open question 1 of the validate-observability design
 (`docs/superpowers/specs/2026-05-06-validate-observability-skill-design.md`). The
-skill's `SKILL.md` Phase 1B step 2 should now use the per-language sections above
-rather than its previous fallback prompt asking the user to set up the override
-manually. A follow-up commit to `SKILL.md` makes that change.
+SKILL.md Phase 1B step 4 mutations are now backed by verified per-language
+mechanisms.
