@@ -135,6 +135,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Install validate-observability daemon deps
+        run: npm ci --prefix plugins/agent365/skills/validate-observability/daemon
       - name: Run validator unit tests
         run: node --test tests/*.test.js
 
