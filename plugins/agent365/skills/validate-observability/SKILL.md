@@ -79,9 +79,7 @@ If `--export <file>`: also write findings to `<file>` after stripping skill-only
 **TaskCreate** — "Detect agent + start daemon + capture one turn + validate + cleanup"
 
 1. **Read** `.a365-workspace-detection.json`. If absent: refuse: *"Run `a365-setup` and `instrument-observability` first."*
-2. **Read** `references/endpoint-override.md` to determine the verified per-language override mechanism.
-
-   **If `references/endpoint-override.md` does not yet exist** (the spike has not run): warn the user — *"The endpoint-override mechanism for your language has not been verified. To complete the spike, point your A365 SDK at `http://localhost:<port>` manually and run me again."* Then prompt for the port and skip steps 3–4.
+2. **Read** `references/endpoint-override.md` and locate the per-language section that matches the agent's language (`.NET` / `Node.js` / `Python`). That section names the exact dev-only file mutations and code patches the skill applies in step 4.
 3. Pick a port (default 4318; scan upward if busy via `node -e "require('net').createServer().listen(PORT, ()=>process.exit(0)).on('error',()=>process.exit(1))"`).
 4. **Mutate dev-only override config** per `endpoint-override.md`. Record original values in state.json's `mutations` array. **Never modify** `.env`, `appsettings.json`, or `appsettings.Production.json`.
 5. **Spawn daemon**: `node ${CLAUDE_PLUGIN_ROOT}/skills/validate-observability/daemon/server.js --port <port> --capture-dir <agent-cwd>/.a365-observability-capture`. Capture stdout's first JSON line `{ ready: true, port, pid }` within 5 seconds. Write `state.json` with `{ pid, port, mutations }`.
@@ -109,13 +107,15 @@ Every run prints the markdown report from `report.js`. With zero findings, print
 **Findings:** 0 errors, 0 warnings, 0 info. Trace shape matches the upstream schema.
 ```
 
-## Open question — endpoint override mechanism
+## Endpoint override mechanism
 
-`references/endpoint-override.md` records the verified mechanism per language. If the file
-is absent, the spike (Task 0 of the implementation plan) has not yet been run. Until then,
-Phase 1B step 2 falls back to asking the user to set up the override manually. Once the
-spike is complete, this skill will mutate `.env.local` / `appsettings.Development.json`
-automatically.
+The verified per-language mechanism is documented in `references/endpoint-override.md`. The
+skill mutates only dev-only files: `.env.local` (Node.js / Python) or
+`appsettings.Development.json` (.NET). For .NET and Node.js a small DEBUG-guarded code
+patch is also applied. Originals are restored on `--stop`.
+
+If a future SDK release breaks any of those mechanisms, update `endpoint-override.md`
+and the corresponding step 4 logic.
 
 ## Idempotency
 
