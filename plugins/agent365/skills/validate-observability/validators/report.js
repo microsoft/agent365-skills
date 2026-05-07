@@ -15,7 +15,8 @@ function format(findings) {
 
   const lines = [];
   lines.push('# Observability validation report\n');
-  lines.push(`**Findings:** ${counts.error} error, ${counts.warning} warning, ${counts.info} info across ${byTrace.size} trace.\n`);
+  const pluralize = (n, sing, plur) => `${n} ${n === 1 ? sing : (plur || sing + 's')}`;
+  lines.push(`**Findings:** ${pluralize(counts.error, 'error')}, ${pluralize(counts.warning, 'warning')}, ${pluralize(counts.info, 'info', 'info')} across ${pluralize(byTrace.size, 'trace')}.\n`);
   for (const [traceId, fs] of byTrace) {
     lines.push(`## trace \`${traceId}\`\n`);
     fs.sort((a, b) => (ORDER[a.severity] - ORDER[b.severity]) || a.ruleId.localeCompare(b.ruleId));
