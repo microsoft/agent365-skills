@@ -1,4 +1,4 @@
-﻿---
+---
 name: a365-setup
 version: 1.5.0
 description: >
