@@ -73,10 +73,7 @@ function validateTrace(trace, rules) {
     for (const span of trace) {
       if (!operationMatches(rule, span)) continue;
       const checkResult = check(span, trace, rule);
-      // All check functions return true = "condition is satisfied / OK".
-      // negate:true on a rule means the check was written to detect presence of a required
-      // thing, but the rule fires when that thing is ABSENT — i.e. when check returns false.
-      // In both cases we fire when the check says the condition is NOT met: !checkResult.
+      // Each CHECK returns true when the condition the rule guards is satisfied; the rule fires when the check returns false.
       if (!checkResult) {
         findings.push(RuleResult({
           ruleId: rule.ruleId,

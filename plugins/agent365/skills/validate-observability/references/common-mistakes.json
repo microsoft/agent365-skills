@@ -13,7 +13,6 @@
       "appliesTo": { "operationName": "invoke_agent" },
       "check": "any_attribute_present",
       "args":  { "prefixes": ["microsoft.a365.caller.", "gen_ai.caller."] },
-      "negate": true,
       "severity": "error",
       "fixHint": "S2S agents must populate CallerDetails on InvokeAgentScope.Start(); without it, traces reach the API (200) but stay invisible in the MAC portal."
     },
