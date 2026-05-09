@@ -283,7 +283,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 2. **Edit** — Add observability wiring following the reference pattern in `dotnet-observability.md`:
    - Add using directives for the observability namespaces
-   - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter();` then `builder.AddA365Tracing();`
+   - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter(clusterCategory: "production");` then `builder.AddA365Tracing(config => { config.WithAgentFramework(); });` — requires `using Microsoft.Agents.A365.Observability.Extensions.AgentFramework;` and the NuGet package `Microsoft.Agents.A365.Observability.Extensions.AgentFramework`. Also set `"EnableAgent365Exporter": true` in `appsettings.json` to activate the backend exporter (when `false`, traces are only emitted to console).
    - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()` using `ServiceTokenCache` and conditional `ObservabilityTokenService`) and `Observability/ObservabilityTokenService.cs` (background service that acquires the Observability API token via the MSAL FMI 3-hop chain with `.WithFmiPath()` targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback). Then call `builder.Services.AddAgent365Observability();` and `builder.UseMicrosoftOpenTelemetry(...)` with token resolver reading from the `ServiceTokenCache`. **Critical:** Set `o.Agent365.Exporter.UseS2SEndpoint = true` in the options callback — without this, the exporter posts to the wrong path (`/observability/` instead of `/observabilityService/`) and gets HTTP 401. See "Known Issues" section.
    - Optionally register `adapter.Use(new BaggageTurnMiddleware())` (OBO path only) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -335,26 +335,43 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Follow the reference pattern in `dotnet-observability.md` based on `authMode`:
+2. **Edit** — Follow the reference pattern (see `Agent365-samples/dotnet/agent-framework/sample-agent/telemetry/A365OtelWrapper.cs`):
 
    **OBO path** (`user-delegated` or `agentic-identity`):
    - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor
-   - Use `new BaggageBuilder().FromTurnContext(turnContext).Build()` — requires `using Microsoft.Agents.A365.Observability.Hosting.Extensions;`; `Build()` returns `IDisposable`, use `using var`
+   - **Resolve agent ID and tenant ID from the agentic request** — add a helper method:
+     ```csharp
+     private static (string agentId, string tenantId) ResolveTenantAndAgentId(ITurnContext turnContext)
+     {
+         string agentId = turnContext.Activity.IsAgenticRequest()
+             ? turnContext.Activity.GetAgenticInstanceId()
+             : Guid.Empty.ToString();
+
+         string tenantId = turnContext.Activity.Conversation?.TenantId
+             ?? turnContext.Activity.Recipient?.TenantId
+             ?? Guid.Empty.ToString();
+
+         return (agentId, tenantId);
+     }
+     ```
+     `GetAgenticInstanceId()` returns the agent's **service principal object ID** (the instance ID assigned by A365). This is the correct ID for observability export — it maps to the agent in the MAC portal.
+   - Use `new BaggageBuilder().TenantId(tenantId).AgentId(agentId).Build()` to set baggage context.
    - Call `RegisterObservability` with all four arguments per turn (wrap in try/catch — non-fatal):
      ```csharp
      _agentTokenCache.RegisterObservability(
-         turnContext.Activity.Recipient.AgenticAppId,
-         turnContext.Activity.Recipient.TenantId,
+         agentId,
+         tenantId,
          new AgenticTokenStruct(
              userAuthorization: UserAuthorization,
              turnContext: turnContext,
-             authHandlerName: "AGENTIC"),
+             authHandlerName: authHandlerName),
          EnvironmentUtils.GetObservabilityAuthenticationScope()
      );
      ```
-     - `user-delegated`: token exchange resolves to the **signed-in user's** identity → traces attributed to the user
-     - `agentic-identity`: token exchange resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
-   - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
+     Note: Some SDK versions support object-initializer syntax instead. If the constructor form fails to compile, try property-initializer: `new AgenticTokenStruct { UserAuthorization = ..., TurnContext = ..., AuthHandlerName = ... }`.
+   - The `authHandlerName` should be the agentic auth handler name (from config `AgentApplication:AgenticAuthHandlerName`) when `IsAgenticRequest()` is true, empty string otherwise.
+   - **No `Agent365Observability` config section needed** — all values are resolved from the agentic request at runtime.
+   - **Recommended pattern:** Create a reusable static wrapper method (e.g. `A365OtelWrapper.InvokeObservedAgentOperation(...)`) that encapsulates agent ID resolution, baggage building, token registration, and the operation invocation. See the reference sample's `telemetry/A365OtelWrapper.cs`.
 
    **S2S path**:
    - Inject `Agent365ObservabilityContext` (singleton registered by `AddAgent365Observability()`) in the constructor — **not** `IExporterTokenCache<AgenticTokenStruct>`

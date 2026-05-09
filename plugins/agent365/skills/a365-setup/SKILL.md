@@ -100,17 +100,40 @@ Check the following signals **in parallel** (Glob + Grep).
 
 If no strong standalone signal and no valid pairing → `0` (Agent (Non AI Teammate), no M365 integration detected — may be a non-M365 CEA or other Agent (Non AI Teammate) type)
 
+**Step 4: Detect AI Teammate Changes** → Store as `hasAITeammateChanges`
+
+Run all checks **in parallel** (Glob + Grep):
+
+*AI Teammate structure signals (from `make-ai-teammate`) — any one counts:*
+- `AgentApplication` in `src/**/*.ts`, `**/*.cs`, or `**/*.py`
+- `CloudAdapter` in `src/**/*.ts` or `CloudAdapterAiohttp` in `**/*.py`
+- `@microsoft/agents-a365-notifications` in `package.json`
+- `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
+- `ToolingManifest.json` exists
+
+*Observability signals (from `instrument-observability`) — any one counts:*
+- `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
+- `@microsoft/agents-a365-observability` or `@microsoft/opentelemetry` in `package.json` (Node.js)
+- `microsoft-agents-a365-observability-core` in `requirements.txt` or `pyproject.toml` (Python)
+- `A365 Observability` comment in any `src/**/*.ts`, `**/*.cs`, or `**/*.py` file
+
+If at least one signal from **each** category is found → `hasAITeammateChanges = 1`
+Otherwise → `hasAITeammateChanges = 0`
+
 ### Phase 1B: User Validation Questions
 
 Present **all three detections in a single message** and wait for ONE response:
 
 ```
 Here's what we detected about your agent:
-  • Stack:         {agentStack}
-  • Language:      {programmingLanguage}
-  • Agent type:    {usesTeamsOrCopilot == 1
-                     ? "M365 Custom Engine Agent (CEA) — Agent (Non AI Teammate) with Teams/Copilot integration"
-                     : "Agent (Non AI Teammate) — no Teams/Copilot markers detected (may be a non-M365 CEA, background agent, or other Agent (Non AI Teammate) type)"}
+  • Stack:            {agentStack}
+  • Language:         {programmingLanguage}
+  • Agent type:       {usesTeamsOrCopilot == 1
+                        ? "uses Teams/Copilot integration"
+                        : "no Teams/Copilot markers detected"}
+  • AI Teammate setup: {hasAITeammateChanges == 1
+                        ? "already configured (make-ai-teammate + observability detected)"
+                        : "not yet configured"}
 
 Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
@@ -123,6 +146,13 @@ Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 
 **Auth mode question (ask before capabilities):**
 
+If `hasAITeammateChanges = 1` or `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `authMode = "agentic-user"` and tell the user:
+
+- If `usesTeamsOrCopilot = 1`: "This is a Custom Engine Agent (CEA) — the only supported auth mode is **Agent User Account (agentic-user)**."
+- If `hasAITeammateChanges = 1`: "Since this agent already has AI Teammate changes configured, **Agent User Account (agentic-user)** is the only supported auth mode. Your agent authenticates using its own Entra identity provisioned via the Agent 365 Blueprint."
+
+Otherwise, ask:
+
 ```
 How will your agent authenticate when calling downstream APIs?
 
@@ -133,11 +163,14 @@ How will your agent authenticate when calling downstream APIs?
   2. Service-to-service (S2S) — the agent acts as its own identity (application permissions)
      Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
      (e.g. reading all mailboxes, managing SharePoint sites).
+
+  3. Agent User Account  - The agent has it own Entra User Account based on an Entra Blueprint and authenticates with its own credentials. This is a special mode for AI Teammate agents that interact with workflows using their own user identity. https://learn.microsoft.com/en-us/entra/agent-id/agent-users
 ```
 
 Wait for the answer. Store as `authMode`:
 - If 1 → `authMode = "obo"`
 - If 2 → `authMode = "s2s"`
+- If 3 → `authMode = "agentic-user"`
 
 > **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
 
@@ -145,40 +178,41 @@ Wait for the answer. Store as `authMode`:
 
 **Final question: What capabilities do you want to enable?**
 
-Present only the options that apply — **omit WorkIQ when `authMode = "s2s"`** and omit or note option 4 if CEA was detected:
+If `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and tell the user:
+
+> "Custom Engine Agents can only be configured as AI Teammates. **Register**, **Observability**, **WorkIQ**, and **AI Teammate** have been selected automatically."
+
+Otherwise, if `hasAITeammateChanges = 1`, only present these options (Observability and AI Teammate are already configured):
 
   1. Register — make the agent findable in the Agent 365 catalog
-  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
+  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+
+Otherwise, present only the options that apply — **omit WorkIQ when `authMode = "s2s"`**:
+
+  1. Register — make the agent findable in the Agent 365 catalog
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender. Will register your agent with the A365 catalog if not already registered.
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
      _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
-  4. AI Teammate  — agent gets a first-class M365 identity (Agentic User with UPN)
-     ⚠️  NOT available for Custom Engine Agents — CEA is supported as Agent (Non AI Teammate) only
-
-> **CEA guard:** If `usesTeamsOrCopilot = 1` (CEA detected) and the user selects option 4, respond:
-> "Custom Engine Agents are supported as Agent (Non AI Teammate) agents.
->  AI Teammate is not supported for CEA.
->  Please choose from options 1–3."
-> Then re-present options 1–3 (minus WorkIQ if S2S) and wait for a new answer.
+  4. AI Teammate  — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
+       _(only show this option when `authMode = "agentic-user"`- AI Teammate needs an auth type of `agentic-user`)_
 
 Wait for the answer. Store as `capabilities`.
 
 > **Note:** Options can be combined — e.g. a user can say "1 and 2" for Register + Observability.
 
+> **AI Teammate auto-select:** If the user selects option 4 (AI Teammate), automatically include options 1 (Register), 2 (Observability), and 3 (WorkIQ) — set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and inform the user: "AI Teammate includes Register, Observability, and WorkIQ automatically."
+
 ### Phase 1C: Determine Path and Create Todos
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isAITeammate = true` if the user selected **AI Teammate**, else `isAITeammate = false`.
-   - **If `usesTeamsOrCopilot = 1` (CEA) AND `isAITeammate = true`:** This combination is not supported.
-     Tell the user: "CEA is supported as an Agent (Non AI Teammate) — AI Teammate is not supported for CEA."
-     Set `isAITeammate = false` and route to the Standard/CEA path.
-
-2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
+1. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
    - Write `authMode` as collected (`"obo"` or `"s2s"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
+   - Write `hasAITeammateChanges` as detected in Phase 1A Step 4 (`1` or `0`).
 
-3. Derive `registrationType` from Phase 1A signals (do not ask the user):
+2. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
    - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Agent (Non AI Teammate) / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
