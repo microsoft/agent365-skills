@@ -499,48 +499,68 @@ The `token_cache.py` custom module (located at project root or `observability/to
 
 ## Phase 5.5: Wire Manual Instrumentation Scopes
 
-**TaskCreate** — "Wire InvokeAgentScope, InferenceScope, ExecuteToolScope (required for store publishing)"
+**TaskCreate** — "Wire InvokeAgentScope, InferenceScope, ExecuteToolScope"
 
-> **Store publishing requirement:** The Agent 365 store validator requires `InvokeAgentScope`,
-> `InferenceScope`, and `ExecuteToolScope` to be present and populating telemetry. Missing any one
-> of these three scopes causes store validation failure.
+> **Auto-instrumentation vs manual:** Whether manual scopes are needed depends on `authMode` and
+> whether auto-instrumentation framework extensions were installed in Phase 2.
+>
+> | Situation | InvokeAgentScope | InferenceScope | ExecuteToolScope |
+> |---|---|---|---|
+> | `authMode = "s2s"` (autonomous) | Required — add always | Required — add always | Required — add always |
+> | OBO + framework extension installed (Phase 2) | Required — add always | **Skip** — auto-instrumentation generates these | Only for local/custom tools not covered by the extension |
+> | OBO + no framework extension | Required — add always | Required — add always | Required — add always |
+>
+> **Rule:** Never skip `InvokeAgentScope` — it wraps the turn and is always required for traces to
+> appear in the MAC portal. Auto-instrumentation extensions cover LLM calls (`InferenceScope`) and
+> framework-managed tool calls (`ExecuteToolScope`), but they do not wrap the agent turn itself.
 
-Ask the user: "Do you want to add the InvokeAgentScope, InferenceScope, and ExecuteToolScope wrappers now? These are required for store publishing."
+**Determine which scopes to add:**
 
-If the user confirms (or if this is for store publishing):
+- If `authMode = "s2s"`: proceed directly — add all three scopes without prompting (required for autonomous agents).
+- If OBO and a framework extension **was** installed in Phase 2:
+  - Add `InvokeAgentScope` always.
+  - **Skip `InferenceScope`** — the framework extension instruments LLM calls automatically.
+  - Ask: *"Does your agent make any local or custom tool calls that are **not** routed through the framework? If yes, I'll add `ExecuteToolScope` wrappers for those."* Add `ExecuteToolScope` only if the user confirms custom tool calls exist.
+- If OBO and **no** framework extension was installed in Phase 2:
+  - Ask: *"Do you want to add InvokeAgentScope, InferenceScope, and ExecuteToolScope wrappers? These are required for store publishing."*
+  - Add all three if the user confirms.
+
+> **Store publishing:** The Agent 365 store validator requires `InvokeAgentScope`, `InferenceScope`,
+> and `ExecuteToolScope` to be present. For OBO agents with framework extensions, the extension
+> satisfies `InferenceScope` and framework-managed `ExecuteToolScope` automatically.
 
 ### For .NET AgentFramework
 
-Follow the reference patterns in `dotnet-observability.md` for:
+Follow the reference patterns in `dotnet-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler to capture agent invocation telemetry
-- **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons
-- **`ExecuteToolScope`** — wrap each tool call to capture tool name, arguments, result
+- **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — use for async response scenarios where output isn't captured synchronously
-- `CallerDetails` must be passed to `InvokeAgentScope.Start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` must be passed to `InvokeAgentScope.Start()` as the 4th parameter — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from config (`Agent365Observability:Sponsor` section) and construct `CallerDetails` with `UserDetails(userId, userName, userEmail)`
 - Pass `UserDetails` directly (not wrapped in `CallerDetails`) to `InferenceScope.Start()` and `ExecuteToolScope.Start()` as the optional 4th parameter
 - The `Agent365ObservabilityContext` singleton should hold both `AgentDetails` and `CallerDetails` properties
 
 ### For Node.js
 
-Follow the reference patterns in `nodejs-observability.md` for:
+Follow the reference patterns in `nodejs-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler. Use `ScopeUtils.populateInvokeAgentScopeFromTurnContext` from `@microsoft/agents-a365-observability-hosting` to auto-populate from TurnContext
-- **`InferenceScope`** — wrap each LLM call. Use `ScopeUtils.populateInferenceScopeFromTurnContext` if available
-- **`ExecuteToolScope`** — wrap each tool call. Use `ScopeUtils.populateExecuteToolScopeFromTurnContext` if available
+- **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async scenarios
-- `CallerDetails` must be passed to `InvokeAgentScope.start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` must be passed to `InvokeAgentScope.start()` as the 4th parameter — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from env vars (`agent365Observability__sponsorUserId`, `agent365Observability__sponsorUserName`, `agent365Observability__sponsorUserEmail`) and construct the `CallerDetails` object
 - Pass `UserDetails` directly to `InferenceScope.start()` and `ExecuteToolScope.start()` as the optional 4th parameter
 - Export `callerDetails` (for `InvokeAgentScope`) and `userDetails` (for `InferenceScope`/`ExecuteToolScope`) from the entry point module alongside `agentDetails`
 
 ### For Python
 
-Follow the reference patterns in `python-observability.md` for:
+Follow the reference patterns in `python-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler as a context manager
-- **`InferenceScope`** — wrap each LLM call
-- **`ExecuteToolScope`** — wrap each tool call
+- **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async response scenarios
-- `CallerDetails` / `UserDetails` must be supplied when creating the top-level `InvokeAgentScope` — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` / `UserDetails` must be supplied when creating the top-level `InvokeAgentScope` — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from config or environment and construct `CallerDetails(UserDetails(userId, userName, userEmail))`
 - Pass `UserDetails` directly to `InferenceScope`, `ExecuteToolScope`, and `OutputScope` when their optional user parameter is available
 - Keep shared observability state with both `agent_details` and `caller_details` / `user_details` so nested scopes can reuse them consistently
