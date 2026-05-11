@@ -26,7 +26,7 @@ hooks:
       prompt: |
         Before ending, verify ALL of the following:
         1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. a365 develop list-available was run and results were shown to the user.
+        2. a365 develop list-available was run, results were shown to the user, and the selection options were populated from the CLI output (not a hardcoded list).
         3. a365 develop add-mcp-servers was run for the selected WorkIQ servers.
         4. ToolingManifest.json now contains the selected WorkIQ server entries.
         5. McpToolRegistrationService (or equivalent) is wired in the agent code.
@@ -207,25 +207,23 @@ OneDrive, Word, user/presence, Copilot) and Dataverse/Dynamics 365.
 
 ### 2.2 Ask which tools to add
 
-If the user provided specific tool names as the skill argument, use those.
-Otherwise:
+If the user provided specific tool names as the skill argument, use those and skip the question.
+
+Otherwise, parse the `a365 develop list-available` output to extract the server names, then present them as numbered options. Also check `a365 develop list-configured` output (from Phase 1.2) to mark already-installed servers so the developer can see what's new vs already present.
 
 ```
 AskUserQuestion:
-  question: "Which WorkIQ tool servers would you like to add? (See catalog above)"
-  options:
-    - Work IQ Mail
-    - Work IQ Calendar
-    - Work IQ Teams
-    - Work IQ SharePoint
-    - Work IQ OneDrive
-    - Work IQ Word
-    - Work IQ User
-    - Work IQ Copilot
-    - Dataverse and Dynamics 365
-    - All of the above
-    - Let me type specific names from the catalog
+  question: |
+    Which WorkIQ tool servers would you like to add?
+    (Servers already in ToolingManifest.json are marked ✅)
+
+    <list every server name from a365 develop list-available output, numbered>
+    <N+1>. All of the above
+    <N+2>. Let me type specific names
+  options: <dynamically built from CLI output — one entry per server name>
 ```
+
+For each option: if the server name appears in the `a365 develop list-configured` output, append ` (✅ already configured)` to the label. Include it in the list anyway — user may want to re-add or upgrade version.
 
 **Mark task complete: "Show available WorkIQ tools catalog"**
 
