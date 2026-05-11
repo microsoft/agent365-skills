@@ -344,7 +344,7 @@ Show the user a summary:
 ✅ Agent provisioned with Agent 365!
 
 Your agent now has:
-  • Blueprint:       Created in Entra ID (run `a365 status --field agentBlueprintId` to retrieve)
+  • Blueprint:       Created in Entra ID (Blueprint ID in `a365.generated.config.json`)
   • Register: Agent appears in the Agent 365 catalog
   [• Observability:  OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:   M365 data access via MCP]                     (if added)

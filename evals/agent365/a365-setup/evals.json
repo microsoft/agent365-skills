@@ -183,8 +183,8 @@
     {
       "id": 10,
       "prompt": "Run a365 setup for this AI Teammate agent",
-      "description": "AI Teammate path — verifies correct CLI flags: a365 setup all --aiteammate, a365 status, and Entra portal consent handoff for GA",
-      "expected_output": "The skill selects AI Teammate path, validates CLI and prerequisites, delegates to make-ai-teammate. make-ai-teammate runs a365 setup all --aiteammate (not just a365 setup all), shows the Setup Summary, runs a365 status to confirm Blueprint state, and provides Entra portal or PowerShell instructions for the Global Administrator consent handoff.",
+      "description": "AI Teammate path — verifies correct CLI flags: a365 setup all --aiteammate and Entra portal consent handoff for GA",
+      "expected_output": "The skill selects AI Teammate path, validates CLI and prerequisites, delegates to make-ai-teammate. make-ai-teammate runs a365 setup all --aiteammate (not just a365 setup all), shows the Setup Summary, reads Blueprint ID from a365.generated.config.json, and provides Entra portal or PowerShell instructions for the Global Administrator consent handoff.",
       "files": [],
       "expectations": [
         "Phase 1C: isOwnIdentity = true (AI Teammate path selected)",
@@ -193,7 +193,7 @@
         "Step 3: make-ai-teammate SKILL.md is read and followed",
         "make-ai-teammate Phase 9: a365 setup all --aiteammate is run — NOT just a365 setup all (the --aiteammate flag is required for AI Teammate blueprint type)",
         "make-ai-teammate Phase 9: Setup Summary table shown verbatim from CLI output",
-        "make-ai-teammate Phase 9: a365 status is run after setup to confirm Blueprint state and AGENTIC_APP_ID",
+        "make-ai-teammate Phase 9: Blueprint ID and AGENTIC_APP_ID are read from a365.generated.config.json after setup all completes",
         "make-ai-teammate Phase 9: Entra portal instructions or PowerShell script from setup output shown for Global Administrator consent handoff",
         "a365 setup all without --aiteammate is NOT used for the AI Teammate path",
         "a365 publish is NOT run by a365-setup"

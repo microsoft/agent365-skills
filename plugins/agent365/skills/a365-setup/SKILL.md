@@ -720,7 +720,6 @@ a365 setup permissions bot                            # required after setup all
 **AI Teammate:**
 ```bash
 a365 setup all --agent-name <agent_name> --aiteammate
-# --aiteammate: blueprint + permissions only; run a365 create-instance separately
 # for M365-registered AI Teammates, also add --m365
 ```
 
@@ -748,7 +747,7 @@ a365 setup all --agent-name <agent_name>
 # Option B: Copy the PowerShell script printed in the a365 setup all summary output and run as GA
 
 # Retrieve the blueprint ID at any time:
-a365 status --field agentBlueprintId
+node -e "const c=require('./a365.generated.config.json'); console.log(c.agentBlueprintId)"
 ```
 
 > **Note:** `a365 setup admin` has been removed in CLI 1.1. Use the Entra portal or the PowerShell instructions printed by `a365 setup all` instead.
