@@ -1,6 +1,6 @@
 ﻿---
 name: make-a365-agent
-version: 1.5.0
+version: 1.6.0
 description: >
   Provisions a non-AI Teammate agent with Agent 365 — use this skill for Register
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.
@@ -103,6 +103,37 @@ Mark Todo 1 in-progress.
 ---
 
 ## Phase 1 — Collect Provisioning Inputs
+
+### 1.0 — Check for Existing Blueprint
+
+**Before asking for any inputs**, check whether a blueprint config already exists:
+
+```bash
+ls a365.config.json a365.generated.config.json 2>/dev/null
+```
+
+If either file exists, read it and extract `agentBlueprintId` (if present). Then ask:
+
+```
+I found an existing Agent 365 config in this project.
+  • File: {filename found}
+  • Blueprint ID: {agentBlueprintId if found, otherwise "not yet set"}
+
+What would you like to do?
+
+  1. Reuse the existing blueprint — I'll skip `a365 setup all` and use this blueprint directly
+     (use this if setup already ran successfully and you just want to add capabilities)
+  2. Create a fresh blueprint — runs `a365 setup all` and overwrites the existing config
+     (use this if you want to start over or the existing config is stale)
+```
+
+Wait for the answer:
+- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
+- If **2 (fresh)**: set `reuseBlueprint = false`. Continue with Phase 1 inputs and Phase 2 as normal.
+
+If no existing config is found: set `reuseBlueprint = false` and continue.
+
+---
 
 Ask both questions in a single message:
 

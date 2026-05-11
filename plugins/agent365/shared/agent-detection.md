@@ -404,11 +404,18 @@ The cache is written in stages as values become known — always preserve fields
   "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
+  "hasBlueprintConfig": 0,
+  "existingBlueprintId": "<blueprintId string or empty string if none>",
+  "reuseBlueprint": false,
   "agentType": "<ai-teammate | system-agent>",
   "authMode": "",
   "detectedAt": "<ISO 8601 timestamp>"
 }
 ```
+
+- `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
+- `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
+- `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.
 
 **Stage 2 — `instrument-observability` Phase 0.5 or `add-workiq-tools` Phase 0B** (after `agentType` and `authMode` questions):
 Merge `agentType` and `authMode` into the existing file — update only those two fields, keep the rest unchanged.

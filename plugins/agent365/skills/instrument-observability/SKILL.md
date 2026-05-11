@@ -1,6 +1,6 @@
 ---
 name: instrument-observability
-version: 1.5.0
+version: 1.6.0
 description: >
   Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
@@ -389,15 +389,25 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the detected message handler file.
 
 2. **Edit** — Add BaggageBuilder context following the reference pattern in `nodejs-observability.md`:
-   - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
+   - Import `BaggageBuilder` from `@microsoft/opentelemetry`
    - Import `AgenticTokenCacheInstance`, `BaggageBuilderUtils` from `@microsoft/agents-a365-observability-hosting`
    - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
-   - **OBO paths only** (`user-delegated` / `agentic-identity`): Call `AgenticTokenCacheInstance.RefreshObservabilityToken(agentId, tenantId, context, authorization, scopes)` at the start of each turn (non-fatal, wrap in try/catch):
-     - `user-delegated`: `authorization` is the **user's** delegated token → traces attributed to the user
-     - `agentic-identity`: `authorization` resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
+   - **OBO paths only** (`user-delegated` / `agentic-identity`): Resolve `agentId` and `tenantId` dynamically from TurnContext each turn (never from config), then refresh the exporter token (non-fatal, wrap in try/catch):
+     ```
+     const agentId  = turnContext.activity?.recipient?.agenticAppId ?? '';
+     const tenantId = turnContext.activity?.recipient?.tenantId     ?? '';
+     await AgenticTokenCacheInstance.RefreshObservabilityToken(
+       agentId, tenantId, turnContext,
+       agentApplication.authorization,   // ← the AgentApplication auth object, NOT an auth-handler name string
+       getObservabilityAuthenticationScope()
+     );
+     ```
+     - `user-delegated`: `agentApplication.authorization` exchanges the token as the **signed-in user** → traces attributed to the user
+     - `agentic-identity`: `agentApplication.authorization` exchanges the token as the **agentic user** provisioned in Azure AD → traces attributed to the agent
+     - **Recommended pattern:** Extract the agentId/tenantId resolution and token refresh into a `preloadObservabilityToken(turnContext)` helper function to keep the handler clean. See `nodejs-observability.md` for the full helper implementation.
    - **S2S path**: Do **NOT** call `AgenticTokenCacheInstance.RefreshObservabilityToken` — there is no user authorization token. The `tokenResolver` passed to `useMicrosoftOpenTelemetry()` (set up in Phase 3) handles authentication via the FMI 3-hop chain token service.
-   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context).build()` to build baggage automatically from TurnContext
-   - Wrap the handler body in `await baggageScope.run(async () => { ... })`
+   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext).build()` to build baggage automatically from TurnContext. **Note:** `fromTurnContext()` is a static method on `BaggageBuilderUtils` — it does **not** exist directly on `BaggageBuilder`; always use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), ctx)`.
+   - Wrap the handler body in `await baggageScope.run(async () => { ... })` and call `baggageScope.dispose()` in a `finally` block
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -408,15 +418,31 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the detected message handler file.
 
 2. **Edit** — Add BaggageBuilder context following the reference pattern in `python-observability.md`:
-   - Import `BaggageBuilder` from `microsoft_agents_a365.observability.core`
-   - Import `populate` from `microsoft_agents_a365.observability.hosting.scope_helpers.populate_baggage`
-   - Import `AgenticTokenCache`, `AgenticTokenStruct` from `microsoft_agents_a365.observability.hosting.token_cache_helpers`
-   - Import `get_observability_authentication_scope` from `microsoft_agents_a365.runtime`
-   - Call `token_cache.register_observability(agent_id=..., tenant_id=..., token_generator=AgenticTokenStruct(authorization=AGENT_APP.auth, turn_context=context), observability_scopes=get_observability_authentication_scope())`:
-     - `user-delegated`: the OBO exchange resolves to the **signed-in user's** identity
-     - `agentic-identity`: the OBO exchange resolves to the **agentic user** provisioned in Azure AD
-     - `S2S`: agent authenticates as itself — no user context available
-   - Use `populate(builder, turn_context)` to auto-populate baggage, then `with builder.build():`
+   - Import `BaggageBuilder` from `microsoft.opentelemetry.a365.core`
+   - Import `populate` from `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage`
+   - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5)
+   - Import `get_observability_authentication_scope` from `microsoft.opentelemetry.a365.runtime`
+   - **OBO paths only** (`user-delegated` / `agentic-identity`): Resolve `agent_id` and `tenant_id` dynamically from context each turn (never from config), then exchange the OBO token (non-fatal, wrap in try/except):
+     ```python
+     agent_id  = context.activity.recipient.agentic_app_id
+     tenant_id = context.activity.recipient.tenant_id
+     await self._setup_observability_token(context, tenant_id, agent_id)
+     ```
+     The `_setup_observability_token` helper exchanges and caches the token:
+     ```python
+     async def _setup_observability_token(self, context, tenant_id, agent_id):
+         exaau_token = await self.agent_app.auth.exchange_token(
+             context,
+             scopes=get_observability_authentication_scope(),
+             auth_handler_id=self.auth_handler_name  # from config — NOT hardcoded "AGENTIC"
+         )
+         cache_agentic_token(tenant_id, agent_id, exaau_token.token)
+     ```
+     - `auth_handler_name` must come from config (e.g., `AgentApplication:AgenticAuthHandlerName`) — **never hardcode `"AGENTIC"`**; it is the registered auth handler name in your agent setup.
+     - `user-delegated`: exchange resolves to the **signed-in user's** identity
+     - `agentic-identity`: exchange resolves to the **agentic user** provisioned in Azure AD
+   - **S2S path**: Do **NOT** call `_setup_observability_token` — token comes from the background token service wired in Phases 3/5. Baggage setup below still applies.
+   - Use `populate(builder, context)` to auto-populate baggage (parameter is `context`, not `turn_context`), then `with builder.build():`
    - Wrap existing agent logic inside the baggage scope
    - Add inline comment: `# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -459,7 +485,7 @@ The `ObservabilityTokenService` background service (created in Phase 3 via the s
 
 ### For Python (OBO path)
 
-`AgenticTokenCache` from `microsoft_agents_a365.observability.hosting.token_cache_helpers` handles caching automatically. It was wired as the `token_resolver` in the `configure()` call in Phase 3. No additional module is needed.
+The `token_cache.py` custom module (located at project root or `observability/token_cache.py`) provides `cache_agentic_token` and `get_cached_agentic_token`. The `a365_token_resolver` in `use_microsoft_opentelemetry()` (Phase 3) is wired to `get_cached_agentic_token`. The per-turn `_setup_observability_token` helper (Phase 4) calls `cache_agentic_token` after each OBO exchange. If `token_cache.py` is absent (e.g., this phase is reached before Phase 4 ran), create it now following the OBO token cache pattern in `python-observability.md`.
 
 ### For Python (S2S path)
 

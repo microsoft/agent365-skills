@@ -1,6 +1,6 @@
 ﻿---
 name: a365-setup
-version: 1.5.0
+version: 1.6.0
 description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
@@ -58,7 +58,23 @@ hooks:
 
 ---
 
-> **YOUR FIRST AND ONLY ACTION RIGHT NOW:** Detect the agent stack and code, then ask validation questions. Do NOT create todos, run commands, or read further until all validations are complete. After all answers are received, create all todos for the determined path and mark Todo 1 in-progress.
+> **YOUR VERY FIRST ACTION:** Output the intro message below to the user, then silently detect the agent stack. Do NOT create todos, run setup commands, or read further until all Phase 1 questions are answered.
+
+**MANDATORY INTRO MESSAGE — output this before doing anything else:**
+
+```
+I'll help you set up Agent 365 for this agent. Here's what I'll do:
+
+  1. Detect your agent type, stack, and language (silently, takes a few seconds)
+  2. Ask you to confirm what I found — or correct anything I got wrong
+  3. Ask how your agent authenticates (OBO / S2S)
+  4. Ask which capabilities you want (Register, Observability, WorkIQ, AI Teammate)
+
+After those answers, I'll install any missing prerequisites, validate your Azure
+environment, and hand off to the right skill for the rest of setup.
+
+Detecting your agent now…
+```
 
 **RULE 1 — DETECT AGENT STACK AND CODE, ASK VALIDATION QUESTIONS, THEN CREATE ALL TODOS.**
 
@@ -100,7 +116,16 @@ Check the following signals **in parallel** (Glob + Grep).
 
 If no strong standalone signal and no valid pairing → `0` (Agent (Non AI Teammate), no M365 integration detected — may be a non-M365 CEA or other Agent (Non AI Teammate) type)
 
-**Step 4: Detect AI Teammate Changes** → Store as `hasAITeammateChanges`
+**Step 4: Detect Existing Blueprint** → Store as `hasBlueprintConfig`
+
+Check **in parallel**:
+- `a365.config.json` exists in the project root
+- `a365.generated.config.json` exists in the project root
+
+If either file exists → `hasBlueprintConfig = 1`. Try to read `agentBlueprintId` from it and store as `existingBlueprintId` (may be empty if not yet set).
+Otherwise → `hasBlueprintConfig = 0`
+
+**Step 5: Detect AI Teammate Changes** → Store as `hasAITeammateChanges`
 
 Run all checks **in parallel** (Glob + Grep):
 
@@ -122,31 +147,47 @@ Otherwise → `hasAITeammateChanges = 0`
 
 ### Phase 1B: User Validation Questions
 
-Present **all three detections in a single message** and wait for ONE response:
+Present **all detections in a single message** and wait for ONE response:
 
 ```
 Here's what we detected about your agent:
-  • Stack:            {agentStack}
-  • Language:         {programmingLanguage}
-  • Agent type:       {usesTeamsOrCopilot == 1
-                        ? "uses Teams/Copilot integration"
-                        : "no Teams/Copilot markers detected"}
+  • Stack:             {agentStack}
+  • Language:          {programmingLanguage}
+  • Agent type:        {usesTeamsOrCopilot == 1
+                         ? "M365 Custom Engine Agent (CEA) — has Teams/Copilot integration"
+                         : "Agent (Non AI Teammate) — no Teams/Copilot markers detected"}
   • AI Teammate setup: {hasAITeammateChanges == 1
-                        ? "already configured (make-ai-teammate + observability detected)"
-                        : "not yet configured"}
+                         ? "already configured (make-ai-teammate + observability detected)"
+                         : "not yet configured"}
+  • Blueprint:         {hasBlueprintConfig == 1
+                         ? "existing config found" + (existingBlueprintId ? " (ID: " + existingBlueprintId + ")" : "")
+                         : "none found — will create new"}
 
 Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all values and proceed to the final capabilities question below.
-- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed to the final capabilities question below.
-- If the user says it's Non-M365 / no Teams integration / a non-M365 CEA or other Agent (Non AI Teammate) type: set `usesTeamsOrCopilot = 0` and proceed to the final capabilities question below.
-- If the user describes other corrections: update the relevant variable(s) and proceed to the final capabilities question below.
+- If the user replies **yes / y**: accept all values and proceed to the blueprint question (if applicable), then the auth mode question.
+- If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed.
+- If the user says it's Non-M365 / no Teams integration: set `usesTeamsOrCopilot = 0` and proceed.
+- If the user describes other corrections: update the relevant variable(s) and proceed.
+
+**Blueprint question (ask only when `hasBlueprintConfig = 1`):**
+
+```
+I found an existing Agent 365 config in this project. What would you like to do?
+
+  1. Reuse the existing blueprint — provide your blueprint ID and I'll skip setup all
+  2. Create a fresh blueprint — runs a365 setup all and overwrites the existing config
+```
+
+Wait for the answer:
+- If **1 (reuse)**: ask "What is your blueprint ID?" if `existingBlueprintId` is empty. Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Downstream skills will skip `a365 setup all` and use this ID directly.
+- If **2 (fresh)**: set `reuseBlueprint = false`. Proceed normally — `a365 setup all` will run as usual.
 
 **Auth mode question (ask before capabilities):**
 
-If `hasAITeammateChanges = 1` or `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `authMode = "agentic-user"` and tell the user:
+If `usesTeamsOrCopilot = 1` (CEA) or `hasAITeammateChanges = 1`, **do not ask** — automatically set `authMode = "agentic-user"` and tell the user:
 
 - If `usesTeamsOrCopilot = 1`: "This is a Custom Engine Agent (CEA) — the only supported auth mode is **Agent User Account (agentic-user)**."
 - If `hasAITeammateChanges = 1`: "Since this agent already has AI Teammate changes configured, **Agent User Account (agentic-user)** is the only supported auth mode. Your agent authenticates using its own Entra identity provisioned via the Agent 365 Blueprint."
@@ -164,7 +205,10 @@ How will your agent authenticate when calling downstream APIs?
      Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
      (e.g. reading all mailboxes, managing SharePoint sites).
 
-  3. Agent User Account  - The agent has it own Entra User Account based on an Entra Blueprint and authenticates with its own credentials. This is a special mode for AI Teammate agents that interact with workflows using their own user identity. https://learn.microsoft.com/en-us/entra/agent-id/agent-users
+  3. Agent User Account — the agent has its own Entra User Account based on an Entra Blueprint
+     and authenticates with its own credentials. This is a special mode for AI Teammate agents
+     that interact with workflows using their own user identity.
+     https://learn.microsoft.com/en-us/entra/agent-id/agent-users
 ```
 
 Wait for the answer. Store as `authMode`:
@@ -193,8 +237,8 @@ Otherwise, present only the options that apply — **omit WorkIQ when `authMode 
   2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender. Will register your agent with the A365 catalog if not already registered.
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
      _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
-  4. AI Teammate  — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
-       _(only show this option when `authMode = "agentic-user"`- AI Teammate needs an auth type of `agentic-user`)_
+  4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
+     _(only show this option when `authMode = "agentic-user"` or `authMode = "user-delegated"` — AI Teammate requires a delegated/OBO-style auth mode)_
 
 Wait for the answer. Store as `capabilities`.
 
@@ -206,13 +250,16 @@ Wait for the answer. Store as `capabilities`.
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
+1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected), else `isAITeammate = false`.
+
+2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Write `authMode` as collected (`"obo"` or `"s2s"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
-   - Write `hasAITeammateChanges` as detected in Phase 1A Step 4 (`1` or `0`).
+   - Write `authMode` as collected (`"obo"`, `"s2s"`, or `"agentic-user"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
+   - Write `hasAITeammateChanges` as detected in Phase 1A Step 5 (`1` or `0`).
+   - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
 
-2. Derive `registrationType` from Phase 1A signals (do not ask the user):
+3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
    - `registrationType = 3` if `usesTeamsOrCopilot = 0` (Agent (Non AI Teammate) / no M365 integration path)
    - (`registrationType = 2` — Blueprint already exists — is set by make-ai-teammate, not here)
@@ -234,13 +281,13 @@ Then create all todos for the path and mark Todo 1 in-progress:
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
 
-**RULE 2 — ALWAYS BEGIN FROM STEP 1.** No step is optional within your path. Even if the CLI appears installed or Azure appears logged in, you MUST run the validation commands in each step. Step 3 is always the final step — it delegates to the appropriate skill based on `isAITeammate`.
+**RULE 2 — ALWAYS BEGIN FROM STEP 1.** Run the quick scan version checks in every session. After the quick scan, **only process sections for tools marked ❌ (missing or outdated)** — skip every section whose tool shows ✅ and meets the minimum version. Do NOT re-prompt or reinstall tools that are already present. Step 3 is always the final step — it delegates to the appropriate skill based on `isAITeammate`.
 
 **RULE 3 — SUB-SECTIONS ARE NOT SEPARATE TODOS.** Each `## Step` has internal sub-sections — these are tasks WITHIN that step, NOT separate todos.
 
 **RULE 4 — ONE STEP AT A TIME.** Complete each step fully. Mark its todo in-progress when starting, complete when done. The detection confirmation and final capabilities question were already answered before Step 1.
 
-**RULE 5 — SILENT EXECUTION.** Work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action.
+**RULE 5 — SILENT EXECUTION.** After the mandatory intro message, work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action. Exception: the mandatory intro message at the top of this skill is always shown — it is orientation, not narration.
 
 **RULE 6 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
 - **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
@@ -281,13 +328,17 @@ Also check the Az PowerShell module (requires pwsh to be installed):
 pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 -ExpandProperty Version"
 ```
 
-Present the results to the user as a summary table showing ✅ (found) or ❌ (missing) for each tool, then proceed through each missing item below. **Prompt the user before each install** — do not install silently.
+Present the results to the user as a summary table showing ✅ (found / version OK) or ❌ (missing or outdated) for each tool.
+
+**Only process sections below for tools marked ❌.** If a tool shows ✅ and meets the minimum version, skip that entire section — do NOT re-prompt, re-install, or re-verify it. Prompt the user before each install — do not install silently.
 
 ---
 
 ### 1.1 — .NET SDK 8+
 
 **Required by:** a365 CLI install, all .NET agent builds.
+
+> **Skip this section if the quick scan showed ✅ for .NET SDK at 8.0 or above.**
 
 ```bash
 dotnet --version
@@ -310,16 +361,25 @@ After install, open a new terminal and run `dotnet --version` to confirm. Report
 
 **Required by:** all `a365` commands.
 
+> **Skip this section if the quick scan showed ✅ for a365 CLI at an acceptable version.**
+
 ```bash
 a365 --version 2>/dev/null || echo "NOT FOUND"
 ```
 
-If missing or outdated, install or update:
+If the quick scan returned **NOT FOUND** for a365, install it:
 
 ```bash
-dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease \
-  || dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
+
+If the quick scan returned a version that is outdated (older than the latest release), update it:
+
+```bash
+dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+```
+
+If the quick scan showed ✅ with an acceptable version, skip this section entirely.
 
 If `a365` is still not found after install, the dotnet tools directory is not on PATH:
 
@@ -339,6 +399,8 @@ This must show usage information, not an error.
 ### 1.3 — PowerShell 7+ (pwsh)
 
 **Required by:** `a365 setup requirements`, Az module, admin consent scripts.
+
+> **Skip this section if the quick scan showed ✅ for PowerShell (pwsh) at 7.0 or above.**
 
 ```bash
 pwsh --version 2>/dev/null || echo "NOT FOUND"
@@ -360,6 +422,8 @@ After install, verify with `pwsh --version`.
 
 **Required by:** `az login`, Entra ID queries, subscription management.
 
+> **Skip this section if the quick scan showed ✅ for Azure CLI.**
+
 ```bash
 az version 2>/dev/null | head -2 || echo "NOT FOUND"
 ```
@@ -379,6 +443,8 @@ After install, verify with `az --version`.
 ### 1.5 — Az PowerShell Module
 
 **Required by:** `a365 setup requirements --category PowerShell`, admin consent scripts that use `Connect-AzAccount`.
+
+> **Skip this section if the quick scan showed ✅ for Az PowerShell module at 2.x or above.**
 
 ```powershell
 pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 -ExpandProperty Version"
@@ -410,6 +476,8 @@ pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 Ve
 
 **Required by:** cloning Agent365-Samples when creating a new AI Teammate agent from scratch.
 
+> **Skip this section if the quick scan showed ✅ for Git.**
+
 ```bash
 git --version 2>/dev/null || echo "NOT FOUND"
 ```
@@ -429,6 +497,8 @@ Verify with `git --version`.
 ### 1.7 — GitHub CLI (gh)
 
 **Required by:** AI Teammate new-agent path (cloning a sample from Agent365-Samples with `gh auth login`). Skip this check if the user is working with an existing agent and does not need a new-agent clone.
+
+> **Skip this section if the quick scan showed ✅ for GitHub CLI.**
 
 ```bash
 gh --version 2>/dev/null | head -1 || echo "NOT FOUND"

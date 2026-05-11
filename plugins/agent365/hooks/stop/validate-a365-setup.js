@@ -74,7 +74,13 @@ if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
     if (!detection.authMode || detection.authMode === '') {
-      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (OBO/S2S/Both) and write it to the detection cache');
+      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (user-delegated/agentic-identity/S2S/agentic-user) and write it to the detection cache');
+    }
+    // If an existing blueprint was detected, reuseBlueprint must have been explicitly set
+    // (true = reuse, false = fresh) — the skill must ask, never assume.
+    if ((detection.hasBlueprintConfig === 1 || detection.hasBlueprintConfig === true) &&
+        (detection.reuseBlueprint === undefined || detection.reuseBlueprint === null)) {
+      issues.push('.a365-workspace-detection.json has hasBlueprintConfig=1 but reuseBlueprint is not set — the skill must ask the developer whether to reuse the existing blueprint or create fresh before delegating');
     }
   } catch {
     issues.push('.a365-workspace-detection.json exists but cannot be parsed — file may be malformed');

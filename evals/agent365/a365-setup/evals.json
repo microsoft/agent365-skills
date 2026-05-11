@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. Step 1 now covers ALL system prerequisites (dotnet, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools). Step 2 covers only Azure login and Entra ID roles. Step 3 delegates. a365-setup detects agentStack, programmingLanguage, usesTeamsOrCopilot, and hasAITeammateChanges. CEA rule: if usesTeamsOrCopilot=1 (CEA), authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA/non-AI-Teammate agents: authMode question (OBO/S2S/agentic-user) asked before capabilities — WorkIQ omitted when authMode=s2s. If user selects AI Teammate (option 4), Register+Observability+WorkIQ are auto-included. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
+  "eval_instructions": "Test against real agent projects in clean state. Skill MUST output a mandatory intro message before doing anything else — describing the 4-step flow (detect, confirm, auth mode, capabilities). Phase 1A detects agentStack, programmingLanguage, usesTeamsOrCopilot, hasBlueprintConfig (existing a365.config.json or a365.generated.config.json), AND hasAITeammateChanges (make-ai-teammate + observability signals). Phase 1B shows all detections including blueprint and AI Teammate setup status; asks blueprint question when hasBlueprintConfig=1 (reuse vs fresh — never assumes). CEA rule: if usesTeamsOrCopilot=1, authMode auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA/non-AI-Teammate agents: authMode question (OBO/S2S/agentic-user) asked before capabilities — WorkIQ omitted when authMode=s2s; AI Teammate option only shown when authMode=agentic-user or user-delegated; selecting AI Teammate auto-includes Register+Observability+WorkIQ. Step 1 runs a parallel quick scan of all tools and shows a ✅/❌ summary; only ❌ sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt). Step 2 covers Azure login and Entra ID roles only. Step 3 delegates. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
   "evals": [
     {
       "id": 1,
@@ -9,21 +9,20 @@
       "expected_output": "The skill detects .NET + AgentFramework, confirms with user (showing Agent type as Agent (Non AI Teammate) or CEA), asks capabilities from 4-option menu, user selects option 1 (Register), creates 3 todos (Step 1: Install and Verify All Prerequisites, Step 2: Configure Azure Identity, Step 3: make-a365-agent). Step 1 runs a full parallel scan of all system tools, prompts user for any missing ones (dotnet, a365 CLI, PowerShell 7+, Azure CLI, Az module, Git, and .NET SDK), runs a365 setup requirements. Step 2 validates az login, Entra roles, and client app. Step 3 delegates to make-a365-agent.",
       "files": [],
       "expectations": [
-        "Phase 1A: Agent stack, language, and agent type (CEA vs Agent (Non AI Teammate)) are detected",
-        "Phase 1B: Detection summary shows Stack, Language, and Agent type",
+        "Skill outputs mandatory intro message FIRST — before any tool calls or detection — describing the 4-step flow",
+        "Phase 1A: Agent stack, language, agent type (CEA vs Agent (Non AI Teammate)), and hasBlueprintConfig are all detected",
+        "Phase 1B: Detection summary shows Stack, Language, Agent type, and Blueprint status",
+        "Phase 1B: Blueprint question NOT shown (hasBlueprintConfig=0 — no existing config)",
         "Phase 1B: authMode question asked BEFORE capabilities menu — user selects OBO or S2S",
         "Phase 1B: authMode written to .a365-workspace-detection.json",
         "Phase 1B: Capabilities menu shows all 4 options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1C: 3 todos created: Step 1 (Install and Verify All Prerequisites), Step 2 (Configure Azure Identity), Step 3 (Run the make-a365-agent skill)",
         "Step 1: Parallel scan runs all version checks in one pass: dotnet, a365, pwsh, az, git, gh, node, npm, python, uv",
         "Step 1: Summary table of ✅/❌ shown to user before any installs",
-        "Step 1: .NET SDK 8+ checked — if missing, winget install Microsoft.DotNet.SDK.8 (or platform equivalent) offered with user prompt",
-        "Step 1: a365 CLI checked — if missing, dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease run with user prompt",
-        "Step 1: PowerShell 7+ (pwsh) checked — if missing, winget install Microsoft.PowerShell offered with user prompt",
-        "Step 1: Azure CLI checked — if missing, winget install Microsoft.AzureCLI offered with user prompt",
-        "Step 1: Az PowerShell module checked via pwsh — if missing, Install-Module -Name Az offered with user prompt",
-        "Step 1: Git checked — if missing, winget install Git.Git offered with user prompt",
-        "Step 1: dotnet --list-sdks confirms SDK 8.0+ for .NET agent",
+        "Step 1: Only ❌ tool sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt)",
+        "Step 1: .NET SDK 8+ — if ❌ missing, winget install Microsoft.DotNet.SDK.8 offered with user prompt; if ✅ skip section",
+        "Step 1: a365 CLI — if ❌ missing, dotnet tool install offered; if ❌ outdated, dotnet tool update offered; if ✅ skip section",
+        "Step 1: Azure CLI — if ❌ missing, winget install Microsoft.AzureCLI offered; if ✅ skip section",
         "Step 1: a365 setup requirements run and any issues resolved",
         "Step 2: az login --allow-no-subscriptions used — NOT plain az login",
         "Step 2: az account show confirms correct account and tenant after login",
@@ -60,19 +59,20 @@
     {
       "id": 3,
       "prompt": "Set up A365 for this agent",
-      "description": "CEA detection — Node.js project with teamsapp.yml and @microsoft/teams-ai present, no a365.config.json yet",
-      "expected_output": "Skill detects Node.js project. Phase 1A finds teamsapp.yml (or @microsoft/teams-ai in package.json) and classifies as CEA (usesTeamsOrCopilot=1). Phase 1B shows 'Custom Engine Agent (CEA)' as agent type. User confirms. Because CEA can only be an AI Teammate, authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no auth mode question or capabilities menu is shown. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
+      "description": "CEA auto-routes to AI Teammate — Node.js project with teamsapp.yml and @microsoft/teams-ai present, no a365.config.json yet",
+      "expected_output": "Skill outputs intro message. Phase 1A finds teamsapp.yml (or @microsoft/teams-ai in package.json) and classifies as CEA (usesTeamsOrCopilot=1). Phase 1B shows 'Custom Engine Agent (CEA)' in detection summary. User confirms. Because CEA can only be an AI Teammate, authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no auth mode question or capabilities menu is shown. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA) from teamsapp.yml or @microsoft/teams-ai — NOT from a365.config.json alone",
         "Phase 1A: Detection does NOT require a365.config.json to exist for CEA classification",
-        "Phase 1B: Agent type shown as 'Custom Engine Agent (CEA) — has Teams/Copilot integration'",
-        "Phase 1B: Auth mode question is NOT shown — authMode auto-set to 'agentic-user' with message explaining CEA only supports Agent User Account",
-        "Phase 1B: Capabilities menu is NOT shown — capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with message explaining CEAs can only be AI Teammates",
+        "Phase 1B: Agent type shown as 'uses Teams/Copilot integration'",
+        "Phase 1B: Auth mode question NOT shown — authMode auto-set to 'agentic-user' with explanation",
+        "Phase 1B: Capabilities menu NOT shown — capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with explanation",
         "Phase 1C: isAITeammate = true",
         "Phase 1C: registrationType = 1 (derived from usesTeamsOrCopilot=1 — CEA/Entra app ID path)",
         "Phase 1C: 3 todos created with Step 3 = Run the make-ai-teammate skill",
-        "Step 1: a365 CLI validated",
+        "Step 1: Only ❌ missing tools processed — ✅ tools skipped",
         "Step 2: Azure prerequisites confirmed",
         "Step 3: Delegates to make-ai-teammate"
       ]
@@ -144,16 +144,17 @@
       "id": 8,
       "prompt": "Make this agent an AI Teammate",
       "description": "CEA auto-routes to AI Teammate — CEA detected (usesTeamsOrCopilot=1); skill must auto-select AI Teammate path without asking",
-      "expected_output": "The skill detects CEA (usesTeamsOrCopilot=1) from Phase 1A. No auth mode or capabilities question is shown. authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with a message explaining CEAs can only be AI Teammates. isAITeammate = true. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects CEA (usesTeamsOrCopilot=1). No auth mode or capabilities question is shown. authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with a message explaining CEAs can only be AI Teammates. isAITeammate = true. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA)",
         "Phase 1B: Auth mode question NOT shown — authMode auto-set to 'agentic-user'",
         "Phase 1B: Capabilities menu NOT shown — capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate]",
         "Phase 1B: User informed that CEAs can only be configured as AI Teammates",
         "Phase 1C: isAITeammate = true",
         "Phase 1C: 3 todos created with Step 3 = Run the make-ai-teammate skill",
-        "Step 1: a365 CLI validated",
+        "Step 1: Only ❌ missing tools processed — ✅ tools skipped",
         "Step 2: Azure prerequisites confirmed",
         "Step 3: make-ai-teammate SKILL.md is read and followed",
         "make-a365-agent is NOT invoked for CEA agents"
@@ -163,16 +164,20 @@
       "id": 9,
       "prompt": "Run a365 setup all",
       "description": "Re-run on an agent that was previously set up (non-AI Teammate) — a365.generated.config.json already exists",
-      "expected_output": "The skill detects the existing workspace, confirms with user, validates CLI and prereqs, then delegates to make-a365-agent. make-a365-agent runs a365 setup all again (idempotent — existing resources skipped).",
+      "expected_output": "Phase 1A detects hasBlueprintConfig=1 from a365.generated.config.json. Phase 1B shows blueprint status in detection summary. Skill asks the blueprint question — user chooses to create fresh or reuse. If reuse: delegates to make-a365-agent with reuseBlueprint=true (skips setup all). If fresh: make-a365-agent runs a365 setup all (idempotent).",
       "files": [],
       "expectations": [
-        "Phase 1A/1B: Agent stack and capabilities confirmed",
+        "Skill outputs mandatory intro message before detection",
+        "Phase 1A: hasBlueprintConfig=1 detected from a365.generated.config.json",
+        "Phase 1A: existingBlueprintId read from config file if present",
+        "Phase 1B: Detection summary includes Blueprint status line showing existing config",
+        "Phase 1B: Blueprint question shown — skill does NOT assume reuse or fresh — waits for user answer",
         "Phase 1C: Todos created with Step 3 = Run the make-a365-agent skill",
-        "Step 1: a365 CLI validated",
+        "Step 1: Only ❌ missing tools are processed — already-installed tools skipped",
         "Step 2: Azure prerequisites confirmed",
         "Step 3: Delegates to make-a365-agent",
-        "make-a365-agent runs a365 setup all (idempotent — existing resources skipped)",
-        "Setup Summary shown from CLI output"
+        "make-a365-agent: if reuseBlueprint=true, Phase 2 (setup all) is skipped",
+        "make-a365-agent: if reuseBlueprint=false, a365 setup all runs (idempotent)"
       ]
     },
     {
@@ -198,9 +203,10 @@
       "id": 11,
       "prompt": "Set up A365 for this agent",
       "description": "Fresh machine scenario — nothing installed: no dotnet, no a365 CLI, no PowerShell 7+, no Azure CLI, no Az module, no Node.js",
-      "expected_output": "The skill runs the parallel quick scan and finds all tools missing. It presents a ✅/❌ summary to the user. It then prompts the user for each missing tool in sequence: .NET SDK first (required for a365 CLI), then a365 CLI, PowerShell 7+, Azure CLI, Az module, Git, and Node.js (for Node.js agent). Each prompt includes the platform-specific install command (winget on Windows) and waits for the user to confirm before moving on. After all tools are installed, it runs a365 setup requirements and then proceeds to Step 2 for Azure login.",
+      "expected_output": "The skill outputs the mandatory intro message, then runs the parallel quick scan and finds all tools missing. It presents a ✅/❌ summary to the user. It then prompts the user for each missing tool in sequence: .NET SDK first (required for a365 CLI), then a365 CLI, PowerShell 7+, Azure CLI, Az module, Git, and Node.js (for Node.js agent). Each prompt includes the platform-specific install command (winget on Windows) and waits for the user to confirm before moving on. After all tools are installed, it runs a365 setup requirements and then proceeds to Step 2 for Azure login.",
       "files": [],
       "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
         "Step 1: Parallel scan runs all version checks in one bash command",
         "Step 1: ✅/❌ summary table shown to user — all tools show ❌ on fresh machine",
         "Step 1: User is prompted before each install — skill does NOT install silently",
@@ -217,6 +223,80 @@
         "Step 1: a365 setup requirements run to validate environment completeness",
         "Step 2: az login run — user prompted to authenticate",
         "Step 3: Delegates to appropriate skill"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Set up A365 for this agent",
+      "description": "Blueprint-reuse path — a365.generated.config.json exists with a valid agentBlueprintId; all tools already installed",
+      "expected_output": "Skill outputs intro message. Phase 1A detects hasBlueprintConfig=1 and reads the existing blueprint ID. Phase 1B shows the blueprint ID in the detection summary and asks the blueprint question. User selects option 1 (reuse). Skill skips setup all and passes reuseBlueprint=true + existingBlueprintId to make-a365-agent. Step 1 quick scan shows all tools ✅ — no install sections are entered.",
+      "files": [],
+      "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
+        "Phase 1A: hasBlueprintConfig=1 detected — a365.generated.config.json found",
+        "Phase 1A: existingBlueprintId extracted from a365.generated.config.json",
+        "Phase 1B: Detection summary includes Blueprint line with existing ID",
+        "Phase 1B: Blueprint question presented — user selects option 1 (reuse)",
+        "Phase 1B: Skill does NOT silently assume reuse — waits for explicit answer",
+        "Phase 1B: authMode and capabilities questions still asked after blueprint decision",
+        "Phase 1C: reuseBlueprint=true and existingBlueprintId stored and passed to make-a365-agent",
+        "Step 1: Quick scan shows all tools ✅ — no individual tool sections entered or re-prompted",
+        "Step 1: a365 setup requirements still run to validate environment",
+        "Step 2: Azure prerequisites confirmed",
+        "Step 3: Delegates to make-a365-agent with reuseBlueprint=true",
+        "make-a365-agent: Phase 2 (a365 setup all) is skipped when reuseBlueprint=true",
+        "a365 setup all is NOT run for the reuse path"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "Run a365 setup for this agent",
+      "description": "agentic-user auth mode — non-AI Teammate agent; user selects option 3 (agentic-user: agent's own Azure AD user identity)",
+      "expected_output": "Skill outputs intro message. Phase 1A detects a standard non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows detection summary and auth mode question with three options: user-delegated, S2S, agentic-user. User selects option 3. Capabilities menu shows all four options (Register, Observability, WorkIQ, AI Teammate). The auth mode is stored as agentic-user in .a365-workspace-detection.json. Delegates to make-a365-agent with authMode=agentic-user.",
+      "files": [],
+      "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
+        "Phase 1A: usesTeamsOrCopilot=0 and hasAITeammateChanges=0 detected (standard non-CEA agent)",
+        "Phase 1B: Auth mode question shown with three options: user-delegated (signed-in user), S2S (autonomous), agentic-user (agent's own Azure AD user identity)",
+        "Phase 1B: User selects option 3 (agentic-user)",
+        "Phase 1B: Capabilities menu includes all four options: Register, Observability, WorkIQ, AI Teammate",
+        "Phase 1C: authMode stored as agentic-user in .a365-workspace-detection.json",
+        "Phase 1C: Delegates to make-a365-agent with authMode=agentic-user",
+        "Step 1: All ✅ tools skipped; only ❌ missing tools processed"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Set up A365 for this agent",
+      "description": "hasAITeammateChanges=1 path — existing AI Teammate signals detected; capabilities menu shows only Register and WorkIQ",
+      "expected_output": "Skill outputs intro message. Phase 1A detects hasAITeammateChanges=1 (existing AI Teammate structure or observability signals found). Phase 1B shows the detection summary including the AI Teammate change indicator. Capabilities menu shows only Register and WorkIQ — Observability is omitted (already present in the AI Teammate setup) and AI Teammate is omitted (already configured). User selects Register. Delegates to make-a365-agent.",
+      "files": [],
+      "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
+        "Phase 1A: hasAITeammateChanges=1 detected — AI Teammate structure or existing observability signals found",
+        "Phase 1B: Detection summary includes 'AI Teammate changes detected' indicator",
+        "Phase 1B: Capabilities menu shows ONLY Register and WorkIQ — NOT Observability, NOT AI Teammate setup",
+        "Phase 1B: Skill does not offer Observability since AI Teammate already includes it",
+        "Phase 1C: isAITeammate=false (agent has AI Teammate changes but full AI Teammate path not selected)",
+        "Phase 1C: authMode and selection stored in .a365-workspace-detection.json",
+        "Delegates to make-a365-agent"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Set up A365 for this autonomous agent",
+      "description": "S2S auth mode — non-AI Teammate agent; user selects S2S; WorkIQ is hidden from capabilities menu",
+      "expected_output": "Skill outputs intro message. Phase 1A detects standard non-CEA agent. Phase 1B shows auth mode question; user selects S2S. Capabilities menu shows Register and Observability only — WorkIQ is NOT shown (requires a delegated OBO token, not available for S2S agents). User selects Register. authMode=S2S stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
+      "files": [],
+      "expectations": [
+        "Skill outputs mandatory intro message before any tool calls",
+        "Phase 1B: Auth mode question shown; user selects S2S",
+        "Phase 1B: Capabilities menu shows Register and Observability ONLY — WorkIQ option is NOT present",
+        "Phase 1B: Skill does not offer WorkIQ when authMode=S2S",
+        "Phase 1C: authMode=S2S stored in .a365-workspace-detection.json",
+        "Phase 1C: isAITeammate=false",
+        "Delegates to make-a365-agent with authMode=S2S",
+        "add-workiq-tools is never invoked or offered in this flow"
       ]
     }
   ]

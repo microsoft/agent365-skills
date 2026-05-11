@@ -105,7 +105,15 @@ if (isDotnet) {
                       anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry', 'AddAgent365Observability');
   const hasProgramWired = hasOBOWired || hasS2SWired;
   if (!hasProgramWired) {
-    issues.push('Program.cs does not call AddA365Tracing() with AddAgenticTracingExporter() (OBO path) or AddAgent365Observability() with AddA365Tracing()/UseMicrosoftOpenTelemetry() (S2S path)');
+    issues.push('Program.cs does not call AddA365Tracing(config => { config.WithAgentFramework(); }) with AddAgenticTracingExporter(clusterCategory: "production") (OBO path) or AddAgent365Observability() with UseMicrosoftOpenTelemetry() (S2S path)');
+  }
+
+  // 2a. OBO: WithAgentFramework() must be configured in AddA365Tracing
+  if (hasOBOWired && authMode !== 'S2S') {
+    const hasWithAgentFramework = anyFileContains(programFiles, 'WithAgentFramework');
+    if (!hasWithAgentFramework) {
+      issues.push('Program.cs calls AddA365Tracing() but WithAgentFramework() is missing — use AddA365Tracing(config => { config.WithAgentFramework(); }) for correct OBO tracing');
+    }
   }
 
   // 3. Observability context wired in agent code
@@ -157,16 +165,19 @@ if (isNodejs) {
   }
 
   // 3. BaggageBuilder or BaggageMiddleware in handler
+  // BaggageBuilderUtils.fromTurnContext is the recommended OBO pattern (fromTurnContext is on Utils, not BaggageBuilder)
   const hasBaggage = anyFileContains(tsFiles, 'BaggageBuilder') ||
-                     anyFileContains(tsFiles, 'BaggageMiddleware');
+                     anyFileContains(tsFiles, 'BaggageMiddleware') ||
+                     anyFileContains(tsFiles, 'BaggageBuilderUtils');
   if (!hasBaggage) {
-    issues.push('No TypeScript/JS file uses BaggageBuilder or BaggageMiddleware — baggage context missing');
+    issues.push('No TypeScript/JS file uses BaggageBuilder, BaggageBuilderUtils, or BaggageMiddleware — baggage context missing');
   }
 
-  // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, or S2S token service)
+  // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, preloadObservabilityToken helper, or S2S token service)
   const hasTokenCache = anyFileContains(tsFiles, 'tokenResolver') ||
                         anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
                         anyFileContains(tsFiles, 'RefreshObservabilityToken') ||
+                        anyFileContains(tsFiles, 'preloadObservabilityToken') ||
                         anyFileContains(tsFiles, 'getS2SObservabilityToken');
   if (!hasTokenCache) {
     issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
@@ -232,8 +243,13 @@ if (isPython) {
     issues.push('No Python file uses BaggageBuilder, BaggageMiddleware, populate_baggage, or use_microsoft_opentelemetry — baggage context missing');
   }
 
-  // 4. Token cache wired (AgenticTokenCache, manual token_resolver, S2S token service, or new distro handles it)
-  const hasTokenCache = anyFileContains(pyFiles, 'AgenticTokenCache') ||
+  // 4. Token cache wired
+  // OBO path: cache_agentic_token (new pattern) or AgenticTokenCache (legacy) or exchange_token helper
+  // S2S path: get_s2s_observability_token or token_resolver
+  // Distro path: use_microsoft_opentelemetry handles it internally
+  const hasTokenCache = anyFileContains(pyFiles, 'cache_agentic_token') ||
+                        anyFileContains(pyFiles, 'exchange_token') ||
+                        anyFileContains(pyFiles, 'AgenticTokenCache') ||
                         anyFileContains(pyFiles, 'token_resolver') ||
                         anyFileContains(pyFiles, 'get_observability_authentication_scope') ||
                         anyFileContains(pyFiles, 'get_s2s_observability_token') ||

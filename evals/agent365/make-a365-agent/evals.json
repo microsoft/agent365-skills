@@ -1,6 +1,6 @@
 {
   "skill_name": "make-a365-agent",
-  "eval_instructions": "Test against real agent projects. The skill receives capabilities + language context from a365-setup (or asks directly if invoked standalone). Phase 1 collects agent name and project directory — agent name rules: letters/numbers/hyphens, start with letter, 3–20 chars, preserve case as typed (do NOT normalize), and 'default' maps to 'developer'. Phase 1.1 asks if agent is cloud-hosted or local/dev-tunnel; if local, guides through devtunnel install, login, create, and host to produce the messagingEndpoint. Phase 2.2 handles Windows Account Manager (WAM) prompts — if 'Authenticating via Windows Account Manager...' appears in CLI output, tell user to complete the dialog without killing the process. It always runs a365 setup all (Phase 2), then always offers instrument-observability (Phase 3, optional) and add-workiq-tools (Phase 4, optional) regardless of the capability path selected. Blueprint creation is confirmed by a365.generated.config.json existing. The skill does NOT generate code, does NOT create a365.config.json, and does NOT run a365 publish.",
+  "eval_instructions": "Test against real agent projects. The skill receives capabilities + language context from a365-setup (or asks directly if invoked standalone). Phase 1.0 checks for existing a365.config.json / a365.generated.config.json BEFORE collecting inputs — if found, asks the developer whether to reuse (skips Phase 2 entirely) or create fresh. Phase 1 collects agent name and project directory — agent name rules: letters/numbers/hyphens, start with letter, 3–20 chars, preserve case as typed (do NOT normalize), and 'default' maps to 'developer'. Phase 1.1 asks if agent is cloud-hosted or local/dev-tunnel; if local, guides through devtunnel install, login, create, and host to produce the messagingEndpoint. Phase 2.2 handles Windows Account Manager (WAM) prompts — if 'Authenticating via Windows Account Manager...' appears in CLI output, tell user to complete the dialog without killing the process. It runs a365 setup all (Phase 2) when reuseBlueprint=false; skips Phase 2 when reuseBlueprint=true. CEA agents (usesTeamsOrCopilot=1) run a365 setup all --m365 and then a365 setup permissions bot. It always offers instrument-observability (Phase 3, optional) and add-workiq-tools (Phase 4, optional) regardless of the capability path. Blueprint creation is confirmed by a365.generated.config.json existing. The skill does NOT generate code, does NOT create a365.config.json, and does NOT run a365 publish.",
   "evals": [
     {
       "id": 1,
@@ -111,6 +111,42 @@
         "Phase 3: Observability offer shown — user says skip — instrument-observability NOT invoked",
         "Phase 4: WorkIQ offer shown — user says skip — add-workiq-tools NOT invoked",
         "Phase 5: Final summary shown without observability or WorkIQ bullets",
+        "a365.generated.config.json exists after completion"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Run a365 setup for this agent",
+      "description": "Blueprint-reuse path — a365.config.json exists; user selects reuse; Phase 2 (a365 setup all) is skipped",
+      "expected_output": "Skill detects existing a365.config.json in Phase 1.0 and asks the developer whether to reuse the existing blueprint or create a fresh one. User selects reuse. The skill skips Phase 2 (a365 setup all) entirely — no dry-run, no actual run. It still collects agent name and confirms the existing blueprint ID. Then proceeds to offer observability (Phase 3) and WorkIQ (Phase 4) as usual.",
+      "files": [],
+      "expectations": [
+        "Phase 1.0: a365.config.json or a365.generated.config.json found before collecting any inputs",
+        "Phase 1.0: Skill asks the developer: reuse existing blueprint or create fresh — does NOT assume reuse silently",
+        "Phase 1.0: User selects reuse — reuseBlueprint=true set",
+        "Phase 1.0: Existing blueprint ID extracted and confirmed with user",
+        "Phase 1: agent_name and project_dir still collected",
+        "Phase 2: a365 setup all is NOT run (reuseBlueprint=true) — no dry-run, no actual run",
+        "Phase 3: Observability offer shown — user can accept or skip",
+        "Phase 4: WorkIQ offer shown — user can accept or skip",
+        "Final summary shows blueprint was reused, not created fresh"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Provision this Custom Engine Agent",
+      "description": "CEA path — usesTeamsOrCopilot=1; runs a365 setup all --m365 and a365 setup permissions bot",
+      "expected_output": "Skill detects usesTeamsOrCopilot=1 (CEA). Phase 2 runs a365 setup all --agent-name <name> --m365 (not plain --agent-name) for M365-registered agents, then runs a365 setup permissions bot to register bot permissions. Both commands are shown to user before running. Continues to offer observability and WorkIQ.",
+      "files": [],
+      "expectations": [
+        "Phase 0: usesTeamsOrCopilot=1 detected (Custom Engine Agent)",
+        "Phase 2: a365 setup all --agent-name <name> --m365 --dry-run shown and confirmed",
+        "Phase 2: a365 setup all --agent-name <name> --m365 runs (NOT plain a365 setup all without --m365)",
+        "Phase 2: a365 setup permissions bot runs after a365 setup all completes",
+        "Phase 2: Setup Summary shown verbatim",
+        "Phase 2: Admin consent PowerShell shown if CLI outputs Permission Grants action item",
+        "Phase 3: Observability offer shown — user can accept or skip",
+        "Phase 4: WorkIQ offer shown — user can accept or skip",
         "a365.generated.config.json exists after completion"
       ]
     }
