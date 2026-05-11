@@ -414,7 +414,9 @@ The cache is written in stages as values become known — always preserve fields
 }
 ```
 
-- `hasAITeammateChanges`: `1` if existing AI Teammate instrumentation signals were detected (e.g. `AgentUserOptions`, `AddAgentUser`, `agent_user`) in the project source; `0` otherwise.
+- `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
+  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists
+  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
 - `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.
