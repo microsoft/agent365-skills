@@ -371,7 +371,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
      ```
      Note: Some SDK versions support object-initializer syntax instead. If the constructor form fails to compile, try property-initializer: `new AgenticTokenStruct { UserAuthorization = ..., TurnContext = ..., AuthHandlerName = ... }`.
    - The `authHandlerName` should be the agentic auth handler name (from config `AgentApplication:AgenticAuthHandlerName`) when `IsAgenticRequest()` is true, empty string otherwise.
-   - **No `Agent365Observability` config section needed** — all values are resolved from the agentic request at runtime.
+   - **Keep the `Agent365Observability` / exporter config in `appsettings.json`** (for example `EnableAgent365Exporter` and related base exporter settings). For **OBO**, you do **not** need to hardcode per-agent IDs, tenant IDs, or S2S credentials in that section — the agent ID and tenant ID are resolved from the agentic request at runtime on each turn.
    - **Recommended pattern:** Create a reusable static wrapper method (e.g. `A365OtelWrapper.InvokeObservedAgentOperation(...)`) that encapsulates agent ID resolution, baggage building, token registration, and the operation invocation. See the reference sample's `telemetry/A365OtelWrapper.cs`.
 
    **S2S path**:
