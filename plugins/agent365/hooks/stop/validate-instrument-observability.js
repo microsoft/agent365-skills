@@ -56,7 +56,7 @@ const cwd = process.cwd();
 const issues = [];
 
 const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.json')) || {};
-const authMode = workspaceDetection.authMode || '';
+const authMode = (workspaceDetection.authMode || '').toLowerCase();
 
 // ── Detect project type ─────────────────────────────────────────────────────
 
@@ -109,7 +109,7 @@ if (isDotnet) {
   }
 
   // 2a. OBO: WithAgentFramework() must be configured in AddA365Tracing
-  if (hasOBOWired && authMode !== 'S2S') {
+  if (hasOBOWired && authMode !== 's2s') {
     const hasWithAgentFramework = anyFileContains(programFiles, 'WithAgentFramework');
     if (!hasWithAgentFramework) {
       issues.push('Program.cs calls AddA365Tracing() but WithAgentFramework() is missing — use AddA365Tracing(config => { config.WithAgentFramework(); }) for correct OBO tracing');
@@ -184,7 +184,7 @@ if (isNodejs) {
   }
 
   // 4a. S2S scaffold: token service file must exist when authMode is S2S
-  if (authMode === 'S2S') {
+  if (authMode === 's2s') {
     const hasS2SScaffold = anyFileContains(tsFiles, 'observability-token-service') ||
                            anyFileContains(tsFiles, 'startObservabilityTokenService') ||
                            anyFileContains(tsFiles, 'startTokenService');
@@ -259,7 +259,7 @@ if (isPython) {
   }
 
   // 4a. S2S scaffold: token service file must exist when authMode is S2S
-  if (authMode === 'S2S') {
+  if (authMode === 's2s') {
     const hasS2SScaffold = anyFileContains(pyFiles, 'observability_token_service') ||
                            anyFileContains(pyFiles, 'start_observability_token_service') ||
                            anyFileContains(pyFiles, 'run_token_service');

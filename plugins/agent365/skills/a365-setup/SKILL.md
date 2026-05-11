@@ -229,7 +229,7 @@ If `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `capabil
 Otherwise, if `hasAITeammateChanges = 1`, only present these options (Observability and AI Teammate are already configured):
 
   1. Register — make the agent findable in the Agent 365 catalog
-  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  2. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
 
 Otherwise, present only the options that apply — **omit WorkIQ when `authMode = "s2s"`**:
 
@@ -238,7 +238,7 @@ Otherwise, present only the options that apply — **omit WorkIQ when `authMode 
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
      _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
   4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
-     _(only show this option when `authMode = "agentic-user"` or `authMode = "user-delegated"` — AI Teammate requires a delegated/OBO-style auth mode)_
+     _(only show this option when `authMode = "agentic-user"` or `authMode = "obo"` — AI Teammate requires a delegated/OBO-style auth mode)_
 
 Wait for the answer. Store as `capabilities`.
 

@@ -404,6 +404,7 @@ The cache is written in stages as values become known — always preserve fields
   "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
+  "hasAITeammateChanges": 0,
   "hasBlueprintConfig": 0,
   "existingBlueprintId": "<blueprintId string or empty string if none>",
   "reuseBlueprint": false,
@@ -413,6 +414,7 @@ The cache is written in stages as values become known — always preserve fields
 }
 ```
 
+- `hasAITeammateChanges`: `1` if existing AI Teammate instrumentation signals were detected (e.g. `AgentUserOptions`, `AddAgentUser`, `agent_user`) in the project source; `0` otherwise.
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
 - `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.

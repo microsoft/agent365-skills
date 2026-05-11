@@ -39,10 +39,12 @@ if (!a365Version) {
 // In that case, a365.config.json (the existing input config) satisfies the check.
 const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
 let reuseBlueprint = false;
+let existingBlueprintId = '';
 if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
     reuseBlueprint = detection.reuseBlueprint === true || detection.reuseBlueprint === 'true';
+    existingBlueprintId = detection.existingBlueprintId || '';
   } catch { /* ignore — detection cache is optional */ }
 }
 
@@ -61,7 +63,9 @@ if (!blueprintConfigPath) {
 } else {
   try {
     const blueprintConfig = JSON.parse(fs.readFileSync(blueprintConfigPath, 'utf8'));
-    if (!blueprintConfig.agentBlueprintId || blueprintConfig.agentBlueprintId === '') {
+    const hasId = (blueprintConfig.agentBlueprintId && blueprintConfig.agentBlueprintId !== '')
+                || (reuseBlueprint && existingBlueprintId !== '');
+    if (!hasId) {
       issues.push('agentBlueprintId is empty in ' + path.basename(blueprintConfigPath) + ' — Blueprint creation may have failed');
     }
   } catch {

@@ -74,7 +74,7 @@ if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
     if (!detection.authMode || detection.authMode === '') {
-      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (user-delegated/agentic-identity/S2S/agentic-user) and write it to the detection cache');
+      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (obo/s2s/agentic-user) and write it to the detection cache');
     }
     // If an existing blueprint was detected, reuseBlueprint must have been explicitly set
     // (true = reuse, false = fresh) — the skill must ask, never assume.
