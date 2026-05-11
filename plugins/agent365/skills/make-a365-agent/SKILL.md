@@ -1,4 +1,4 @@
-﻿---
+---
 name: make-a365-agent
 version: 1.6.0
 description: >
