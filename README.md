@@ -1,7 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
@@ -85,12 +85,12 @@ gh copilot suggest "Instrument observability for this agent"
 a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 │
 ├─ AI Teammate  → make-ai-teammate  (adds hosting layer + AI Teammate identity)
-│     user OBO or OBO Agent Identity                ├─ instrument-observability  (optional, offered automatically)
-│     (always OBO-based)                            └─ add-workiq-tools          (optional, offered automatically)
+│     obo (signed-in user) or                       ├─ instrument-observability  (optional, offered automatically)
+│     agentic-user (agent's own M365 identity)      └─ add-workiq-tools          (optional, offered automatically)
 │
 └─ Agent (Non AI Teammate) → make-a365-agent  (Blueprint + Entra permissions)
-      Assistive (OBO) or                       ├─ instrument-observability  (optional, offered automatically)
-      Autonomous (S2S)                         └─ add-workiq-tools          (optional, Assistive only)
+      obo (Assistive) or                       ├─ instrument-observability  (optional, offered automatically)
+      s2s (Autonomous)                         └─ add-workiq-tools          (optional, obo only)
 
 test-local  ← standalone; run at any point to test your agent locally
 ```
@@ -213,7 +213,7 @@ Instruments OpenTelemetry-based tracing, context propagation, and the A365 expor
 wiring any code, asks a two-stage question to determine **agent kind** and **auth mode** — the answers drive which token path is wired:
 
 **Stage 1 — Agent kind:**
-- **AI Teammate**: has Agentic User with UPN; then asks whether it uses `obo` (signed-in user) or `obo` (agent's own M365 identity — agentic identity). **Both support Observability and WorkIQ.**
+- **AI Teammate**: has Agentic User with UPN; then asks whether it uses `obo` (signed-in user) or `agentic-user` (agent's own M365 identity). **Both support Observability and WorkIQ.**
 - **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal). **Observability supports both; WorkIQ is obo only (Assistive mode).**
 
 **Wiring by auth mode:**
