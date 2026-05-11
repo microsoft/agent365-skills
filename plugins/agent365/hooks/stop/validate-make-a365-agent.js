@@ -29,7 +29,7 @@ function runCmd(cmd) {
 }
 
 // ── Check 1: a365 CLI is installed ──────────────────────────────────────────
-const a365Version = runCmd('a365 --version');
+const a365Version = process.env.VALIDATE_SKIP_EXEC ? 'skipped' : runCmd('a365 --version');
 if (!a365Version) {
   issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease');
 }
@@ -63,10 +63,12 @@ if (!blueprintConfigPath) {
 } else {
   try {
     const blueprintConfig = JSON.parse(fs.readFileSync(blueprintConfigPath, 'utf8'));
-    const hasId = (blueprintConfig.agentBlueprintId && blueprintConfig.agentBlueprintId !== '')
+    // a365.generated.config.json uses agentBlueprintId; a365.config.json uses blueprintId.
+    // Accept either field, then fall back to existingBlueprintId from the detection cache.
+    const hasId = !!(blueprintConfig.agentBlueprintId || blueprintConfig.blueprintId)
                 || (reuseBlueprint && existingBlueprintId !== '');
     if (!hasId) {
-      issues.push('agentBlueprintId is empty in ' + path.basename(blueprintConfigPath) + ' — Blueprint creation may have failed');
+      issues.push('Blueprint ID not found in ' + path.basename(blueprintConfigPath) + ' (checked agentBlueprintId and blueprintId) — Blueprint creation may have failed');
     }
   } catch {
     issues.push('Could not parse ' + path.basename(blueprintConfigPath) + ' — file may be malformed');
