@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. Step 1 now covers ALL system prerequisites (dotnet, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools). Step 2 covers only Azure login and Entra ID roles. Step 3 delegates. a365-setup detects agentStack, programmingLanguage, and usesTeamsOrCopilot, THEN asks authMode (OBO/S2S/Both) BEFORE showing capabilities — WorkIQ is omitted from capabilities menu when authMode=s2s. After authMode, asks capabilities, then runs Steps 1–3. Azure login MUST use 'az login --allow-no-subscriptions' — plain 'az login' fails for accounts with no subscription. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Capabilities menu: Register, Observability, WorkIQ, AI Teammate — combinable. CEA detection uses multi-signal check. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
+  "eval_instructions": "Test against real agent projects in clean state. Step 1 now covers ALL system prerequisites (dotnet, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, GitHub CLI, and language-specific tools). Step 2 covers only Azure login and Entra ID roles. Step 3 delegates. a365-setup detects agentStack, programmingLanguage, usesTeamsOrCopilot, and hasAITeammateChanges. CEA rule: if usesTeamsOrCopilot=1 (CEA), authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA/non-AI-Teammate agents: authMode question (OBO/S2S/agentic-user) asked before capabilities — WorkIQ omitted when authMode=s2s. If user selects AI Teammate (option 4), Register+Observability+WorkIQ are auto-included. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
   "evals": [
     {
       "id": 1,
@@ -61,18 +61,20 @@
       "id": 3,
       "prompt": "Set up A365 for this agent",
       "description": "CEA detection — Node.js project with teamsapp.yml and @microsoft/teams-ai present, no a365.config.json yet",
-      "expected_output": "Skill detects Node.js project. Phase 1A finds teamsapp.yml (or @microsoft/teams-ai in package.json) and classifies as CEA (usesTeamsOrCopilot=1) without requiring a365.config.json to exist. Phase 1B shows 'Custom Engine Agent (CEA)' as agent type. User confirms. Capabilities menu shown. Skill proceeds normally.",
+      "expected_output": "Skill detects Node.js project. Phase 1A finds teamsapp.yml (or @microsoft/teams-ai in package.json) and classifies as CEA (usesTeamsOrCopilot=1). Phase 1B shows 'Custom Engine Agent (CEA)' as agent type. User confirms. Because CEA can only be an AI Teammate, authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no auth mode question or capabilities menu is shown. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA) from teamsapp.yml or @microsoft/teams-ai — NOT from a365.config.json alone",
         "Phase 1A: Detection does NOT require a365.config.json to exist for CEA classification",
         "Phase 1B: Agent type shown as 'Custom Engine Agent (CEA) — has Teams/Copilot integration'",
-        "Phase 1B: User can correct to Agent (Non AI Teammate) if detection is wrong",
-        "Phase 1B: 4-option capabilities menu shown: Register, Observability, WorkIQ, AI Teammate",
+        "Phase 1B: Auth mode question is NOT shown — authMode auto-set to 'agentic-user' with message explaining CEA only supports Agent User Account",
+        "Phase 1B: Capabilities menu is NOT shown — capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with message explaining CEAs can only be AI Teammates",
+        "Phase 1C: isAITeammate = true",
         "Phase 1C: registrationType = 1 (derived from usesTeamsOrCopilot=1 — CEA/Entra app ID path)",
-        "Phase 1C: 3 todos created",
+        "Phase 1C: 3 todos created with Step 3 = Run the make-ai-teammate skill",
         "Step 1: a365 CLI validated",
-        "Step 2: Azure prerequisites confirmed"
+        "Step 2: Azure prerequisites confirmed",
+        "Step 3: Delegates to make-ai-teammate"
       ]
     },
     {
@@ -141,19 +143,20 @@
     {
       "id": 8,
       "prompt": "Make this agent an AI Teammate",
-      "description": "CEA guard — CEA detected (usesTeamsOrCopilot=1) and user selects AI Teammate (option 4); skill must block and re-present options 1-3",
-      "expected_output": "The skill detects CEA (usesTeamsOrCopilot=1) from Phase 1A. User selects option 4 (AI Teammate). The CEA guard fires: skill responds with the blocking message, sets isAITeammate=false, and re-presents options 1-3. User selects a valid option (e.g. Register). Skill proceeds with the Standard Agent path.",
+      "description": "CEA auto-routes to AI Teammate — CEA detected (usesTeamsOrCopilot=1); skill must auto-select AI Teammate path without asking",
+      "expected_output": "The skill detects CEA (usesTeamsOrCopilot=1) from Phase 1A. No auth mode or capabilities question is shown. authMode is auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] with a message explaining CEAs can only be AI Teammates. isAITeammate = true. Skill proceeds to Steps 1-3 and delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
         "Phase 1A: usesTeamsOrCopilot detected as 1 (CEA)",
-        "Phase 1B: Capabilities menu shown — option 4 includes ⚠️ note about CEA not supported as AI Teammate",
-        "Phase 1B: User selects option 4 (AI Teammate)",
-        "Phase 1C: CEA guard fires — skill responds: 'Custom Engine Agents are supported as Agent (Non AI Teammate) agents. AI Teammate is not supported for CEA.'",
-        "Phase 1C: isAITeammate is forced to false",
-        "Phase 1C: Options 1-3 are re-presented to the user",
-        "Phase 1C: User selects a valid option — skill continues with Agent (Non AI Teammate) path",
-        "make-ai-teammate is NOT invoked",
-        "make-a365-agent SKILL.md is read and followed for the re-selected capability"
+        "Phase 1B: Auth mode question NOT shown — authMode auto-set to 'agentic-user'",
+        "Phase 1B: Capabilities menu NOT shown — capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate]",
+        "Phase 1B: User informed that CEAs can only be configured as AI Teammates",
+        "Phase 1C: isAITeammate = true",
+        "Phase 1C: 3 todos created with Step 3 = Run the make-ai-teammate skill",
+        "Step 1: a365 CLI validated",
+        "Step 2: Azure prerequisites confirmed",
+        "Step 3: make-ai-teammate SKILL.md is read and followed",
+        "make-a365-agent is NOT invoked for CEA agents"
       ]
     },
     {
