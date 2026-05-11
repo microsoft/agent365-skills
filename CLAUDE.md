@@ -10,19 +10,37 @@ skills for the Microsoft Agent 365 platform. Read this file before making any ch
 ```
 agent365-skills/
 ├── .claude-plugin/marketplace.json    # Marketplace manifest — lists all plugins
-├── .claude/settings.json              # Auto-allowed tools for skill execution
 ├── plugins/
 │   └── agent365/                      # The core plugin
 │       ├── .claude-plugin/plugin.json # Skill declarations and triggers
 │       ├── skills/
-│       │   ├── instrument-observability/SKILL.md  # OTel + A365 exporter instrumentation
-│       │   └── a365-setup/SKILL.md                # Blueprint setup & permissions
-│       ├── shared/agent-detection.md  # Shared heuristics for detecting agent type
-│       └── scripts/                   # Stop hook validators (plain Node.js)
+│       │   ├── a365-setup/SKILL.md                   # Entry point — CLI install, Azure prereqs, delegates
+│       │   ├── make-a365-agent/SKILL.md               # Blueprint provisioning (Register / Observability paths)
+│       │   ├── make-ai-teammate/SKILL.md              # AI Teammate transformation + publish pipeline
+│       │   ├── instrument-observability/SKILL.md      # OTel + A365 tracing exporter instrumentation
+│       │   ├── add-workiq-tools/SKILL.md              # WorkIQ MCP server wiring
+│       │   └── test-local/SKILL.md                    # Local testing with AgentsPlayground
+│       ├── hooks/
+│       │   ├── preToolUse/path-guard.js               # Blocks writes outside project root
+│       │   └── stop/                                  # Stop hook validators (plain Node.js, no deps)
+│       │       ├── validate-a365-setup.js
+│       │       ├── validate-make-a365-agent.js
+│       │       ├── validate-make-ai-teammate.js
+│       │       ├── validate-instrument-observability.js
+│       │       └── validate-add-workiq-tools.js
+│       └── shared/agent-detection.md  # Shared heuristics for detecting agent type and authMode
+├── tests/                             # Unit tests for stop hook validators
+│   ├── helpers.js
+│   ├── validate-a365-setup.test.js
+│   ├── validate-make-a365-agent.test.js
+│   ├── validate-observability.test.js
+│   └── validate-workiq.test.js
 ├── evals/
 │   └── agent365/                      # Evaluation test cases
+│       ├── a365-setup/evals.json
 │       ├── instrument-observability/evals.json
-│       └── a365-setup/evals.json
+│       ├── add-workiq-tools/evals.json
+│       └── make-ai-teammate/ (if present)
 ├── scripts/install.js                 # One-liner installer for Claude Code + Copilot CLI
 ├── AGENTS.md                          # Top-level contributor guidelines
 └── README.md                          # User-facing documentation
@@ -45,24 +63,36 @@ agent365-skills/
 
 5. **Skills are additive.** They never delete or restructure existing agent code.
 
+6. **authMode canonical values** are `obo`, `s2s`, and `agentic-user`. Never use old values
+   (`user-delegated`, `agentic-identity`, `S2S`, `both`). Read case-insensitively, write lowercase.
+
+7. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
+   for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
+   and `add-workiq-tools` Phase 0B.
+
 ---
 
 ## Testing
 
 ```bash
-# Test skill against a real .NET agent project
+# Run all validator unit tests
+npm test
+
+# Run a specific validator test suite
+node --test tests/validate-a365-setup.test.js
+node --test tests/validate-make-a365-agent.test.js
+node --test tests/validate-observability.test.js
+node --test tests/validate-workiq.test.js
+
+# Validate stop hooks directly against the current directory
+node plugins/agent365/hooks/stop/validate-a365-setup.js
+node plugins/agent365/hooks/stop/validate-instrument-observability.js
+node plugins/agent365/hooks/stop/validate-make-a365-agent.js
+
+# Test skill against a real agent project
 cd /path/to/dotnet-agent
 claude --plugin-dir /path/to/agent365-skills/plugins/agent365
 # Say: "instrument observability for this agent"
-
-# Test skill against a Node.js LangChain project
-cd /path/to/nodejs-langchain-agent
-claude --plugin-dir /path/to/agent365-skills/plugins/agent365
-# Say: "add a365 observability"
-
-# Validate stop hooks directly
-node plugins/agent365/hooks/stop/validate-instrument-observability.js
-node plugins/agent365/hooks/stop/validate-a365-setup.js
 
 # Run evals manually
 # See evals/README.md for detailed testing instructions
@@ -72,6 +102,6 @@ For comprehensive eval test cases, see [evals/README.md](evals/README.md).
 
 ---
 
-## Allowed commands (auto-approved in .claude/settings.json)
+## Allowed commands
 
 `dotnet *`, `npm *`, `node *`, `a365 *`, `az *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
