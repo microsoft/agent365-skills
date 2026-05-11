@@ -113,12 +113,16 @@ Mark Todo 1 in-progress.
 ls a365.config.json a365.generated.config.json 2>/dev/null
 ```
 
-If either file exists, read it and extract `agentBlueprintId` (if present). Then ask:
+If either file exists, read it and extract the blueprint ID — the field name differs by file:
+- `a365.config.json` → read `blueprintId`
+- `a365.generated.config.json` → read `agentBlueprintId`
+
+Store whichever is present as `existingBlueprintId`. Then ask:
 
 ```
 I found an existing Agent 365 config in this project.
   • File: {filename found}
-  • Blueprint ID: {agentBlueprintId if found, otherwise "not yet set"}
+  • Blueprint ID: {existingBlueprintId if found, otherwise "not yet set"}
 
 What would you like to do?
 

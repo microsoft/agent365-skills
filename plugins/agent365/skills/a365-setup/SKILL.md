@@ -122,7 +122,11 @@ Check **in parallel**:
 - `a365.config.json` exists in the project root
 - `a365.generated.config.json` exists in the project root
 
-If either file exists → `hasBlueprintConfig = 1`. Try to read `agentBlueprintId` from it and store as `existingBlueprintId` (may be empty if not yet set).
+If either file exists → `hasBlueprintConfig = 1`. Read the blueprint ID using the correct field name for each file:
+- `a365.config.json` → read `blueprintId`
+- `a365.generated.config.json` → read `agentBlueprintId`
+
+Store whichever is present as `existingBlueprintId` (may be empty if not yet set).
 Otherwise → `hasBlueprintConfig = 0`
 
 **Step 5: Detect AI Teammate Changes** → Store as `hasAITeammateChanges`
