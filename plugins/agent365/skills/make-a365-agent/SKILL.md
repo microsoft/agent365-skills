@@ -4,8 +4,8 @@ version: 1.6.0
 description: >
   Provisions a non-AI Teammate agent with Agent 365 — use this skill for Register
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.
-  After setup, always offers instrument-observability (optional) and add-workiq-tools (optional)
-  as add-ons regardless of capability path. Supports .NET AgentFramework, Node.js, and Python agents.
+  After setup, always offers instrument-observability (optional) and add-workiq-tools (optional,
+  skipped automatically when authMode = s2s) as add-ons. Supports .NET AgentFramework, Node.js, and Python agents.
   Normally delegated to from a365-setup after CLI and Azure prerequisites are confirmed.
   Can also be invoked directly when those steps are already done.
 compatibility:
@@ -31,7 +31,7 @@ hooks:
         2. a365.generated.config.json exists with a valid agentBlueprintId.
         3. Setup Summary table was shown to the user verbatim.
         4. instrument-observability was offered and either invoked or explicitly skipped by user.
-        5. add-workiq-tools was offered and either invoked or explicitly skipped by user.
+        5. add-workiq-tools was offered and either invoked or explicitly skipped by user — OR authMode = s2s (WorkIQ is not available for S2S agents and must not be offered).
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If all items completed (or were explicitly skipped by the user), return {"ok": true}.
       timeout: 30000
@@ -84,6 +84,7 @@ What capabilities would you like to enable? (options can be combined)
   2. Observability — end-to-end activity tracing for every message, LLM call,
      and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+     (only show this option when authMode ≠ s2s — WorkIQ requires a user token)
   4. AI Teammate — the agent needs a first-class M365 identity
      (Agentic User with UPN, mailbox, presence). Handled by a different skill.
 ```
@@ -311,6 +312,8 @@ Mark Todo 2 as completed when done (or skipped by user).
 ## Phase 4 — Add WorkIQ Tools (Optional)
 
 Mark Todo 3 in-progress.
+
+**If `authMode = s2s`:** Skip this phase entirely — WorkIQ is not available for S2S agents (requires a user token). Mark Todo 3 as completed and proceed to Phase 5.
 
 Ask the user:
 

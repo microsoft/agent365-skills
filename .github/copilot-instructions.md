@@ -91,7 +91,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 1. Collects agent name (supports `default` → `developer` fallback; passes name verbatim — no case normalization) and project directory; asks whether the agent is cloud-hosted or local/dev-tunnel (guides through `devtunnel create/host` if local)
 2. Shows a dry-run preview of all `a365` operations before applying anything
 3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s` to control permission type. Skipped entirely when `reuseBlueprint = true`. Handles Windows Account Manager (WAM) prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
-4. After setup, always offers `instrument-observability` and `add-workiq-tools` as optional add-ons
+4. After setup, always offers `instrument-observability` as an optional add-on; offers `add-workiq-tools` only when `authMode ≠ s2s` — WorkIQ is silently skipped for S2S agents (requires a user token)
 5. Guides the Global Administrator consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell script from `a365 setup all` output
 
 **Normally delegated to from `a365-setup`** after CLI and Azure prerequisites are confirmed. Can also be invoked directly.
@@ -245,7 +245,7 @@ make-ai-teammate  →  instrument-observability  (Strongly Recommended)
                   →  add-workiq-tools          (Optional)
 
 make-a365-agent   →  instrument-observability  (Optional — always offered)
-                  →  add-workiq-tools          (Optional — always offered)
+                  →  add-workiq-tools          (Optional — skipped when authMode = s2s)
 
 test-local  (no prerequisite — works after any step)
 ```
