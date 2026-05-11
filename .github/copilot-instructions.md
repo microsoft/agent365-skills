@@ -244,8 +244,8 @@ a365-setup  →  make-ai-teammate    (AI Teammate path)
 make-ai-teammate  →  instrument-observability  (Strongly Recommended)
                   →  add-workiq-tools          (Optional)
 
-make-a365-agent   →  instrument-observability  (Observability paths)
-                  →  add-workiq-tools          (WorkIQ paths)
+make-a365-agent   →  instrument-observability  (Optional — always offered)
+                  →  add-workiq-tools          (Optional — always offered)
 
 test-local  (no prerequisite — works after any step)
 ```
