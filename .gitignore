@@ -32,3 +32,6 @@ Thumbs.db
 .idea/
 *.suo
 *.user
+
+# Claude Code session state — local only, not repo config
+.claude/settings.json
