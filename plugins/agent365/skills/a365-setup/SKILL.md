@@ -303,7 +303,7 @@ Then create all todos for the path and mark Todo 1 in-progress:
 
 You are an AI coding agent with access to execute shell commands, read the Agent365-devTools repository (code and docs), and browse the web for documentation or GitHub issues. Your task is to set up, configure, and deploy all prerequisite components for a Microsoft Agent 365–compliant agent using the Agent 365 CLI. You must handle this end-to-end: from installation and configuration to deployment. Work step-by-step, and adapt to any issues or differences in CLI versions along the way.
 
-> **CRITICAL BLOCKING PREREQUISITE:** Before running ANY `a365` CLI commands (including `config init`, `setup`, `publish`, or `deploy`), you MUST validate that the custom client app registration exists in Entra ID with all required permissions and admin consent. This is validated in Step 2. Failure to validate this will cause all CLI commands to fail. Do NOT skip this validation step.
+> **CRITICAL BLOCKING PREREQUISITE:** Before running ANY `a365` CLI commands (including `setup`, `publish`, or `query-entra`), you MUST validate that the custom client app registration exists in Entra ID with all required permissions and admin consent. This is validated in Step 2. Failure to validate this will cause all CLI commands to fail. Do NOT skip this validation step.
 
 ---
 
@@ -634,7 +634,7 @@ az login --allow-no-subscriptions --use-device-code
 
 ### Microsoft Entra ID roles
 
-The authenticated account must be at minimum an **Agent ID Administrator** or **Agent ID Developer**. Full environment setup requires **Global Administrator + Azure Contributor**. If the logged-in user lacks these roles, prompt them to use an appropriate account or have an admin grant the needed roles.
+The authenticated account must be at minimum an **Agent ID Administrator** or **Agent ID Developer**. Global Administrator is **not required** for new agent setup — Blueprint provisioning, agent identity creation, and OtelWrite grants all happen automatically. Azure Contributor is needed only if the CLI provisions Azure resources (e.g. App Service). If the logged-in user lacks the minimum roles, prompt them to use an appropriate account or have an admin grant the needed roles.
 
 ### Windows Account Manager (WAM) — what to expect
 

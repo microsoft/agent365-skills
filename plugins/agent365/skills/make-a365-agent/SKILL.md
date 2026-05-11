@@ -269,6 +269,7 @@ Monitor output carefully:
 | `Graph API Forbidden / Authorization_RequestDenied` | Stop. Resolve permission issue (return to a365-setup Step 2 or grant the role). Then re-run. |
 | Interactive browser auth required | If headless, instruct user to use `az login --device-code` first. |
 | `managerApplications` error / blueprint rejected | Blueprint was created before May 2025 and lacks `managerApplications`. Delete and re-run `a365 setup all`, or patch via Graph API. |
+| `AADSTS700016` / `Authorization_IdentityNotFound` immediately after blueprint creation | Entra replication lag — the CLI retries automatically with exponential back-off (up to 5× for identity, 12× for blueprint token, 60-second cap). No manual retry needed; wait for the CLI to complete. |
 
 `a365 setup all` is idempotent — safe to re-run after fixing an issue.
 
@@ -277,12 +278,7 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **If the CLI printed an admin consent action item (Permission Grants) or any role assignment failed (403):**
-   - **Extract the PowerShell admin consent script** from the CLI output and display it in a fenced code block so the user can copy it easily. The CLI typically prints a `Connect-AzAccount` / `New-AzADServicePrincipalAppRoleAssignment` script block — find and display it verbatim.
-   - If no PowerShell script was printed, provide the manual Entra portal steps:
-     [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions > Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c` > add both Delegated and Application `Agent365.Observability.OtelWrite` > Grant admin consent
-   - Tell the user:
-     > "⚠️ The OtelWrite app role assignment requires **Global Administrator**. Copy the PowerShell script above and have a Global Admin run it — without this, trace exports will fail with HTTP 403."
+2. **`Agent365.Observability.OtelWrite` is automatically granted** to the agent identity by `a365 setup all` — no GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.

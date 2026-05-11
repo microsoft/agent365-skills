@@ -831,16 +831,16 @@ This skill is safe to rerun. On subsequent runs:
 
 ### OtelWrite App Role Assignment
 
-`a365 setup all` **attempts** to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the logged-in user is not a Global Admin, the assignment silently fails with 403 and trace exports will return HTTP 403 from the observability service.
+`a365 setup all` **automatically grants** `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application) for all newly provisioned agents. No Global Administrator is required for agents set up with this CLI version.
 
-**The CLI prints a PowerShell admin consent script** in its output when the assignment fails. When running `a365 setup all`, **always scan the output for this script block** and display it to the user in a fenced code block so they can copy it and hand it to a Global Admin.
+**Upgrade path — agents provisioned before this CLI release:** OtelWrite must be granted manually. A Global Administrator must do one of the following:
 
-If the script was not captured, grant the permission manually via Entra portal (requires Global Admin):
+Option A — Entra portal:
 1. [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions
 2. Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c`
 3. Add both **Delegated** and **Application** `Agent365.Observability.OtelWrite` > Grant admin consent
 
-Alternatively, read the `agentIdentityClientId` from `a365.generated.config.json` and use the Graph API:
+Option B — Graph API (read `agentIdentityClientId` from `a365.generated.config.json`):
 
 ```bash
 # Create a temp JSON body file (required on Windows due to az rest escaping)

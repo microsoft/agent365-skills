@@ -105,7 +105,7 @@ No OBO user token is required.
 > parameter. The MSI path (`acquireT1ViaMsi`) still uses MSAL since `ManagedIdentityCredential`
 > handles FMI differently. This workaround will be removed once MSAL ships native `fmiPath` support.
 
-> **Note:** `a365 setup all` attempts to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the assignment fails (403), a Global Admin must manually grant the role via Entra portal — otherwise trace exports will return HTTP 403.
+> **Note:** As of CLI 1.1, `a365 setup all` automatically grants `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application). No manual role assignment is needed for newly provisioned agents. For agents provisioned before this CLI version, a Global Administrator must grant the permission manually via Entra portal.
 
 > **IMPORTANT — SDK `useS2SEndpoint` bug (v0.1.0-beta.1):** The `@microsoft/opentelemetry`
 > distro does **not** pass `useS2SEndpoint` to `Agent365Exporter`. The exporter defaults

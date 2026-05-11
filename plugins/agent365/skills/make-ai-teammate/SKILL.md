@@ -741,6 +741,8 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
+**`--authmode` note:** `obo` is the default for AI Teammate agents and may be passed explicitly (`--authmode obo --aiteammate`) — the CLI accepts it with a warning. `--authmode s2s` and `--authmode both` are incompatible with `--aiteammate` and will error.
+
 **Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 
 After completion:
@@ -751,10 +753,7 @@ After completion:
 node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint ID:', c.agentBlueprintId)"
 ```
 
-**Global Administrator consent** — if the CLI output includes a "Permission Grants" action item:
-> "A Global Administrator must grant consent via the Entra portal:  
-> [Entra portal](https://entra.microsoft.com) > App registrations > Blueprint app > API permissions > Grant admin consent.  
-> Alternatively, copy and run the PowerShell script shown in the CLI output above."
+**If the CLI output includes a "Permission Grants" action item or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can copy it. This is only expected for agents upgrading from a pre-1.1 CLI version where OtelWrite was not yet auto-granted. For newly provisioned agents no admin consent step is required.
 
 ---
 
@@ -835,7 +834,7 @@ The **Agentic User** (the agent's M365 identity with a UPN) is provisioned autom
   App ID:       <agentAppId>
 ```
 
-3. If `agentUpn` is absent from the generated config, check the `a365 setup all` output for UPN details. If GA consent was not yet granted, the Agentic User creation may be pending — instruct the user to complete the GA consent step (Step 9.7.1) and re-run `a365 setup all --aiteammate`.
+3. If `agentUpn` is absent from the generated config, the Agentic User was not yet provisioned. Agentic User creation uses blueprint app-only credentials — no GA consent is required. Instruct the user to re-run `a365 setup all --aiteammate`, or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
 
 > To remove an existing Agentic User if needed: `a365 cleanup instance`
 
@@ -899,12 +898,9 @@ Useful commands:
   devtunnel host <name> --port 3978         — restart dev tunnel for local testing
 
 Next steps:
-  1. If admin consent is still pending: have a Global Admin grant consent via Entra portal
-     (App registrations > Blueprint app > API permissions > Grant admin consent)
-     or run the PowerShell script from the setup output
-  2. Run the test-local skill for guided local testing with AgentsPlayground
-  3. Add observability:  run the instrument-observability skill  (if not done)
-  4. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
+  1. Run the test-local skill for guided local testing with AgentsPlayground
+  2. Add observability:  run the instrument-observability skill  (if not done)
+  3. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
 ```
 
 ---
