@@ -213,11 +213,11 @@ Instruments OpenTelemetry-based tracing, context propagation, and the A365 expor
 wiring any code, asks a two-stage question to determine **agent kind** and **auth mode** — the answers drive which token path is wired:
 
 **Stage 1 — Agent kind:**
-- **AI Teammate**: has Agentic User with UPN; then asks whether it uses `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity). **Both support Observability and WorkIQ.**
-- **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `Assistive (OBO)` or `Autonomous (S2S / Service Principal)`. **Observability supports both; WorkIQ is OBO only (Assistive mode).**
+- **AI Teammate**: has Agentic User with UPN; then asks whether it uses `obo` (signed-in user) or `obo` (agent's own M365 identity — agentic identity). **Both support Observability and WorkIQ.**
+- **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal). **Observability supports both; WorkIQ is obo only (Assistive mode).**
 
 **Wiring by auth mode:**
-- **user-delegated / agentic-identity / Assistive OBO**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
+- **obo / agentic-user (Assistive OBO)**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
 - **Autonomous S2S** (all languages): creates a scaffold token-service file per language (`Observability/ObservabilityTokenService.cs` for .NET, `observability/observability-token-service.ts` for Node.js, `observability/observability_token_service.py` for Python) that acquires the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials and refreshes every 50 min — no per-turn token call
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
@@ -337,7 +337,7 @@ Check which Agent 365 capabilities have already been applied to this agent and t
 
 - **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP servers, observability instrumentation, and local testing with AgentsPlayground
 - **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
-- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (user-delegated / agentic-identity / S2S); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
+- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (`obo` / `s2s` / `agentic-user`); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
 - **WorkIQ MCP servers** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365

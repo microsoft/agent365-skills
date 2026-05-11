@@ -108,7 +108,7 @@ Reply **yes** to confirm, or describe any corrections.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
-If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
 Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`, or `agentic-user`).
 
@@ -312,7 +312,7 @@ If missing, **Edit** the agent class to add inside `OnMessageActivityAsync` (or 
 // A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 var workIQTools = await _toolService.GetMcpToolsAsync(
     agentId,
-    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
+    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
     handlerForMcp,
     context
 ).ConfigureAwait(false);
@@ -360,7 +360,7 @@ try {
   agentWithTools = await toolService.addToolServersToAgent(
     personalizedAgent,
     authorization,
-    authHandlerName,  // "AGENTIC" for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
+    authHandlerName,  // "AGENTIC" for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
     turnContext,
     process.env.BEARER_TOKEN ?? '',
   );

@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. Skill MUST output a mandatory intro message before doing anything else — describing the 4-step flow (detect, confirm, auth mode, capabilities). Phase 1A detects agentStack, programmingLanguage, usesTeamsOrCopilot, hasBlueprintConfig (existing a365.config.json or a365.generated.config.json), AND hasAITeammateChanges (make-ai-teammate + observability signals). Phase 1B shows all detections including blueprint and AI Teammate setup status; asks blueprint question when hasBlueprintConfig=1 (reuse vs fresh — never assumes). CEA rule: if usesTeamsOrCopilot=1, authMode auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA/non-AI-Teammate agents: authMode question (OBO/S2S/agentic-user) asked before capabilities — WorkIQ omitted when authMode=s2s; AI Teammate option only shown when authMode=agentic-user or user-delegated; selecting AI Teammate auto-includes Register+Observability+WorkIQ. Step 1 runs a parallel quick scan of all tools and shows a ✅/❌ summary; only ❌ sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt). Step 2 covers Azure login and Entra ID roles only. Step 3 delegates. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
+  "eval_instructions": "Test against real agent projects in clean state. Skill MUST output a mandatory intro message before doing anything else — describing the 4-step flow (detect, confirm, auth mode, capabilities). Phase 1A detects agentStack, programmingLanguage, usesTeamsOrCopilot, hasBlueprintConfig (existing a365.config.json or a365.generated.config.json), AND hasAITeammateChanges (make-ai-teammate + observability signals). Phase 1B shows all detections including blueprint and AI Teammate setup status; asks blueprint question when hasBlueprintConfig=1 (reuse vs fresh — never assumes). CEA rule: if usesTeamsOrCopilot=1, authMode auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA/non-AI-Teammate agents: authMode question (OBO/S2S/agentic-user) asked before capabilities — WorkIQ omitted when authMode=s2s; AI Teammate option only shown when authMode=agentic-user or obo; selecting AI Teammate auto-includes Register+Observability+WorkIQ. Step 1 runs a parallel quick scan of all tools and shows a ✅/❌ summary; only ❌ sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt). Step 2 covers Azure login and Entra ID roles only. Step 3 delegates. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
   "evals": [
     {
       "id": 1,
@@ -13,7 +13,7 @@
         "Phase 1A: Agent stack, language, agent type (CEA vs Agent (Non AI Teammate)), and hasBlueprintConfig are all detected",
         "Phase 1B: Detection summary shows Stack, Language, Agent type, and Blueprint status",
         "Phase 1B: Blueprint question NOT shown (hasBlueprintConfig=0 — no existing config)",
-        "Phase 1B: authMode question asked BEFORE capabilities menu — user selects OBO or S2S",
+        "Phase 1B: authMode question asked BEFORE capabilities menu — user selects obo, s2s, or agentic-user",
         "Phase 1B: authMode written to .a365-workspace-detection.json",
         "Phase 1B: Capabilities menu shows all 4 options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1C: 3 todos created: Step 1 (Install and Verify All Prerequisites), Step 2 (Configure Azure Identity), Step 3 (Run the make-a365-agent skill)",
@@ -252,12 +252,12 @@
       "id": 13,
       "prompt": "Run a365 setup for this agent",
       "description": "agentic-user auth mode — non-AI Teammate agent; user selects option 3 (agentic-user: agent's own Azure AD user identity)",
-      "expected_output": "Skill outputs intro message. Phase 1A detects a standard non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows detection summary and auth mode question with three options: user-delegated, S2S, agentic-user. User selects option 3. Capabilities menu shows all four options (Register, Observability, WorkIQ, AI Teammate). The auth mode is stored as agentic-user in .a365-workspace-detection.json. Delegates to make-a365-agent with authMode=agentic-user.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects a standard non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows detection summary and auth mode question with three options: obo, s2s, agentic-user. User selects option 3. Capabilities menu shows all four options (Register, Observability, WorkIQ, AI Teammate). The auth mode is stored as agentic-user in .a365-workspace-detection.json. Delegates to make-a365-agent with authMode=agentic-user.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
         "Phase 1A: usesTeamsOrCopilot=0 and hasAITeammateChanges=0 detected (standard non-CEA agent)",
-        "Phase 1B: Auth mode question shown with three options: user-delegated (signed-in user), S2S (autonomous), agentic-user (agent's own Azure AD user identity)",
+        "Phase 1B: Auth mode question shown with three options: obo (signed-in user / agentic identity), s2s (autonomous), agentic-user (agent's own Azure AD user identity with M365 license)",
         "Phase 1B: User selects option 3 (agentic-user)",
         "Phase 1B: Capabilities menu includes all four options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1C: authMode stored as agentic-user in .a365-workspace-detection.json",
@@ -285,17 +285,17 @@
     {
       "id": 15,
       "prompt": "Set up A365 for this autonomous agent",
-      "description": "S2S auth mode — non-AI Teammate agent; user selects S2S; WorkIQ is hidden from capabilities menu",
-      "expected_output": "Skill outputs intro message. Phase 1A detects standard non-CEA agent. Phase 1B shows auth mode question; user selects S2S. Capabilities menu shows Register and Observability only — WorkIQ is NOT shown (requires a delegated OBO token, not available for S2S agents). User selects Register. authMode=S2S stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
+      "description": "s2s auth mode — non-AI Teammate agent; user selects s2s; WorkIQ is hidden from capabilities menu",
+      "expected_output": "Skill outputs intro message. Phase 1A detects standard non-CEA agent. Phase 1B shows auth mode question; user selects s2s. Capabilities menu shows Register and Observability only — WorkIQ is NOT shown (requires a delegated OBO token, not available for s2s agents). User selects Register. authMode=s2s stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
-        "Phase 1B: Auth mode question shown; user selects S2S",
+        "Phase 1B: Auth mode question shown; user selects s2s",
         "Phase 1B: Capabilities menu shows Register and Observability ONLY — WorkIQ option is NOT present",
-        "Phase 1B: Skill does not offer WorkIQ when authMode=S2S",
-        "Phase 1C: authMode=S2S stored in .a365-workspace-detection.json",
+        "Phase 1B: Skill does not offer WorkIQ when authMode=s2s",
+        "Phase 1C: authMode=s2s stored in .a365-workspace-detection.json",
         "Phase 1C: isAITeammate=false",
-        "Delegates to make-a365-agent with authMode=S2S",
+        "Delegates to make-a365-agent with authMode=s2s",
         "add-workiq-tools is never invoked or offered in this flow"
       ]
     }

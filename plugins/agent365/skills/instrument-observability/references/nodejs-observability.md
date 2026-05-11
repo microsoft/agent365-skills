@@ -79,7 +79,7 @@ useMicrosoftOpenTelemetry({
 > if `@microsoft/agents-a365-observability-extensions-langchain` is installed (requires `@langchain/core@^1.1.32`).
 > For most agents, manual scopes are sufficient and avoid the peer dependency conflict.
 
-### S2S configuration (`authMode: S2S`)
+### S2S configuration (`authMode: s2s`)
 
 S2S observability is supported for Node.js. The token service uses a **3-hop FMI (Federated Managed Identity) token chain**:
 
@@ -306,7 +306,7 @@ async function acquireT1ViaClientSecret(authority: string, blueprintClientId: st
 #### Step 3 — Wire in entry point (`index.ts`)
 
 ```typescript
-// authMode: S2S — service principal, no user OBO.
+// authMode: s2s — service principal, no user OBO.
 import { configDotenv } from 'dotenv';
 configDotenv();
 
@@ -445,7 +445,7 @@ AGENT365_USE_S2S_ENDPOINT=true
 ENABLE_A365_OBSERVABILITY_EXPORTER=false
 ```
 
-Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and credential source differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
+Message handler baggage setup is **identical** to `obo` / `agentic-user` — only the token resolver and credential source differ. Do **not** call `AgenticTokenCacheInstance.RefreshObservabilityToken` for S2S agents.
 
 ---
 
@@ -474,7 +474,7 @@ manager.configure(adapter, { enableBaggage: true });
 
 ## Message Handler — Token Refresh + BaggageBuilder
 
-For OBO / user-delegated / agentic-identity flows, the official sample now builds the baggage scope from `TurnContext`, optionally adds `sessionDescription(...)`, preloads the exporter token, then runs the agent logic inside `baggageScope.run(...)`.
+For OBO (obo / agentic-user) flows, the official sample now builds the baggage scope from `TurnContext`, optionally adds `sessionDescription(...)`, preloads the exporter token, then runs the agent logic inside `baggageScope.run(...)`.
 
 The sample supports **two token refresh patterns**:
 - **Option 1 (sample default when `Use_Custom_Resolver=true`)** — exchange the OBO token yourself and cache it with `createAgenticTokenCacheKey(...)`

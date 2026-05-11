@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. authMode was collected from the user (OBO/S2S) and written to .a365-workspace-detection.json.
+        5. authMode was collected from the user (obo/s2s/agentic-user) and written to .a365-workspace-detection.json.
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.

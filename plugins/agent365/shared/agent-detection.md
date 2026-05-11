@@ -445,7 +445,7 @@ Write marker: `.a365obs-appid-warned` to avoid repeating the warning.
 **Used by:** `instrument-observability`, `add-workiq-tools`
 
 **When to run:** After loading the detection cache, before Phase 1 detection.
-**Cache hit:** If `agentType` and `authMode` are already in the cache, confirm with user and skip questions.
+**Cache hit:** If `agentType` and `authMode` are already in the cache, confirm with user and skip questions. When reading `authMode` from the cache, treat it as case-insensitive — `S2S`, `s2s`, `OBO`, `obo` are all equivalent. Always **write** the canonical lowercase value (`obo`, `s2s`, or `agentic-user`) back to the cache.
 
 ---
 
@@ -570,9 +570,9 @@ Add this inline comment wherever the auth handler is wired:
 
 ---
 
-### Prerequisite for `agentic-identity`
+### Prerequisite for `obo` (agentic identity sub-type)
 
-The `agentic-identity` authMode is used in two distinct contexts:
+The `obo` authMode with an agentic identity is used in two distinct contexts:
 
 - **AI Teammate** — The agentic user IS the AI Teammate's identity: a real Azure AD user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
   > "An AI Teammate requires an agentic user provisioned in Azure AD.

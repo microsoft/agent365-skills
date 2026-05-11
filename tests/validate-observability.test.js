@@ -154,7 +154,7 @@ describe('validate-observability — Node.js', () => {
   test('S2S — valid scaffold with useS2SEndpoint → ok', () => {
     const dir = createFixture({
       ...NODEJS_VALID,
-      '.a365-workspace-detection.json': JSON.stringify({ authMode: 'S2S' }),
+      '.a365-workspace-detection.json': JSON.stringify({ authMode: 's2s' }),
       'index.ts': `
 import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { BaggageBuilder } from '@microsoft/agents-a365-observability-hosting';
@@ -173,7 +173,7 @@ export function getS2SObservabilityToken() { return ''; }`,
   test('S2S — missing scaffold file → reports scaffold missing', () => {
     const dir = createFixture({
       ...NODEJS_VALID,
-      '.a365-workspace-detection.json': JSON.stringify({ authMode: 'S2S' }),
+      '.a365-workspace-detection.json': JSON.stringify({ authMode: 's2s' }),
       'index.ts': `
 import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { BaggageBuilder, AgenticTokenCacheInstance } from '@microsoft/agents-a365-observability-hosting';
@@ -190,7 +190,7 @@ ObservabilityManager.configure({ exporterOptions: {}, withTokenResolver: Agentic
   test('S2S — missing useS2SEndpoint → reports useS2SEndpoint', () => {
     const dir = createFixture({
       ...NODEJS_VALID,
-      '.a365-workspace-detection.json': JSON.stringify({ authMode: 'S2S' }),
+      '.a365-workspace-detection.json': JSON.stringify({ authMode: 's2s' }),
       'index.ts': `
 import { ObservabilityManager } from '@microsoft/agents-a365-observability';
 import { BaggageBuilder } from '@microsoft/agents-a365-observability-hosting';
@@ -243,7 +243,7 @@ describe('validate-observability — Python', () => {
   test('S2S — valid scaffold → ok', () => {
     const dir = createFixture({
       ...PYTHON_VALID,
-      '.a365-workspace-detection.json': JSON.stringify({ authMode: 'S2S' }),
+      '.a365-workspace-detection.json': JSON.stringify({ authMode: 's2s' }),
       'app.py': `
 from microsoft_agents_a365.observability.core import configure
 configure(use_s2s_endpoint=True, token_resolver=get_s2s_observability_token)
@@ -260,7 +260,7 @@ baggage = BaggageBuilder().build()
   test('S2S — missing use_s2s_endpoint → reports use_s2s_endpoint', () => {
     const dir = createFixture({
       ...PYTHON_VALID,
-      '.a365-workspace-detection.json': JSON.stringify({ authMode: 'S2S' }),
+      '.a365-workspace-detection.json': JSON.stringify({ authMode: 's2s' }),
       'app.py': `
 from microsoft_agents_a365.observability.core import configure
 configure(token_resolver=get_s2s_observability_token)

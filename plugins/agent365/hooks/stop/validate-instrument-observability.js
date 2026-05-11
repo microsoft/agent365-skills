@@ -97,7 +97,7 @@ if (isDotnet) {
   }
 
   // 2. Program.cs wired
-  // OBO path (user-delegated / agentic-identity): AddA365Tracing + AddAgenticTracingExporter
+  // OBO path (obo / agentic-user): AddA365Tracing + AddAgenticTracingExporter
   // S2S path: UseMicrosoftOpenTelemetry + AddAgent365Observability (preferred) OR AddA365Tracing + AddAgent365Observability (legacy)
   const programFiles = findFiles(cwd, ['Program.cs']);
   const hasOBOWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgenticTracingExporter');
@@ -183,7 +183,7 @@ if (isNodejs) {
     issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
   }
 
-  // 4a. S2S scaffold: token service file must exist when authMode is S2S
+  // 4a. S2S scaffold: token service file must exist when authMode is s2s
   if (authMode === 's2s') {
     const hasS2SScaffold = anyFileContains(tsFiles, 'observability-token-service') ||
                            anyFileContains(tsFiles, 'startObservabilityTokenService') ||
@@ -258,7 +258,7 @@ if (isPython) {
     issues.push('No Python file wires a token resolver — observability exports will fail');
   }
 
-  // 4a. S2S scaffold: token service file must exist when authMode is S2S
+  // 4a. S2S scaffold: token service file must exist when authMode is s2s
   if (authMode === 's2s') {
     const hasS2SScaffold = anyFileContains(pyFiles, 'observability_token_service') ||
                            anyFileContains(pyFiles, 'start_observability_token_service') ||
