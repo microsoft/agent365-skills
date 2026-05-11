@@ -128,8 +128,8 @@ What would you like to do?
 ```
 
 Wait for the answer:
-- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
-- If **2 (fresh)**: set `reuseBlueprint = false`. Continue with Phase 1 inputs and Phase 2 as normal.
+- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. **Write** both values back to `.a365-workspace-detection.json` (merge, preserve all other fields) so the stop-hook validator and follow-on skills can read them. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
+- If **2 (fresh)**: set `reuseBlueprint = false`. **Write** `reuseBlueprint: false` to `.a365-workspace-detection.json`. Continue with Phase 1 inputs and Phase 2 as normal.
 
 If no existing config is found: set `reuseBlueprint = false` and continue.
 

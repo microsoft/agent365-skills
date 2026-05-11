@@ -73,8 +73,11 @@ const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
 if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
+    const VALID_AUTH_MODES = new Set(['obo', 's2s', 'agentic-user']);
     if (!detection.authMode || detection.authMode === '') {
       issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (obo/s2s/agentic-user) and write it to the detection cache');
+    } else if (!VALID_AUTH_MODES.has((detection.authMode || '').toLowerCase())) {
+      issues.push(`.a365-workspace-detection.json has unsupported authMode "${detection.authMode}" — expected obo, s2s, or agentic-user (old values like "both", "user-delegated", "S2S" are no longer valid)`);
     }
     // If an existing blueprint was detected, reuseBlueprint must have been explicitly set
     // (true = reuse, false = fresh) — the skill must ask, never assume.

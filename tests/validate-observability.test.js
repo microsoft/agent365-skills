@@ -102,6 +102,30 @@ describe('validate-observability — .NET', () => {
     } finally { cleanup(dir); }
   });
 
+  test('OBO wiring without WithAgentFramework → reports WithAgentFramework missing', () => {
+    const dir = createFixture({
+      ...DOTNET_VALID,
+      'Program.cs': `builder.Services.AddA365Tracing();\nbuilder.Services.AddAgenticTracingExporter(clusterCategory: "production");`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /WithAgentFramework/);
+    } finally { cleanup(dir); }
+  });
+
+  test('OBO wiring without clusterCategory → reports clusterCategory missing', () => {
+    const dir = createFixture({
+      ...DOTNET_VALID,
+      'Program.cs': `builder.Services.AddA365Tracing(config => { config.WithAgentFramework(); });\nbuilder.Services.AddAgenticTracingExporter();`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /clusterCategory/);
+    } finally { cleanup(dir); }
+  });
+
   test('S2S path — ObservabilityTokenService scaffold satisfies baggage check', () => {
     const dir = createFixture({
       ...DOTNET_VALID,

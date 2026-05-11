@@ -114,6 +114,11 @@ if (isDotnet) {
     if (!hasWithAgentFramework) {
       issues.push('Program.cs calls AddA365Tracing() but WithAgentFramework() is missing — use AddA365Tracing(config => { config.WithAgentFramework(); }) for correct OBO tracing');
     }
+    // 2b. clusterCategory: "production" must be present in AddAgenticTracingExporter
+    const hasClusterCategory = anyFileContains(programFiles, 'clusterCategory');
+    if (!hasClusterCategory) {
+      issues.push('AddAgenticTracingExporter() is missing the required clusterCategory: "production" argument — use AddAgenticTracingExporter(clusterCategory: "production")');
+    }
   }
 
   // 3. Observability context wired in agent code
