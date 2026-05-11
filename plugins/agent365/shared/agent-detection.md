@@ -588,9 +588,12 @@ Add this inline comment wherever the auth handler is wired:
 
 ---
 
-### WorkIQ guard for `S2S`
+### WorkIQ guard — `s2s` agents
 
-If `authMode = s2s` and the current skill is `add-workiq-tools`, **exit immediately**:
+**WorkIQ must never be presented as an option when `authMode = s2s`.** This applies everywhere:
+
+- **In capabilities menus** (e.g., `a365-setup`): omit WorkIQ from the list entirely — do not show it, do not grey it out.
+- **In `add-workiq-tools`**: if `authMode = s2s` is detected (from cache or from the auth mode question), **exit immediately before any further questions or actions**:
 
 ```
 ❌  WorkIQ tools are not available for S2S (autonomous) agents.
@@ -600,4 +603,4 @@ If `authMode = s2s` and the current skill is `add-workiq-tools`, **exit immediat
     To use WorkIQ, switch your agent to Assistive mode (obo) and re-run this skill.
 ```
 
-Do **not** proceed. End the session.
+Do **not** proceed. Do **not** show a server list. End the session.
