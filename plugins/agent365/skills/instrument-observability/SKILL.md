@@ -119,8 +119,9 @@ Reply **yes** to confirm, or describe any corrections.
 If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
 
 Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
-- **AI Teammate:** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
-- **Agent (Non AI Teammate):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
+- **AI Teammate:** `obo` (OBO as signed-in user or agent's own M365 identity)
+- **Agent (Non AI Teammate):** `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal)
+- **Agentic user flow:** `agentic-user`
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 

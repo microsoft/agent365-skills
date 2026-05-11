@@ -501,8 +501,8 @@ AskUserQuestion:
 
 | Choice | `authMode` |
 |--------|-----------|
-| Access data as the signed-in user | `user-delegated` |
-| Its own persistent identity in your org | `agentic-identity` |
+| Access data as the signed-in user | `obo` |
+| Its own persistent identity in your org | `obo` |
 
 ---
 
@@ -531,8 +531,8 @@ AskUserQuestion:
 
 | Choice | `authMode` |
 |--------|-----------|
-| Autonomous (S2S / Service Principal) | `S2S` |
-| Assistive (OBO) | `agentic-identity` |
+| Autonomous (S2S / Service Principal) | `s2s` |
+| Assistive (OBO) | `obo` |
 
 ---
 
@@ -540,10 +540,10 @@ AskUserQuestion:
 
 | `agentType` | Label | `authMode` |
 |------------|-------|-----------|
-| `ai-teammate` | Access data as the signed-in user | `user-delegated` |
-| `ai-teammate` | Its own persistent identity in your org | `agentic-identity` |
-| `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `S2S` |
-| `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `agentic-identity` |
+| `ai-teammate` | Access data as the signed-in user | `obo` |
+| `ai-teammate` | Its own persistent identity in your org | `obo` |
+| `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `s2s` |
+| `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `obo` |
 
 ---
 
@@ -551,16 +551,16 @@ AskUserQuestion:
 
 | Agent kind | `authMode` | Observability | WorkIQ tools |
 |-----------|-----------|---------------|-------------|
-| AI Teammate | `user-delegated` (OBO as signed-in user) | ✅ | ✅ M365 data scoped to signed-in user |
-| AI Teammate | `agentic-identity` (OBO as agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
-| Agent (Non AI Teammate) | `agentic-identity` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Agent (Non AI Teammate) | `S2S` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
+| AI Teammate | `obo` (signed-in user access) | ✅ | ✅ M365 data scoped to signed-in user |
+| AI Teammate | `obo` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
+| Agent (Non AI Teammate) | `obo` / Assistive (OBO) | ✅ | ✅ OBO only |
+| Agent (Non AI Teammate) | `s2s` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
 
 ---
 
 ### Code impact
 
-All three `authMode` values use `authHandlerName: "AGENTIC"` in the SDK calls — the code is identical across modes. The identity difference comes from Azure AD provisioning and which token is in the incoming request.
+The `authMode` value (`obo`, `s2s`, or `agentic-user`) drives which code path is used. For OBO paths the auth handler name comes from config (`AgentApplication:AgenticAuthHandlerName` in .NET, `agentApplication.authorization` object in Node.js, `auth_handler_id` from config in Python) — never hardcoded. The identity difference between OBO sub-types (signed-in user vs agent's own identity) comes from Azure AD provisioning and which token is in the incoming request.
 
 Add this inline comment wherever the auth handler is wired:
 
@@ -581,21 +581,20 @@ The `agentic-identity` authMode is used in two distinct contexts:
 
 - **Non AI Teammate agent (Assistive OBO)** — No agentic user (no UPN). The agent uses its own Entra App ID or Agent Blueprint identity to facilitate the OBO flow on behalf of the signed-in user.
 
-`user-delegated` has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `S2S` authenticates with the agent blueprint's own credentials (service principal).
+`obo` (signed-in user sub-type) has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `s2s` authenticates with the agent blueprint's own credentials (service principal).
 
 ---
 
 ### WorkIQ guard for `S2S`
 
-If `authMode = S2S` and the current skill is `add-workiq-tools`, **exit immediately**:
+If `authMode = s2s` and the current skill is `add-workiq-tools`, **exit immediately**:
 
 ```
 ❌  WorkIQ tools are not available for S2S (autonomous) agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
-    To use WorkIQ, switch your agent to Assistive mode (agentic-identity / OBO)
-    and re-run this skill.
+    To use WorkIQ, switch your agent to Assistive mode (obo) and re-run this skill.
 ```
 
 Do **not** proceed. End the session.

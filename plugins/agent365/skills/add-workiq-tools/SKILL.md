@@ -110,18 +110,18 @@ Reply **yes** to confirm, or describe any corrections.
 
 If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
 
-Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
+Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`, or `agentic-user`).
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
 
-**If `authMode = S2S`, stop immediately and exit:**
+**If `authMode = s2s`, stop immediately and exit:**
 
 ```
 ❌  WorkIQ tools are not available for S2S (autonomous) agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
-    To use WorkIQ, switch your agent to Assistive mode (agentic-identity / OBO)
+    To use WorkIQ, switch your agent to Assistive mode (obo)
     and re-run this skill.
 ```
 
