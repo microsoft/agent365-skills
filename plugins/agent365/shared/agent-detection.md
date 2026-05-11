@@ -458,7 +458,7 @@ Pre-fill from cache if `usesTeamsOrCopilot` is already known:
 ```
 AskUserQuestion:
   question: |
-    🤖 First — what kind of agent is this?
+    First — what kind of agent is this?
 
     A — AI Teammate
         Has a first-class M365 identity — an Agentic User with a UPN, mailbox, and
@@ -502,7 +502,7 @@ AskUserQuestion:
 | Choice | `authMode` |
 |--------|-----------|
 | Access data as the signed-in user | `obo` |
-| Its own persistent identity in your org | `obo` |
+| Its own persistent identity in your org | `agentic-user` |
 
 ---
 
@@ -541,7 +541,7 @@ AskUserQuestion:
 | `agentType` | Label | `authMode` |
 |------------|-------|-----------|
 | `ai-teammate` | Access data as the signed-in user | `obo` |
-| `ai-teammate` | Its own persistent identity in your org | `obo` |
+| `ai-teammate` | Its own persistent identity in your org | `agentic-user` |
 | `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `s2s` |
 | `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `obo` |
 
@@ -552,7 +552,7 @@ AskUserQuestion:
 | Agent kind | `authMode` | Observability | WorkIQ tools |
 |-----------|-----------|---------------|-------------|
 | AI Teammate | `obo` (signed-in user access) | ✅ | ✅ M365 data scoped to signed-in user |
-| AI Teammate | `obo` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
+| AI Teammate | `agentic-user` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
 | Agent (Non AI Teammate) | `obo` / Assistive (OBO) | ✅ | ✅ OBO only |
 | Agent (Non AI Teammate) | `s2s` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
 
@@ -560,7 +560,12 @@ AskUserQuestion:
 
 ### Code impact
 
-The `authMode` value (`obo`, `s2s`, or `agentic-user`) drives which code path is used. For OBO paths the auth handler name comes from config (`AgentApplication:AgenticAuthHandlerName` in .NET, `agentApplication.authorization` object in Node.js, `auth_handler_id` from config in Python) — never hardcoded. The identity difference between OBO sub-types (signed-in user vs agent's own identity) comes from Azure AD provisioning and which token is in the incoming request.
+The `authMode` value (`obo`, `s2s`, or `agentic-user`) drives which code path is used:
+- `obo` — signed-in user OBO; auth handler name from config, never hardcoded
+- `agentic-user` — agent's own M365 identity (persistent Azure AD user); same OBO wire-up as `obo` but the identity is the agent, not the signed-in human
+- `s2s` — service principal / autonomous; no per-turn user token; scaffold token-service file handles credential acquisition
+
+For `obo` and `agentic-user` paths: auth handler name comes from config (`AgentApplication:AgenticAuthHandlerName` in .NET, `agentApplication.authorization` object in Node.js, `auth_handler_id` from config in Python) — never hardcode `"AGENTIC"`. Agent IDs are always resolved dynamically from TurnContext (`agenticAppId` / `agentic_app_id`), never from config.
 
 Add this inline comment wherever the auth handler is wired:
 
@@ -570,18 +575,16 @@ Add this inline comment wherever the auth handler is wired:
 
 ---
 
-### Prerequisite for `obo` (agentic identity sub-type)
+### Prerequisites by `authMode`
 
-The `obo` authMode with an agentic identity is used in two distinct contexts:
+**`obo`** — signed-in user OBO; no additional Azure AD setup required. Uses the signed-in user's existing token.
 
-- **AI Teammate** — The agentic user IS the AI Teammate's identity: a real Azure AD user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
-  > "An AI Teammate requires an agentic user provisioned in Azure AD.
-  > Follow the identity setup guide:
-  > https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
+**`agentic-user`** — agent's own persistent M365 identity. Requires an agentic user provisioned in Azure AD: a real user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
+> "An AI Teammate requires an agentic user provisioned in Azure AD.
+> Follow the identity setup guide:
+> https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
 
-- **Non AI Teammate agent (Assistive OBO)** — No agentic user (no UPN). The agent uses its own Entra App ID or Agent Blueprint identity to facilitate the OBO flow on behalf of the signed-in user.
-
-`obo` (signed-in user sub-type) has no additional Azure AD setup requirement — it uses the signed-in user's existing token. `s2s` authenticates with the agent blueprint's own credentials (service principal).
+**`s2s`** — service principal / autonomous. Authenticates with the agent blueprint's own credentials (service principal). No signed-in user token.
 
 ---
 
