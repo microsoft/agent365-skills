@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. authMode was collected from the user (obo/s2s/agentic-user) and written to .a365-workspace-detection.json.
+        5. authMode was collected from the user (obo/s2s for non-AI Teammate; deferred to instrument-observability for AI Teammate) and written to .a365-workspace-detection.json.
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -189,12 +189,11 @@ Wait for the answer:
 - If **1 (reuse)**: ask "What is your blueprint ID?" if `existingBlueprintId` is empty. Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Downstream skills will skip `a365 setup all` and use this ID directly.
 - If **2 (fresh)**: set `reuseBlueprint = false`. Proceed normally — `a365 setup all` will run as usual.
 
-**Auth mode question (ask before capabilities):**
+**Auth mode question (ask before capabilities, non-AI Teammate only):**
 
-If `usesTeamsOrCopilot = 1` (CEA) or `hasAITeammateChanges = 1`, **do not ask** — automatically set `authMode = "agentic-user"` and tell the user:
+> **What `authMode` means here:** For non-AI Teammate agents, `authMode` controls how the CLI grants Entra permissions to the blueprint service principal (`a365 setup all --authmode obo|s2s`). For AI Teammate agents, `--authmode` is not used with `--aiteammate` — the AI Teammate path always uses OBO via the Agentic User identity, and `authMode` for code instrumentation is collected later by `instrument-observability`.
 
-- If `usesTeamsOrCopilot = 1`: "This is a Custom Engine Agent (CEA) — the only supported auth mode is **Agent User Account (agentic-user)**."
-- If `hasAITeammateChanges = 1`: "Since this agent already has AI Teammate changes configured, **Agent User Account (agentic-user)** is the only supported auth mode. Your agent authenticates using its own Entra identity provisioned via the Agent 365 Blueprint."
+If `hasAITeammateChanges = 1`, **do not ask** — the agent already has AI Teammate code. Set `authMode = ""` (deferred). Tell the user: "Since this agent already has AI Teammate changes configured, auth mode will be confirmed when running `instrument-observability`."
 
 Otherwise, ask:
 
@@ -209,16 +208,13 @@ How will your agent authenticate when calling downstream APIs?
      Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
      (e.g. reading all mailboxes, managing SharePoint sites).
 
-  3. Agent User Account — the agent has its own Entra User Account based on an Entra Blueprint
-     and authenticates with its own credentials. This is a special mode for AI Teammate agents
-     that interact with workflows using their own user identity.
-     https://learn.microsoft.com/en-us/entra/agent-id/agent-users
+  Note: If you plan to select AI Teammate below, answer 1 (OBO) — AI Teammate agents always
+  use OBO via their Agentic User identity. The --authmode flag is not used for AI Teammate setup.
 ```
 
 Wait for the answer. Store as `authMode`:
 - If 1 → `authMode = "obo"`
 - If 2 → `authMode = "s2s"`
-- If 3 → `authMode = "agentic-user"`
 
 > **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
 
@@ -242,7 +238,7 @@ Otherwise, present only the options that apply — **omit WorkIQ when `authMode 
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
      _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
   4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
-     _(only show this option when `authMode = "agentic-user"` or `authMode = "obo"` — AI Teammate requires a delegated/OBO-style auth mode)_
+     _(omit this option when `authMode = "s2s"` — AI Teammate requires OBO-style auth; show for `authMode = "obo"` or `authMode = ""`)_
 
 Wait for the answer. Store as `capabilities`.
 
@@ -259,7 +255,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Write `authMode` as collected (`"obo"`, `"s2s"`, or `"agentic-user"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
+   - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `""` for AI Teammate — `instrument-observability` will fill in `"obo"` or `"agentic-user"` for code wiring after running).
    - Write `hasAITeammateChanges` as detected in Phase 1A Step 5 (`1` or `0`).
    - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
 

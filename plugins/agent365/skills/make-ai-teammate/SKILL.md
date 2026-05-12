@@ -741,7 +741,7 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
-**`--authmode` note:** `obo` is the default for AI Teammate agents and may be passed explicitly (`--authmode obo --aiteammate`) — the CLI accepts it with a warning. `--authmode s2s` and `--authmode both` are incompatible with `--aiteammate` and will error.
+**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents always use OBO — the flag is not supported and the CLI will error if `--authmode s2s` or `--authmode both` is passed alongside `--aiteammate`. Omit `--authmode` entirely.
 
 **Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 

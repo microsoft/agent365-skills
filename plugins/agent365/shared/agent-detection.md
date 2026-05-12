@@ -483,6 +483,8 @@ Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
 
 ### Stage 2a — If AI Teammate
 
+> **CLI note:** Both options below map to the same CLI command — `a365 setup all --aiteammate` with **no `--authmode` flag**. AI Teammate agents always use OBO via the Agentic User identity; `--authmode` is not supported with `--aiteammate`. The `authMode` value here is for **code wiring only** (which token path is instrumented in the agent code).
+
 ```
 AskUserQuestion:
   question: |
@@ -502,7 +504,7 @@ AskUserQuestion:
     - "2 — Its own persistent identity in your org"
 ```
 
-| Choice | `authMode` |
+| Choice | `authMode` (code wiring only — not a CLI flag) |
 |--------|-----------|
 | Access data as the signed-in user | `obo` |
 | Its own persistent identity in your org | `agentic-user` |
