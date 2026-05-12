@@ -282,10 +282,10 @@ Check `.csproj` for `Microsoft.Agents.A365.Tooling`:
 
 If missing, install core + the adapter for the detected framework:
 ```bash
-dotnet add package Microsoft.Agents.A365.Tooling --prerelease
-dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
+dotnet add package Microsoft.Agents.A365.Tooling
+dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 # or for Semantic Kernel:
-# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel --prerelease
+# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel
 ```
 
 #### 4B — Register services in Program.cs

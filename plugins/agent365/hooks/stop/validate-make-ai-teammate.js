@@ -236,8 +236,9 @@ if (language === 'python') {
   // Check 1: host_agent_server.py — hosting layer
   const hostFile = path.join(cwd, 'host_agent_server.py');
   if (fs.existsSync(hostFile)) {
-    if (!fileContains(hostFile, 'CloudAdapterAiohttp')) {
-      issues.push('host_agent_server.py is missing CloudAdapterAiohttp — hosting layer incomplete');
+    // CloudAdapter (current) or CloudAdapterAiohttp (legacy) — both acceptable
+    if (!fileContains(hostFile, 'CloudAdapter')) {
+      issues.push('host_agent_server.py is missing CloudAdapter — hosting layer incomplete');
     }
     if (!fileContains(hostFile, '/api/messages')) {
       issues.push('host_agent_server.py is missing /api/messages route');

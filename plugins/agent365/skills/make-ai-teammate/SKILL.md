@@ -48,7 +48,7 @@ hooks:
         6. Build succeeds (dotnet build).
 
         Python:
-        1. host_agent_server.py has CloudAdapterAiohttp, /api/messages, /api/health, on_notification.
+        1. host_agent_server.py has CloudAdapter (or legacy CloudAdapterAiohttp), /api/messages, /api/health, on_notification.
         2. agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity.
         3. agent_interface.py exists with AgentInterface ABC.
         4. pyproject.toml has all microsoft_agents_a365_* dependencies.
@@ -119,7 +119,7 @@ Load from cache:
 
 *DotNet:* **Glob** `**/*.cs` and **Grep** for `AddAgent<`, `AgentApplication`, `IChatClient`, `Microsoft.SemanticKernel`, or `WebApplication.CreateBuilder`. Store `Program.cs` and agent `.cs` files.
 
-*Python:* **Glob** `**/*.py` and **Grep** for `ChatAgent`, `AzureOpenAIChatClient`, `CloudAdapterAiohttp`, or `AgentInterface`.
+*Python:* **Glob** `**/*.py` and **Grep** for `ChatAgent`, `AzureOpenAIChatClient`, `CloudAdapter` (or legacy `CloudAdapterAiohttp`), or `AgentInterface`.
 
 Store the main source file(s) as `existingFiles`.
 
@@ -292,7 +292,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 
 *Python:*
 - `AgentInterface` in `**/*.py` → `hasAgentApp`
-- `CloudAdapterAiohttp` in `**/*.py` → `hasHosting`
+- `CloudAdapter` or legacy `CloudAdapterAiohttp` in `**/*.py` → `hasHosting`
 - `on_agent_notification` in `**/*.py` → `hasNotifications`
 - `ToolingManifest.json` exists → `hasManifest`
 
@@ -440,7 +440,7 @@ Migrate it to the CloudAdapter pattern:
 
 ### Python — Add host_agent_server.py
 
-**Glob** `host_agent_server.py`. If it exists, check for `CloudAdapterAiohttp`, `/api/messages`, `/api/health`, and `on_agent_notification`.
+**Glob** `host_agent_server.py`. If it exists, check for `CloudAdapter` (or legacy `CloudAdapterAiohttp`), `/api/messages`, `/api/health`, and `on_agent_notification`.
 
 If it does not exist, **Write** `host_agent_server.py` using the pattern from `python-ai-teammate.md`.
 Also create `agent_interface.py` using the pattern from `python-ai-teammate.md` if it does not exist.

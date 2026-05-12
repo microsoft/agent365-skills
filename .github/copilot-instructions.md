@@ -159,8 +159,8 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 3. **OBO path** (`obo` / `agentic-user`): calls `useMicrosoftOpenTelemetry()` (Node.js/Python) or `UseMicrosoftOpenTelemetry()` + `AddAgenticTracingExporter()` (.NET) with token resolver wired to per-turn token refresh
 4. **S2S path (all languages)**: Creates a scaffold token-service file that acquires/refreshes the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL with FMI path support every 50 min.
    - **.NET**: creates `Observability/ObservabilityServiceExtensions.cs` + `Observability/ObservabilityTokenService.cs`; uses MSAL `ConfidentialClientApplicationBuilder` with `.WithFmiPath()` for FMI 3-hop chain; wires `UseMicrosoftOpenTelemetry()` + `AddAgent365Observability()`; in the message handler uses `new BaggageBuilder().FromTurnContext(turnContext).Build()` (separate `using var`) and `InvokeAgentScope.Start(request, new InvokeAgentScopeDetails(endpoint: new Uri(...)), agentDetails, callerDetails)` (separate `using var`) — **NOT chained; `FromTurnContext()` is a `BaggageBuilder` extension only**; `CallerDetails` with blueprint sponsor identity is **required** for S2S traces to appear
-   - **Node.js**: creates `observability/observability-token-service.ts` (exports `startTokenService()`) + `observability/token-cache.ts` (exports `tokenResolver`); uses MSAL with `fmiPath` for FMI chain; calls `useMicrosoftOpenTelemetry({ spanProcessors: [new BatchSpanProcessor(new Agent365Exporter({ useS2SEndpoint: true, tokenResolver }))] })` — do NOT pass `a365: { enabled: true }` for S2S; also sets `AGENT365_USE_S2S_ENDPOINT=true` and `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env`
-   - **Python**: creates `observability/observability_token_service.py` + `observability/token_cache.py`; uses MSAL with `fmi_path` for FMI chain; calls `use_microsoft_opentelemetry(enable_a365=True, a365_token_resolver=...)` from `microsoft.opentelemetry`
+   - **Node.js** (`@microsoft/opentelemetry` 1.0 GA): creates `observability/observability-token-service.ts` (exports `startTokenService()`) + `observability/token-cache.ts` (exports `tokenResolver`); for client-secret Hop 1+2 uses direct HTTP POST with `fmi_path` form parameter (MSAL Node.js doesn't serialize `fmiPath`), MSAL for Hop 3; calls `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver } })` — `useS2SEndpoint` is a first-class option in 1.0+; do NOT use the old hand-rolled `spanProcessors` workaround
+   - **Python** (`microsoft-opentelemetry` 1.1 GA): creates `observability/observability_token_service.py` + `observability/token_cache.py`; for client-secret Hop 1+2 uses direct HTTP POST with `fmi_path` form parameter (MSAL Python doesn't serialize `fmi_path`), MSAL for Hop 3; calls `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=...)`
 5. Updates `appsettings.json` (for .NET) with `Agent365Observability` section; S2S adds `ClientId`, `ClientSecret`, and `UseManagedIdentity: true`; creates `appsettings.Development.json` with exporter disabled. Note: `a365 setup all` (CLI 1.1+) auto-writes placeholder sections — skill checks for existing placeholders before creating from scratch.
 6. Validates the build passes
 
@@ -208,7 +208,7 @@ Key rules:
 - `.csproj` referencing `Microsoft.Agent.*` or `Microsoft.Agents.*` → **.NET AgentFramework**
 - `package.json` referencing `@langchain/*` → **Node.js LangChain**
 - `package.json` referencing `openai-agents` → **Node.js OpenAI Agents SDK**
-- `package.json` referencing `@anthropic-ai/sdk` → **Node.js Claude SDK**
+- `package.json` referencing `@anthropic-ai/claude-agent-sdk` (current) or `@anthropic-ai/sdk` (legacy) → **Node.js Claude SDK**
 - `.py` files + `pyproject.toml` or `requirements.txt` referencing `microsoft-agents-*` → **Python AgentFramework**
 - `.py` files + `langchain` in requirements → **Python LangChain**
 
@@ -222,8 +222,8 @@ All code added by observability instrumentation must be marked with the language
 
 **Observability API correctness rules (do not deviate):**
 - Node.js `AgentDetails`: field is `agentAUID` (uppercase UID) — `agentAuid` causes a TypeScript compile error
-- Node.js `extensions-openai`: requires `@openai/agents ^0.7.0` peer dep — NOT the `openai` npm package or `@azure/openai`
-- Python: for the 0.3.x observability API set, always use `pip3 install --pre ... 2>/dev/null || pip install --pre ...` for `microsoft-agents-a365-observability-core`, `microsoft-agents-a365-observability-runtime`, and `microsoft-agents-a365-observability-hosting` — mixing prerelease and stable packages can produce incompatible APIs. Use `pip3` first (macOS/Linux default), fall back to `pip` (Windows)
+- Node.js + Python: `@microsoft/opentelemetry` (Node 1.0 GA) and `microsoft-opentelemetry` (Python 1.1 GA) are the unified packages — install latest stable. Both require **two flags** to actually export: `enabled: true` + `enableObservabilityExporter: true` (Node.js) or `enable_a365=True` + `a365_enable_observability_exporter=True` (Python). Auto-instrumentation for OpenAI/LangChain/Semantic Kernel/AgentFramework is ON by default — do NOT call manual `*Instrumentor().instrument()`.
+- Python install: use `pip3 install ... 2>/dev/null || pip install ...` for cross-platform (pip3 on macOS/Linux, fall back to pip on Windows). No `--pre` flag needed — packages are GA.
 - .NET S2S: `FromTurnContext()` is only on `BaggageBuilder` — never chain it on `InvokeAgentScope.Start()`
 - .NET S2S: `InvokeAgentScopeDetails` has no parameterless constructor — always pass `endpoint: new Uri(...)`
 - .NET OBO: `RegisterObservability` takes four args: `agentId, tenantId, AgenticTokenStruct, scopes`

@@ -36,7 +36,7 @@ Semantic Kernel  → .csproj + Microsoft.SemanticKernel
 # Node.js ────────────────────────────────────────────────────────────────── (check in order)
 LangChain        → package.json + @langchain/* OR "langchain"
 OpenAI           → package.json + @openai/agents OR "openai" (no LangChain)
-Claude           → package.json + @anthropic-ai/sdk OR "anthropic"
+Claude           → package.json + @anthropic-ai/claude-agent-sdk OR @anthropic-ai/sdk OR "anthropic"
 Semantic Kernel  → package.json + @microsoft/semantic-kernel
 Google ADK       → package.json + @google/generative-ai OR @google-cloud/vertexai OR @google/adk
 
@@ -234,7 +234,7 @@ Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/python
 | Detected Type | Key Signal(s) in `package.json` | Official Sample |
 |--------------|--------------------------------|-----------------|
 | `nodejs-openai` | `@openai/agents` or `"openai"` (no LangChain) | `nodejs/openai` |
-| `nodejs-claude` | `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
+| `nodejs-claude` | `@anthropic-ai/claude-agent-sdk` (current) or `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
 | `nodejs-semantic-kernel` | `@microsoft/semantic-kernel` | — |
 | `nodejs-google-adk` | `@google/generative-ai` or `@google-cloud/vertexai` or `@google/adk` | — |
 
@@ -417,7 +417,7 @@ The cache is written in stages as values become known — always preserve fields
 
 - `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
   - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, `ToolingManifest.json` exists, or `agentUpn` present in `a365.generated.config.json`
-  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
+  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
 - `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.

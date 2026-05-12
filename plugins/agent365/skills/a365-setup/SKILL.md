@@ -144,7 +144,7 @@ Run all checks **in parallel** (Glob + Grep):
 *Observability signals (from `instrument-observability`) — any one counts:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
 - `@microsoft/agents-a365-observability` or `@microsoft/opentelemetry` in `package.json` (Node.js)
-- `microsoft-agents-a365-observability-core` in `requirements.txt` or `pyproject.toml` (Python)
+- `microsoft-agents-a365-observability-core` or `microsoft-opentelemetry` in `requirements.txt` or `pyproject.toml` (Python)
 - `A365 Observability` comment in any `src/**/*.ts`, `**/*.cs`, or `**/*.py` file
 
 If at least one signal from **each** category is found → `hasAITeammateChanges = 1`

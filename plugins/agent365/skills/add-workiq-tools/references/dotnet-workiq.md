@@ -51,14 +51,14 @@ a365 develop get-token --resource mcp -o raw
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling --prerelease` |
-| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease` |
-| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel --prerelease` |
+| `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling` (GA 1.0.0) |
+| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` (GA 1.0.0) |
+| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` (GA 1.0.0) |
 
 Install core + the adapter for your framework. Example for AgentFramework:
 ```bash
-dotnet add package Microsoft.Agents.A365.Tooling --prerelease
-dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
+dotnet add package Microsoft.Agents.A365.Tooling
+dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 ```
 
 ---
