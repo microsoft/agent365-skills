@@ -40,13 +40,13 @@ The agent's `authMode` (read from `.a365-workspace-detection.json`) determines w
 Install:
 ```bash
 # Required for all agents
-pip install microsoft-opentelemetry
+pip3 install microsoft-opentelemetry 2>/dev/null || pip install microsoft-opentelemetry
 
 # Optional LangChain extra
-pip install "microsoft-opentelemetry[langchain]"
+pip3 install "microsoft-opentelemetry[langchain]" 2>/dev/null || pip install "microsoft-opentelemetry[langchain]"
 
 # S2S only
-pip install msal azure-identity httpx
+pip3 install msal azure-identity httpx 2>/dev/null || pip install msal azure-identity httpx
 ```
 
 > **No `--pre` flag needed.** `microsoft-opentelemetry` is GA — install latest stable.
