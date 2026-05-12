@@ -46,6 +46,9 @@ using YourNamespace.Agent;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Agents.Storage;
+using Microsoft.Agents.Storage.Transcript;
+using Microsoft.Agents.A365.Tooling.Services;
+using Microsoft.Agents.A365.Tooling.Extensions.AgentFramework.Services;
 using Microsoft.Extensions.AI;
 using Azure;
 using Azure.AI.OpenAI;
@@ -62,10 +65,28 @@ builder.Logging.AddConsole();
 builder.Services.AddAgentAspNetAuthentication(builder.Configuration);
 builder.Services.AddSingleton<IStorage, MemoryStorage>();
 
+// ────── MCP Tool Services (WorkIQ tools) ──────────────────────────────────
+// These DI registrations are required for the agent class to inject
+// IMcpToolRegistrationService and load MCP tools per turn. They are added
+// up-front here (not in add-workiq-tools) so the agent compiles even
+// before any servers are configured in ToolingManifest.json.
+
+builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
+builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
+
+// ────── Transcript Logging Middleware ─────────────────────────────────────
+// Logs every turn (incoming and outgoing activities) to disk for debugging.
+
+builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
+    [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
+
 // ────── Agent ─────────────────────────────────────────────────────────────
 
 builder.AddAgentApplicationOptions();
 builder.AddAgent<MyAgent>();  // Replace MyAgent with your agent class name
+
+// NOTE: A365 observability (UseMicrosoftOpenTelemetry) is wired by the
+// instrument-observability skill — do not add it here.
 
 // ────── IChatClient (Azure OpenAI) ────────────────────────────────────────
 
@@ -128,11 +149,14 @@ app.Run();
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+using System.Collections.Concurrent;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Builder.App;
 using Microsoft.Agents.Builder.State;
 using Microsoft.Agents.Core.Models;
+using Microsoft.Agents.A365.Runtime.Utils;
+using Microsoft.Agents.A365.Tooling.Extensions.AgentFramework.Services;
 using Microsoft.Extensions.AI;
 
 namespace YourNamespace.Agent
@@ -164,18 +188,25 @@ namespace YourNamespace.Agent
         }
 
         private readonly IChatClient? _chatClient;
+        private readonly IMcpToolRegistrationService _toolService;
         private readonly IConfiguration? _configuration;
         private readonly ILogger<MyAgent>? _logger;
         private readonly string? AgenticAuthHandlerName;
         private readonly string? OboAuthHandlerName;
 
+        // Per-conversation tool cache — MCP tools are resolved on first message
+        // and reused for subsequent turns in the same conversation.
+        private readonly ConcurrentDictionary<string, IList<AITool>> _agentToolCache = new();
+
         public MyAgent(
             AgentApplicationOptions options,
             IChatClient chatClient,
+            IMcpToolRegistrationService toolService,
             IConfiguration configuration,
             ILogger<MyAgent> logger) : base(options)
         {
             _chatClient = chatClient;
+            _toolService = toolService;
             _configuration = configuration;
             _logger = logger;
 
@@ -247,17 +278,27 @@ namespace YourNamespace.Agent
             try
             {
                 var instructions = GetAgentInstructions(turnContext.Activity.From?.Name);
-                var clientAgent = new ChatClientAgent(_chatClient!);
+                var clientAgent = await GetClientAgentAsync(turnContext, instructions, cancellationToken);
+
+                // Per-conversation session persistence — replaces ad-hoc history tracking.
+                // Restores prior turns from turnState, or creates a new session on first message.
+                var threadInfo = turnState.Conversation.GetValue<string?>("conversation.threadInfo", () => null);
+                var session = threadInfo is not null
+                    ? clientAgent.DeserializeSession(threadInfo)
+                    : await clientAgent.CreateSessionAsync(cancellationToken);
 
                 // Streaming response
                 var streamingResponse = turnContext.GetStreamingResponse();
                 await foreach (var update in clientAgent.RunStreamingAsync(
-                    turnContext.Activity.Text, instructions, null, cancellationToken))
+                    turnContext.Activity.Text, session, null, cancellationToken))
                 {
                     if (update is TextContent textContent)
                         streamingResponse.QueueTextChunk(textContent.Text);
                 }
                 await streamingResponse.EndStreamAsync();
+
+                // Persist session for the next turn
+                turnState.Conversation.SetValue("conversation.threadInfo", session.Serialize());
             }
             finally
             {
@@ -265,7 +306,35 @@ namespace YourNamespace.Agent
                 await typingTask.IgnoreCancellationExceptionAsync();
             }
         }
-        // Note: WorkIQ MCP tool loading is added by the add-workiq-tools skill.
+
+        // Loads MCP tools for this conversation (cached after first call) and returns
+        // a ChatClientAgent configured with those tools. The WorkIQ skill (add-workiq-tools)
+        // writes the MCP server list to ToolingManifest.json; this method resolves them
+        // at runtime via IMcpToolRegistrationService.
+        private async Task<ChatClientAgent> GetClientAgentAsync(
+            ITurnContext turnContext, string instructions, CancellationToken cancellationToken)
+        {
+            var conversationId = turnContext.Activity.Conversation?.Id ?? string.Empty;
+
+            if (!_agentToolCache.TryGetValue(conversationId, out var tools))
+            {
+                // Surface a status update while tools load (can take a few seconds).
+                await turnContext.QueueInformativeUpdateAsync("Loading tools…", cancellationToken);
+
+                var agentId = turnContext.Activity.GetAgenticInstanceId();
+                var handlerForMcp = AgenticAuthHandlerName ?? string.Empty;
+                tools = await _toolService.GetMcpToolsAsync(
+                    agentId, UserAuthorization, handlerForMcp, turnContext, tokenOverride: null);
+                _agentToolCache[conversationId] = tools;
+            }
+
+            var options = new ChatClientAgentOptions
+            {
+                ChatOptions = new ChatOptions { Tools = tools.ToList() },
+                Instructions = instructions,
+            };
+            return new ChatClientAgent(_chatClient!, options);
+        }
     }
 }
 ```
@@ -289,7 +358,8 @@ namespace YourNamespace.Agent
           "Settings": {
             "Scopes": [
               "https://graph.microsoft.com/.default"
-            ]
+            ],
+            "AlternateBlueprintConnectionName": "ServiceConnection"
           }
         }
       }
@@ -297,7 +367,7 @@ namespace YourNamespace.Agent
   },
   "TokenValidation": {
     "Audiences": [
-      "{{ClientId}}"
+      "{{BOT_ID}}"
     ]
   },
   "Logging": {
@@ -314,7 +384,8 @@ namespace YourNamespace.Agent
       "Settings": {
         "AuthType": "UserManagedIdentity",
         "AuthorityEndpoint": "https://login.microsoftonline.com/{{BOT_TENANT_ID}}",
-        "ClientId": "{{BOT_ID}}",
+        "ClientId": "{{BLUEPRINT_ID}}",
+        "AgentId": "{{BOT_ID}}",
         "Scopes": [
           "5a807f24-c9de-44ee-a3a7-329e88a00ffc/.default"
         ]
@@ -327,6 +398,15 @@ namespace YourNamespace.Agent
       "Connection": "ServiceConnection"
     }
   ],
+  "Agent365Observability": {
+    "AgentId": "{{BOT_ID}}",
+    "AgentName": "",
+    "AgentDescription": "",
+    "TenantId": "{{BOT_TENANT_ID}}",
+    "AgentBlueprintId": "{{BLUEPRINT_ID}}",
+    "ClientId": "{{BLUEPRINT_ID}}",
+    "ClientSecret": ""
+  },
   "AIServices": {
     "AzureOpenAI": {
       "DeploymentName": "",
@@ -336,6 +416,13 @@ namespace YourNamespace.Agent
   }
 }
 ```
+
+**Schema notes (CLI 1.1+):**
+- `Connections.ServiceConnection.Settings.ClientId` is the **Blueprint** app ID, NOT the bot ID. The bot/agent ID is now a separate `AgentId` field.
+- `TokenValidation.Audiences` uses the bot/agent ID (`{{BOT_ID}}`), not the legacy `{{ClientId}}`.
+- `UserAuthorization.Handlers.agentic.Settings.AlternateBlueprintConnectionName` links the auth handler back to a named `Connections` entry.
+- `Agent365Observability` is required for the observability skill to wire up. Leave `ClientSecret` empty when using Managed Identity; populate from a secret store / `appsettings.Development.json` for local dev.
+- `AgenticAuthHandlerName: "agentic"` at the top of `AgentApplication` was removed in the latest AF sample (the handler key under `UserAuthorization.Handlers.agentic` is sufficient). The SK sample omits this key entirely. It's still written above as a defensive default — some setups may still read it from config.
 
 ---
 
@@ -425,6 +512,9 @@ using YourNamespace.Agents;
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Hosting.AspNetCore;
 using Microsoft.Agents.Storage;
+using Microsoft.Agents.Storage.Transcript;
+using Microsoft.Agents.A365.Tooling.Services;
+using Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel.Services;
 using Microsoft.SemanticKernel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -438,6 +528,16 @@ builder.Logging.AddConsole();
 
 builder.Services.AddAgentAspNetAuthentication(builder.Configuration);
 builder.Services.AddSingleton<IStorage, MemoryStorage>();
+
+// ────── MCP Tool Services (WorkIQ tools — SK extension) ──────────────────
+
+builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
+builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
+
+// ────── Transcript Logging Middleware ─────────────────────────────────────
+
+builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
+    [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
 
 // ────── Semantic Kernel ───────────────────────────────────────────────────
 
@@ -461,6 +561,9 @@ else
 
 builder.AddAgentApplicationOptions();
 builder.AddAgent<MyAgent>();  // Replace MyAgent with your agent class name
+
+// NOTE: A365 observability (UseMicrosoftOpenTelemetry) is wired by the
+// instrument-observability skill — do not add it here.
 
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -510,6 +613,7 @@ using Microsoft.Agents.Builder;
 using Microsoft.Agents.Builder.App;
 using Microsoft.Agents.Builder.State;
 using Microsoft.Agents.Core.Models;
+using Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel.Services;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -539,6 +643,7 @@ namespace YourNamespace.Agents
         }
 
         private readonly Kernel _kernel;
+        private readonly IMcpToolRegistrationService _toolService;
         private readonly IConfiguration? _configuration;
         private readonly ILogger<MyAgent>? _logger;
         private readonly string? AgenticAuthHandlerName;
@@ -547,10 +652,12 @@ namespace YourNamespace.Agents
         public MyAgent(
             AgentApplicationOptions options,
             Kernel kernel,
+            IMcpToolRegistrationService toolService,
             IConfiguration configuration,
             ILogger<MyAgent> logger) : base(options)
         {
             _kernel = kernel;
+            _toolService = toolService;
             _configuration = configuration;
             _logger = logger;
 
@@ -569,10 +676,25 @@ namespace YourNamespace.Agents
             OnActivity(ActivityTypes.InstallationUpdate, OnInstallationUpdateAsync,
                 isAgenticOnly: false);
 
+            // Inbound A365 notifications (e.g. EmailNotification, WpxComment).
+            // Wildcard pattern matches any notification name.
+            OnAgentNotification("*", OnAgentNotificationAsync);
+
+            // Message handlers — rank Last so they fall through after more specific routes.
             OnActivity(ActivityTypes.Message, OnMessageAsync,
-                isAgenticOnly: true, autoSignInHandlers: agenticHandlers);
+                isAgenticOnly: true, autoSignInHandlers: agenticHandlers, rank: RouteRank.Last);
             OnActivity(ActivityTypes.Message, OnMessageAsync,
-                isAgenticOnly: false, autoSignInHandlers: oboHandlers);
+                isAgenticOnly: false, autoSignInHandlers: oboHandlers, rank: RouteRank.Last);
+        }
+
+        protected async Task OnAgentNotificationAsync(
+            ITurnContext turnContext, ITurnState turnState, CancellationToken cancellationToken)
+        {
+            // Handle inbound A365 notifications. The notification payload is in
+            // turnContext.Activity.Value — cast to the specific notification type
+            // (EmailNotification, WpxComment, etc.) from Microsoft.Agents.A365.Notifications.Models.
+            _logger?.LogInformation("Received agent notification: {Name}", turnContext.Activity.Name);
+            await Task.CompletedTask;
         }
 
         protected async Task WelcomeMessageAsync(
@@ -639,7 +761,7 @@ namespace YourNamespace.Agents
 
 ## appsettings.json (Semantic Kernel)
 
-Same shape as AgentFramework — replace `AIServices.AzureOpenAI` section as needed.
+Same shape as AgentFramework. The SK sample omits `AgenticAuthHandlerName` from the top of `AgentApplication` (handler is identified by its key under `UserAuthorization.Handlers`). `TokenValidation.Enabled: false` and `TenantId` are SK-specific additions.
 
 ```json
 {
@@ -647,21 +769,23 @@ Same shape as AgentFramework — replace `AIServices.AzureOpenAI` section as nee
     "StartTypingTimer": false,
     "RemoveRecipientMention": false,
     "NormalizeMentions": false,
-    "AgenticAuthHandlerName": "agentic",
     "UserAuthorization": {
       "AutoSignin": false,
       "Handlers": {
         "agentic": {
           "Type": "AgenticUserAuthorization",
           "Settings": {
-            "Scopes": [ "https://graph.microsoft.com/.default" ]
+            "Scopes": [ "https://graph.microsoft.com/.default" ],
+            "AlternateBlueprintConnectionName": "ServiceConnection"
           }
         }
       }
     }
   },
   "TokenValidation": {
-    "Audiences": [ "{{ClientId}}" ]
+    "Enabled": false,
+    "TenantId": "{{BOT_TENANT_ID}}",
+    "Audiences": [ "{{BOT_ID}}" ]
   },
   "Logging": {
     "LogLevel": {
@@ -676,12 +800,22 @@ Same shape as AgentFramework — replace `AIServices.AzureOpenAI` section as nee
       "Settings": {
         "AuthType": "UserManagedIdentity",
         "AuthorityEndpoint": "https://login.microsoftonline.com/{{BOT_TENANT_ID}}",
-        "ClientId": "{{BOT_ID}}",
+        "ClientId": "{{BLUEPRINT_ID}}",
+        "AgentId": "{{BOT_ID}}",
         "Scopes": [ "5a807f24-c9de-44ee-a3a7-329e88a00ffc/.default" ]
       }
     }
   },
   "ConnectionsMap": [{ "ServiceUrl": "*", "Connection": "ServiceConnection" }],
+  "Agent365Observability": {
+    "AgentId": "{{BOT_ID}}",
+    "AgentName": "",
+    "AgentDescription": "",
+    "TenantId": "{{BOT_TENANT_ID}}",
+    "AgentBlueprintId": "{{BLUEPRINT_ID}}",
+    "ClientId": "{{BLUEPRINT_ID}}",
+    "ClientSecret": ""
+  },
   "AIServices": {
     "UseAzureOpenAI": true,
     "AzureOpenAI": {
