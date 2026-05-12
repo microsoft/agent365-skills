@@ -293,7 +293,9 @@ Then create all todos for the path and mark Todo 1 in-progress:
 
 **RULE 5 — SILENT EXECUTION.** After the mandatory intro message, work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action. Exception: the mandatory intro message at the top of this skill is always shown — it is orientation, not narration.
 
-**RULE 6 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
+**RULE 6 — CLI ERROR SURFACING.** When any `a365`, `az`, `dotnet`, or `npm` command exits with a non-zero exit code or prints a warning/error line, **always show the complete output verbatim** to the user before attempting any fix. Do NOT abstract, paraphrase, or silently discard CLI output. If the CLI prints a multi-line error or warning block, display it in a fenced code block exactly as printed. Only after showing the raw output should you cross-reference the error table and suggest a resolution. If the error is not in the table, show it and ask the user how to proceed.
+
+**RULE 7 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
 - **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
 - **Standard paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 

@@ -907,6 +907,8 @@ Next steps:
 
 ## Error Handling
 
+**CLI error surfacing:** When any CLI command (`a365`, `az`, `dotnet build`, `npm`, etc.) exits non-zero or prints a warning or error line, **show the complete output verbatim** in a fenced code block before suggesting a fix. Do not abstract, paraphrase, or discard CLI output — the exact error message is always more useful than a summary. If the error is not in the table below, display it and ask the user how to proceed.
+
 | Situation | Language | Action |
 |-----------|----------|--------|
 | Detection cache missing or stale | Any | Run `a365-setup` first |

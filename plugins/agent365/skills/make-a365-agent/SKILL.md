@@ -257,6 +257,7 @@ This command:
 Monitor output carefully:
 - The CLI logs progress in numbered steps (e.g. `[1/5]`). Watch for errors or warnings.
 - Existing resources from a previous run are skipped — this is expected behavior.
+- **If the command fails or prints any error/warning block: show the full CLI output verbatim** before consulting the error table below.
 
 > **Windows Account Manager (WAM):** If you see `"Authenticating via Windows Account Manager..."` in the output, a native Windows sign-in dialog has appeared. Do NOT kill the process. Tell the user: "A Windows sign-in dialog has appeared — please complete it. Setup will continue automatically after you sign in."
 > - If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions` to populate the token cache, then retry.
@@ -359,6 +360,8 @@ Next steps:
 ---
 
 ## Error Handling
+
+**CLI error surfacing:** When any CLI command exits non-zero or prints a warning or error line, **show the complete output verbatim** in a fenced code block before suggesting a fix. Do not abstract, paraphrase, or discard CLI output — the exact error message is always more useful than a summary. If the error is not in the table below, display it and ask the user how to proceed.
 
 - Run failing commands with `-v` / `--verbose` for detailed logs.
 - Check log files: Windows `%APPDATA%/a365/logs/`, Linux/Mac `~/.config/a365/logs/`.
