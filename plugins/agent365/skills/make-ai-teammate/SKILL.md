@@ -718,7 +718,7 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
-**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents use the Agentic User identity (the agent's own M365 identity — not the caller's token). The `--authmode` flag is not supported with `--aiteammate`; the CLI will error if `--authmode s2s` or `--authmode both` is passed alongside it. Omit `--authmode` entirely.
+**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents use the Agentic User identity (the agent's own M365 identity — not the caller's token). In CLI 1.1+, `--authmode obo` is accepted but emits a warning (OBO is the default for AI Teammate — the flag is superfluous). `--authmode s2s` or `--authmode both` with `--aiteammate` is rejected with an error. Omit `--authmode` entirely.
 
 **Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 
@@ -742,13 +742,20 @@ If found, **read** it and check/update these fields using values from `a365.gene
 
 | Field | Value |
 |-------|-------|
+| `$schema` | `https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json` (Teams 1.22+ for AI Teammates) |
+| `manifestVersion` | `"1.22"` |
 | `version` | bump minor (e.g. `1.0.0` → `1.0.1`) |
 | `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) |
 | `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) |
+| `bots[0].supportsFiles` | `false` |
+| `bots[0].isNotificationOnly` | `false` |
+| `copilotAgents.customEngineAgents` | **AI Teammate marker** — `[{ "id": "<agentAppId>", "type": "bot" }]`. This top-level block is what distinguishes an AI Teammate from a regular Teams bot in 1.22+. Required for the agent to appear as an AI Teammate. |
 | `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) |
 | `webApplicationInfo.id` | same as `bots[0].botId` |
 
 Do NOT overwrite existing values that are already correct.
+
+> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of direct ID substitution — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
 
 If `manifest.json` does **not** exist:
 > "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. To create one, run `a365 manifest init --agent-name <name>` then return here."
@@ -763,7 +770,10 @@ Stop until the user confirms whether to continue.
 a365 publish
 ```
 
-Packages the manifest into `manifest.zip` and uploads the agent to the Teams App Catalog. The CLI prints upload instructions for Microsoft 365 Admin Center (Agents > All agents > Upload custom agent) if direct upload is not possible.
+In CLI 1.1+, this command:
+1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (so step 9.7.2 manual edits are usually redundant — the CLI handles ID substitution).
+2. Packages the manifest + icons into `manifest.zip` (or `appPackage.zip` for Teams Toolkit projects).
+3. Attempts upload to the Teams App Catalog; if direct upload is not possible (e.g. user lacks Teams Administrator role), prints upload instructions for **Microsoft 365 Admin Center → Agents → All agents → Upload custom agent** using the produced `manifest.zip`.
 
 | Output | Action |
 |--------|--------|

@@ -10,22 +10,22 @@ Source: [Agent365-Samples/dotnet/agent-framework/sample-agent](https://github.co
 Add to the `.csproj` file:
 
 ```xml
-<!-- A365 SDK Packages -->
-<PackageReference Include="Microsoft.Agents.A365.Notifications" Version="*-beta.*" />
+<!-- A365 SDK Packages (Notifications is GA as of 2026-05-01) -->
+<PackageReference Include="Microsoft.Agents.A365.Notifications" Version="1.0.0" />
 
 <!-- Agent Framework Packages -->
-<PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.*" />
-<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.3.*-*" />
-<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.3.*-*" />
-<PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="9.10.0-preview.*" />
-<PackageReference Include="Azure.AI.OpenAI" Version="2.5.0-beta.*" />
-<PackageReference Include="Azure.Identity" Version="1.17.0" />
+<PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
+<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
+<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
+<PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.1-preview.*" />
+<PackageReference Include="Azure.AI.OpenAI" Version="2.7.0-beta.*" />
+<PackageReference Include="Azure.Identity" Version="1.17.1" />
 ```
 
-Install via dotnet CLI (example):
+Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications` is GA, no `--prerelease` needed):
 ```bash
-dotnet add package Microsoft.Agents.A365.Notifications --prerelease
-dotnet add package Microsoft.Agents.AI --prerelease
+dotnet add package Microsoft.Agents.A365.Notifications
+dotnet add package Microsoft.Agents.AI
 dotnet add package Microsoft.Agents.Authentication.Msal
 dotnet add package Microsoft.Agents.Hosting.AspNetCore
 dotnet add package Microsoft.Extensions.AI.OpenAI --prerelease
@@ -386,25 +386,25 @@ Source: [Agent365-Samples/dotnet/semantic-kernel/sample-agent](https://github.co
 ## Required NuGet Packages (Semantic Kernel)
 
 ```xml
-<!-- A365 SDK Packages -->
-<PackageReference Include="Microsoft.Agents.A365.Notifications" Version="*-beta.*" />
+<!-- A365 SDK Packages (Notifications is GA as of 2026-05-01) -->
+<PackageReference Include="Microsoft.Agents.A365.Notifications" Version="1.0.0" />
 
 <!-- Agent Framework Packages -->
-<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.3.*-*" />
-<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.3.*-*" />
-<PackageReference Include="Azure.Identity" Version="1.17.0" />
+<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
+<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
+<PackageReference Include="Azure.Identity" Version="1.17.1" />
 
-<!-- Semantic Kernel Packages -->
-<PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.*" />
-<PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.*" />
-<PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.*" />
+<!-- Semantic Kernel Packages — pin to 1.71.0 (latest sample tested) -->
+<PackageReference Include="Microsoft.SemanticKernel.Connectors.AzureOpenAI" Version="1.71.0-preview" />
+<PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.71.0" />
+<PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.71.0" />
 ```
 
 Key difference from AgentFramework: use `Microsoft.SemanticKernel.*` packages instead of `Microsoft.Extensions.AI.OpenAI` and `Azure.AI.OpenAI`.
 
-Install via dotnet CLI (example — use `--prerelease` for latest preview builds):
+Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications` is GA, no `--prerelease` needed):
 ```bash
-dotnet add package Microsoft.Agents.A365.Notifications --prerelease
+dotnet add package Microsoft.Agents.A365.Notifications
 dotnet add package Microsoft.Agents.Hosting.AspNetCore
 dotnet add package Microsoft.Agents.Authentication.Msal
 dotnet add package Microsoft.SemanticKernel.Connectors.AzureOpenAI
