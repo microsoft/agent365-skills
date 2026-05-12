@@ -483,31 +483,11 @@ Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
 
 ### Stage 2a — If AI Teammate
 
-> **CLI note:** Both options below map to the same CLI command — `a365 setup all --aiteammate` with **no `--authmode` flag**. AI Teammate agents always use OBO via the Agentic User identity; `--authmode` is not supported with `--aiteammate`. The `authMode` value here is for **code wiring only** (which token path is instrumented in the agent code).
+> **AI Teammate always uses `agentic-user`:** The agent acts through its own M365 identity (Agentic User — a dedicated Azure AD user with UPN, mailbox, and presence). This is **not** the caller's OBO token. No question is needed — auto-set `authMode = "agentic-user"`.
+>
+> **CLI note:** `--authmode` is not supported with `--aiteammate`; the Agentic User identity is provisioned automatically by `a365 setup all --aiteammate`. The `authMode` value is for **code wiring only** (which token path is instrumented in the agent code).
 
-```
-AskUserQuestion:
-  question: |
-    What does your agent need?
-
-    1 — Access data as the signed-in user
-        Agent acts on behalf of whoever is using it
-        → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-
-    2 — Its own persistent identity in your org
-        Agent has its own mailbox, name, and presence — like a digital employee
-        → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
-
-    ✅ Both options work with Observability and WorkIQ tools
-  options:
-    - "1 — Access data as the signed-in user"
-    - "2 — Its own persistent identity in your org"
-```
-
-| Choice | `authMode` (code wiring only — not a CLI flag) |
-|--------|-----------|
-| Access data as the signed-in user | `obo` |
-| Its own persistent identity in your org | `agentic-user` |
+Set `authMode = "agentic-user"` and continue to the next stage — no question asked.
 
 ---
 

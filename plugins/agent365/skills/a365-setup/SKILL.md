@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.json (authMode="" for AI Teammate — deferred to instrument-observability).
+        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -213,7 +213,7 @@ Wait for the answer. Store as `capabilities`.
 
 **Auth mode question — ask only if AI Teammate is NOT in capabilities:**
 
-- If `capabilities` includes **AI Teammate**: set `authMode = ""` — AI Teammate always uses OBO via the Agentic User identity; `--authmode` is not used with `--aiteammate`. The specific OBO variant (`obo` vs `agentic-user`) is collected later by `instrument-observability` for code wiring.
+- If `capabilities` includes **AI Teammate**: set `authMode = "agentic-user"` — AI Teammate uses the Agentic User identity (the agent's own M365 identity, not the caller's token). `--authmode` is not used with `--aiteammate`.
 
 - If `capabilities` does **not** include AI Teammate, ask:
 
@@ -234,7 +234,7 @@ How will your agent authenticate when calling downstream APIs?
 
 > **Note:** Options can be combined — e.g. a user can say "1 and 2" for Register + Observability.
 
-> **AI Teammate auto-select:** If the user selects option 4 (AI Teammate), automatically include options 1 (Register), 2 (Observability), and 3 (WorkIQ) — set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and inform the user: "AI Teammate includes Register, Observability, and WorkIQ automatically."
+> **AI Teammate auto-select:** If the user selects option 4 (AI Teammate), automatically include options 1 (Register) and 2 (Observability) — set `capabilities = [Register, Observability, AI Teammate]` and inform the user: "AI Teammate includes Register and Observability automatically. WorkIQ tools are optional and will be offered during make-ai-teammate."
 
 ### Phase 1C: Determine Path and Create Todos
 
@@ -245,7 +245,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `""` for AI Teammate — `instrument-observability` will fill in `"obo"` or `"agentic-user"` for code wiring after running).
+   - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `"agentic-user"` for AI Teammate).
    - Write `hasAITeammateChanges` as detected in Phase 1A Step 5 (`1` or `0`).
    - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
 

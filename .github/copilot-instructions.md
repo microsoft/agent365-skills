@@ -28,7 +28,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 5. Runs `a365 setup all --aiteammate` — creates the Blueprint and Agentic User identity in Entra ID (use `--m365` too for M365-registered AI Teammates with Teams/Copilot integration)
 6. Updates `manifest.json` with the correct Bot ID, App ID, and valid domains (values read from `a365.generated.config.json`), then runs `a365 publish` to upload to the Teams App Catalog; configures the bot endpoint in Teams Developer Portal and confirms the Agentic User UPN from `a365.generated.config.json`; guides a smoke test in Teams or AgentsPlayground
 7. Runs `instrument-observability` automatically — part of the AI Teammate package, not optional
-8. Runs `add-workiq-tools` automatically — part of the AI Teammate package, not optional
+8. Offers `add-workiq-tools` as optional — asks the user; can be run later via `/agent365:add-workiq-tools`
 
 **Reference patterns:**
 - Node.js: [plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md)
@@ -59,7 +59,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 0. Outputs a mandatory intro message first — describes the 4-step flow (detect → confirm → auth mode → capabilities) so the developer knows what to expect before any commands run
 1. Detects agent stack, language, CEA status (`usesTeamsOrCopilot`), and whether an existing blueprint config is present (`hasBlueprintConfig` from `a365.config.json` / `a365.generated.config.json`); shows all detections in a single summary message
    - **Blueprint question:** if `hasBlueprintConfig = 1`, asks the developer whether to reuse the existing blueprint (provide ID, skip `setup all`) or create a fresh one — never assumes
-2. Asks **capabilities first** (Register, Observability, WorkIQ, AI Teammate); then asks `authMode` (`obo` or `s2s`) **only if AI Teammate was not selected** — AI Teammate always uses OBO, no auth mode question needed. If s2s is selected and WorkIQ was also picked, WorkIQ is dropped with a warning. `agentic-user` is AI Teammate-specific and deferred to `instrument-observability` for code wiring.
+2. Asks **capabilities first** (Register, Observability, WorkIQ, AI Teammate); then asks `authMode` (`obo` or `s2s`) **only if AI Teammate was not selected** — AI Teammate always uses `agentic-user` (the agent's own M365 identity, not the caller's token), no auth mode question needed. If s2s is selected and WorkIQ was also picked, WorkIQ is dropped with a warning.
    - **CEA auto-route:** if `usesTeamsOrCopilot = 1` (Custom Engine Agent), automatically sets all 4 capabilities (Register, Observability, WorkIQ, AI Teammate) without presenting a menu — CEA agents are always AI Teammates
 3. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `hasAITeammateChanges`, `agentType`, `authMode`, `reuseBlueprint`, and `existingBlueprintId` — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking
 4. Runs a full system prerequisite scan (parallel version checks) and shows a ✅/❌ summary — **only processes sections for ❌ missing or outdated tools; skips ✅ tools entirely (no reinstall, no re-prompt)**. Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
@@ -89,7 +89,7 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 0. Checks for an existing blueprint config (`a365.config.json` / `a365.generated.config.json`) **before collecting any inputs** — if found, asks the developer whether to reuse the existing blueprint (skips `a365 setup all`) or create a fresh one
 1. Collects agent name (supports `default` → `developer` fallback; passes name verbatim — no case normalization) and project directory; asks whether the agent is cloud-hosted or local/dev-tunnel (guides through `devtunnel create/host` if local)
 2. Shows a dry-run preview of all `a365` operations before applying anything
-3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s` for non-AI Teammate agents to control permission grant type; **never passes `--authmode` with `--aiteammate`** (AI Teammate always uses OBO — flag is not supported). Skipped entirely when `reuseBlueprint = true`. Handles WAM prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
+3. Runs `a365 setup all` — creates the Blueprint and Entra ID permissions (add `--m365` for CEA agents; run `a365 setup permissions bot` after for Messaging Bot API grants). Supports `--authmode obo|s2s` for non-AI Teammate agents to control permission grant type; **never passes `--authmode` with `--aiteammate`** (AI Teammate uses the Agentic User identity — agent's own M365 identity, not the caller's token; `--authmode` flag not supported with `--aiteammate`). Skipped entirely when `reuseBlueprint = true`. Handles WAM prompts — if a native sign-in dialog appears, instructs user to complete it without killing the process. Auto-falls back to device code flow if blocked by Conditional Access Policy.
 4. After setup, always offers `instrument-observability` as an optional add-on; offers `add-workiq-tools` only when `authMode ≠ s2s` — WorkIQ is silently skipped for S2S agents (requires a user token)
 5. OtelWrite (`Agent365.Observability.OtelWrite`) is auto-granted for newly provisioned agents — no GA consent step required. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), displays the PowerShell script verbatim for the user to hand to a Global Admin
 
@@ -241,7 +241,7 @@ a365-setup  →  make-ai-teammate    (AI Teammate path)
             →  make-a365-agent     (Registration / Observability / WorkIQ paths)
 
 make-ai-teammate  →  instrument-observability  (automatic — part of AI Teammate package)
-                  →  add-workiq-tools          (automatic — part of AI Teammate package)
+                  →  add-workiq-tools          (optional — offered at Phase 9.6)
 
 make-a365-agent   →  instrument-observability  (Optional — always offered)
                   →  add-workiq-tools          (Optional — skipped when authMode = s2s)

@@ -66,7 +66,7 @@ hooks:
 
         Also verify for all languages:
         - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
-        - add-workiq-tools ran (Phase 9.6 — part of AI Teammate package, not optional).
+        - add-workiq-tools was offered (Phase 9.6) and either invoked or explicitly skipped by user.
 
         If any item failed or was incomplete, return {"ok": false, "reason": "<specific item>"}.
         If all items completed, return {"ok": true}.
@@ -672,11 +672,16 @@ Observability is part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT
 
 ---
 
-## Phase 9.6 — Add WorkIQ Tools
+## Phase 9.6 — Offer WorkIQ Tools (optional)
 
 **Mark task in progress: "Add WorkIQ Tools"**
 
-WorkIQ tools are part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it now — do not ask whether to add them.
+Ask the user:
+
+> "Would you like to add WorkIQ MCP tools now? WorkIQ lets your AI Teammate use Calendar, Mail, and other M365 tools via MCP servers."
+>
+> - **Yes** → **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it in full.
+> - **Skip** → inform the user they can run `/agent365:add-workiq-tools` later.
 
 **Mark task complete: "Add WorkIQ Tools"**
 
@@ -713,7 +718,7 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
-**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents always use OBO — the flag is not supported and the CLI will error if `--authmode s2s` or `--authmode both` is passed alongside `--aiteammate`. Omit `--authmode` entirely.
+**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents use the Agentic User identity (the agent's own M365 identity — not the caller's token). The `--authmode` flag is not supported with `--aiteammate`; the CLI will error if `--authmode s2s` or `--authmode both` is passed alongside it. Omit `--authmode` entirely.
 
 **Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 
