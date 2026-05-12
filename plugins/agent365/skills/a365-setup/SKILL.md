@@ -365,25 +365,26 @@ After install, open a new terminal and run `dotnet --version` to confirm. Report
 
 **Required by:** all `a365` commands.
 
-> **Skip this section if the quick scan showed ✅ for a365 CLI at an acceptable version.**
+> **Always run this section** — check current version and update to latest regardless of whether a365 is already installed.
 
 ```bash
 a365 --version 2>/dev/null || echo "NOT FOUND"
+dotnet tool list -g 2>/dev/null | grep -i a365 || echo "not in dotnet tools"
 ```
 
-If the quick scan returned **NOT FOUND** for a365, install it:
+**If NOT FOUND — install:**
 
 ```bash
 dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
 
-If the quick scan returned a version that is outdated (older than the latest release), update it:
+**If already installed — always update to latest:**
 
 ```bash
 dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
 
-If the quick scan showed ✅ with an acceptable version, skip this section entirely.
+Run `a365 --version` after install or update and show the version to the user so they can confirm they are on the latest release.
 
 If `a365` is still not found after install, the dotnet tools directory is not on PATH:
 
@@ -613,18 +614,53 @@ a365 setup requirements --category PowerShell
 
 ### Azure CLI login
 
-> **CRITICAL:** Use `az login --allow-no-subscriptions` — not plain `az login`. The A365 setup flow does not require an Azure subscription, and plain `az login` will fail for users who have none. After a successful login, the CLI acquires Graph tokens silently from the cache with no interactive prompts.
+First, check whether a valid Azure CLI session already exists:
 
 ```bash
+az account show --query "{user:user.name, tenantId:tenantId, name:name}" -o json 2>/dev/null || echo "NO_SESSION"
+```
+
+**If an active session is found**, present the current account and tenant to the user and ask:
+
+```
+Found an existing Azure CLI session:
+  Account: <user.name>
+  Tenant:  <tenantId>  (<name>)
+
+Would you like to:
+  1. Use this tenant  (recommended if this is your A365 tenant)
+  2. Switch to a different tenant  (provide a tenant ID or domain)
+  3. Log in fresh  (clears the current session)
+```
+
+- **Option 1 — use existing:** confirm `az account show` returns the correct account and proceed.
+- **Option 2 — switch tenant:** ask "What is your tenant ID or domain?" then run:
+  ```bash
+  az login --allow-no-subscriptions --tenant <tenantId>
+  ```
+- **Option 3 — fresh login:** run:
+  ```bash
+  az login --allow-no-subscriptions
+  ```
+
+**If no session exists (NO_SESSION)**, ask: "Would you like to log in to a specific tenant or to your default tenant?" then run the appropriate command:
+
+```bash
+# Default tenant:
 az login --allow-no-subscriptions
-# If multiple tenants, target a specific one:
+# Specific tenant:
 az login --allow-no-subscriptions --tenant <tenantId>
-# Confirm the active account:
+```
+
+> **CRITICAL:** Always use `--allow-no-subscriptions` — the A365 setup flow does not require an Azure subscription, and plain `az login` fails for users who have none.
+
+After login, confirm the active account:
+
+```bash
 az account show --query "{user:user.name, tenantId:tenantId}" -o json
 ```
 
-- **If `az account show` succeeds**: login is active — continue.
-- **If `az account show` fails or returns no output**: STOP. Tell the user to run `az login --allow-no-subscriptions` in their terminal and complete the login, then confirm back. Do NOT proceed until `az account show` returns a valid account.
+STOP and do not proceed until `az account show` returns a valid account. If no valid account is returned, ask the user to complete the login in their terminal and confirm back.
 
 If interactive login is not possible (headless / CI environment), use device-code flow:
 
