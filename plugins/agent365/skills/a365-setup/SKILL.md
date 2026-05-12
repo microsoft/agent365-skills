@@ -139,6 +139,7 @@ Run all checks **in parallel** (Glob + Grep):
 - `@microsoft/agents-a365-notifications` in `package.json`
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
+- `agentUpn` present in `a365.generated.config.json` (definitive: Agentic User already provisioned)
 
 *Observability signals (from `instrument-observability`) — any one counts:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
@@ -353,12 +354,13 @@ After install, open a new terminal and run `dotnet --version` to confirm. Report
 
 **Required by:** all `a365` commands.
 
-> **Always run this section** — check current version and update to latest regardless of whether a365 is already installed.
+> **Always run this section** — check current version and update to latest regardless of whether a365 is already installed. This is an explicit exception to the Step 1 "skip ✅ tools" rule.
 
 ```bash
 a365 --version 2>/dev/null || echo "NOT FOUND"
-dotnet tool list -g 2>/dev/null | grep -i a365 || echo "not in dotnet tools"
+dotnet tool list -g 2>/dev/null
 ```
+(Look for `microsoft.agents.a365.devtools.cli` in the `dotnet tool list` output.)
 
 **If NOT FOUND — install:**
 
@@ -612,8 +614,9 @@ az account show --query "{user:user.name, tenantId:tenantId, name:name}" -o json
 
 ```
 Found an existing Azure CLI session:
-  Account: <user.name>
-  Tenant:  <tenantId>  (<name>)
+  Signed in as: <user.name>
+  Tenant ID:    <tenantId>
+  Subscription: <name>  (may be empty if no Azure subscription)
 
 Would you like to:
   1. Use this tenant  (recommended if this is your A365 tenant)

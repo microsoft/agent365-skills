@@ -1,6 +1,6 @@
 {
   "skill_name": "make-ai-teammate",
-  "eval_instructions": "Test against agents that are NOT yet M365-integrated across three languages: Node.js (LangChain/OpenAI/Claude), .NET AgentFramework, and Python AgentFramework. Requires .a365-workspace-detection.json to be present (written by a365-setup). The skill must WRAP existing LLM code, not replace it. For Node.js verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has getClient() factory wrapping the LLM, (4) ToolingManifest.json exists (empty), (5) core @microsoft/agents-hosting, @microsoft/agents-a365-runtime, @microsoft/agents-a365-notifications packages in package.json, (6) tsconfig has module: node16. For .NET verify: (1) Program.cs has AddAgent<T> + /api/messages + /api/health, (2) agent class extends AgentApplication with dual isAgenticOnly registrations, (3) .csproj has Microsoft.Agents.A365.Notifications, (4) appsettings.json has AgentApplication + TokenValidation + Connections. For Python verify: (1) host_agent_server.py has CloudAdapterAiohttp + /api/messages + /api/health + on_agent_notification, (2) agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity, (3) agent_interface.py exists, (4) pyproject.toml has microsoft_agents_a365_notifications + microsoft_agents_a365_runtime + microsoft-agents-hosting-aiohttp. The skill runs instrument-observability (Phase 9.5) automatically as part of the AI Teammate package. add-workiq-tools (Phase 9.6) is optional — the user is asked and can accept or skip. The skill ends at Phase 10 (Final Summary) suggesting test-local as the next step (and add-workiq-tools if it was skipped).",
+  "eval_instructions": "Test against agents that are NOT yet M365-integrated across three languages: Node.js (LangChain/OpenAI/Claude), .NET AgentFramework, and Python AgentFramework. Requires .a365-workspace-detection.json to be present (written by a365-setup). The skill must WRAP existing LLM code, not replace it. For Node.js verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has getClient() factory wrapping the LLM, (4) ToolingManifest.json exists (pre-populated with Calendar and Mail WorkIQ MCP servers), (5) core @microsoft/agents-hosting, @microsoft/agents-a365-runtime, @microsoft/agents-a365-notifications packages in package.json, (6) tsconfig has module: node16. For .NET verify: (1) Program.cs has AddAgent<T> + /api/messages + /api/health, (2) agent class extends AgentApplication with dual isAgenticOnly registrations, (3) .csproj has Microsoft.Agents.A365.Notifications, (4) appsettings.json has AgentApplication + TokenValidation + Connections. For Python verify: (1) host_agent_server.py has CloudAdapterAiohttp + /api/messages + /api/health + on_agent_notification, (2) agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity, (3) agent_interface.py exists, (4) pyproject.toml has microsoft_agents_a365_notifications + microsoft_agents_a365_runtime + microsoft-agents-hosting-aiohttp. The skill runs instrument-observability (Phase 9.5) automatically as part of the AI Teammate package. add-workiq-tools (Phase 9.6) is optional — the user is asked and can accept or skip. The skill ends at Phase 10 (Final Summary) suggesting test-local as the next step (and add-workiq-tools if it was skipped).",
   "evals": [
     {
       "id": 1,
@@ -29,7 +29,7 @@
         "Phase 5: src/agent.ts uses createEmailResponseActivity for email replies",
         "Phase 6: src/client.ts has getClient() factory wrapping existing LangChain invocation",
         "Phase 6: src/client.ts does NOT contain McpToolRegistrationService (added by add-workiq-tools skill)",
-        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 7: ToolingManifest.json created pre-populated with Calendar and Mail WorkIQ MCP servers",
         "Phase 8: .env.example gains agentic_* vars and connection vars",
         "Phase 9: npm run build (or tsc --noEmit) succeeds",
         "Phase 9.5: instrument-observability SKILL.md is read and followed automatically — not offered as optional",
@@ -146,7 +146,7 @@
         "Phase 5: Agent class has typing indicator loop (4 second interval) in OnMessageAsync",
         "Phase 5: GetAgentInstructions() sanitizes Activity.From.Name (strips control chars, caps at 64 chars)",
         "Phase 5: OnMessageAsync uses ChatClientAgent directly — no GetMcpToolsAsync (added by add-workiq-tools skill)",
-        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 7: ToolingManifest.json created pre-populated with Calendar and Mail WorkIQ MCP servers",
         "Phase 8: appsettings.json has AgentApplication.AgenticAuthHandlerName, TokenValidation, Connections, ConnectionsMap sections",
         "Phase 9: dotnet build succeeds",
         "Phase 9.5: instrument-observability SKILL.md is read and followed automatically — not offered as optional",
@@ -191,7 +191,7 @@
         "Phase 5: agent.py does NOT contain setup_mcp_servers (added by add-workiq-tools skill)",
         "Phase 5: agent.py has handle_agent_notification_activity() handling EMAIL_NOTIFICATION",
         "Phase 5: Existing LLM client configuration (AZURE_OPENAI_* env vars) is preserved",
-        "Phase 7: ToolingManifest.json created with empty mcpServers array",
+        "Phase 7: ToolingManifest.json created pre-populated with Calendar and Mail WorkIQ MCP servers",
         "Phase 8: .env / .env.template gains AUTH_HANDLER_NAME, CONNECTIONS__* vars, USE_AGENTIC_AUTH (no OBSERVABILITY_* vars)",
         "Phase 9: uv sync succeeds",
         "Phase 9.5: instrument-observability SKILL.md is read and followed automatically — not offered as optional",

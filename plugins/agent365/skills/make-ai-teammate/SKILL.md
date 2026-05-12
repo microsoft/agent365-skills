@@ -333,7 +333,7 @@ TaskCreate: "Add ToolingManifest.json"                              [skip if has
 TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
 TaskCreate: "Add Observability"
-TaskCreate: "Add WorkIQ Tools"
+TaskCreate: "Add WorkIQ Tools (optional)"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
@@ -346,7 +346,7 @@ TaskCreate: "Update appsettings.json with A365 auth and connection config"
 TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Validate build (dotnet build)"
 TaskCreate: "Add Observability"
-TaskCreate: "Add WorkIQ Tools"
+TaskCreate: "Add WorkIQ Tools (optional)"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
@@ -360,7 +360,7 @@ TaskCreate: "Add ToolingManifest.json"                                          
 TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
 TaskCreate: "Add Observability"
-TaskCreate: "Add WorkIQ Tools"
+TaskCreate: "Add WorkIQ Tools (optional)"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
