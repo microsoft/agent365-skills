@@ -23,13 +23,13 @@ into a Node.js agent. Aligned with `@microsoft/opentelemetry` **GA 1.0.x** (upda
 Install:
 ```bash
 # Required for all agents
-npm install @microsoft/opentelemetry
+npm install @microsoft/opentelemetry @opentelemetry/resources
 
 # Required for S2S only
 npm install @azure/msal-node @azure/identity
 ```
 
-> **No version pin needed.** `@microsoft/opentelemetry` is GA — install latest.
+> **No version pin needed.** `@microsoft/opentelemetry` is GA — install latest. `@opentelemetry/resources` is pulled in transitively by `@microsoft/opentelemetry`, but is listed here explicitly because the entry-point examples below import `resourceFromAttributes` from it (TS/module resolution can fail if it's not declared as a direct dep).
 
 Minimum Node.js: **20.6.0** (required for ESM `--import` flow). TypeScript: **5.x** recommended.
 

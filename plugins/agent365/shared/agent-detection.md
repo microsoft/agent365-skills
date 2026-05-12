@@ -523,12 +523,11 @@ AskUserQuestion:
 
 ### Full result mapping
 
-| `agentType` | Label | `authMode` |
-|------------|-------|-----------|
-| `ai-teammate` | Access data as the signed-in user | `obo` |
-| `ai-teammate` | Its own persistent identity in your org | `agentic-user` |
-| `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `s2s` |
-| `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `obo` |
+| `agentType` | `authMode` | How it's chosen |
+|------------|-----------|------------------|
+| `ai-teammate` | `agentic-user` | Auto-set in Stage 2a — no question asked. AI Teammate always uses the Agentic User identity. |
+| `system-agent` (Agent (Non AI Teammate)) | `obo` | Stage 2b option 2 — agent acts on behalf of the signed-in user |
+| `system-agent` (Agent (Non AI Teammate)) | `s2s` | Stage 2b option 1 — agent acts as its own service principal (no user token) |
 
 ---
 
@@ -536,10 +535,9 @@ AskUserQuestion:
 
 | Agent kind | `authMode` | Observability | WorkIQ tools |
 |-----------|-----------|---------------|-------------|
-| AI Teammate | `obo` (signed-in user access) | ✅ | ✅ M365 data scoped to signed-in user |
-| AI Teammate | `agentic-user` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
-| Agent (Non AI Teammate) | `obo` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Agent (Non AI Teammate) | `s2s` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
+| AI Teammate | `agentic-user` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent's Agentic User identity |
+| Agent (Non AI Teammate) | `obo` | ✅ | ✅ M365 data scoped to whatever the auth handler resolves (typically the signed-in user) |
+| Agent (Non AI Teammate) | `s2s` | ✅ | ❌ Not available — WorkIQ requires a delegated user token |
 
 ---
 
@@ -572,9 +570,10 @@ Add this inline comment wherever the auth handler is wired:
 
 ### WorkIQ guard — `s2s` agents
 
-**WorkIQ must never be presented as an option when `authMode = s2s`.** This applies everywhere:
+**WorkIQ is incompatible with `authMode = s2s`** and must be removed from any session where s2s is selected. Two patterns are valid depending on when `authMode` is known:
 
-- **In capabilities menus** (e.g., `a365-setup`): omit WorkIQ from the list entirely — do not show it, do not grey it out.
+- **When `authMode` is known up-front** (e.g., from cache, or from a flow that asks auth mode before capabilities): omit WorkIQ from the capabilities menu entirely — do not show it, do not grey it out.
+- **When capabilities are asked before `authMode`** (current `a365-setup` flow): WorkIQ may appear in the menu. If the user later picks s2s, the skill must warn and drop WorkIQ from the selection: *"⚠️ WorkIQ requires a delegated user token (OBO) and is not available for S2S agents. WorkIQ has been removed from your selected capabilities."*
 - **In `add-workiq-tools`**: if `authMode = s2s` is detected (from cache or from the auth mode question), **exit immediately before any further questions or actions**:
 
 ```

@@ -68,8 +68,13 @@ hooks:
         - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
         - add-workiq-tools was offered (Phase 9.6) and either invoked or explicitly skipped by user.
 
-        If any item failed or was incomplete, return {"ok": false, "reason": "<specific item>"}.
-        If all items completed, return {"ok": true}.
+        Treat optional items (Phase 9.6 add-workiq-tools) as complete if the user
+        was offered the step and either invoked or explicitly skipped it — an
+        explicit skip is a valid completion state, not a failure.
+
+        If any item failed or was incomplete (and was not an explicit skip of an
+        optional step), return {"ok": false, "reason": "<specific item>"}.
+        Otherwise return {"ok": true}.
       timeout: 45000
 ---
 
@@ -674,7 +679,7 @@ Observability is part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT
 
 ## Phase 9.6 — Offer WorkIQ Tools (optional)
 
-**Mark task in progress: "Add WorkIQ Tools"**
+**Mark task in progress: "Add WorkIQ Tools (optional)"**
 
 Ask the user:
 
@@ -683,7 +688,7 @@ Ask the user:
 > - **Yes** → **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it in full.
 > - **Skip** → inform the user they can run `/agent365:add-workiq-tools` later.
 
-**Mark task complete: "Add WorkIQ Tools"**
+**Mark task complete: "Add WorkIQ Tools (optional)"**
 
 ---
 

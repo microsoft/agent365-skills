@@ -212,11 +212,13 @@ Otherwise, present all options:
 
 Wait for the answer. Store as `capabilities`.
 
-**Auth mode question — ask only if AI Teammate is NOT in capabilities:**
+**Auth mode question — ask only if AI Teammate is NOT in capabilities AND `hasAITeammateChanges = 0`:**
+
+- If `hasAITeammateChanges = 1`: set `authMode = "agentic-user"` — the agent is already an AI Teammate (existing structure detected); skip the auth mode question.
 
 - If `capabilities` includes **AI Teammate**: set `authMode = "agentic-user"` — AI Teammate uses the Agentic User identity (the agent's own M365 identity, not the caller's token). `--authmode` is not used with `--aiteammate`.
 
-- If `capabilities` does **not** include AI Teammate, ask:
+- Otherwise (no AI Teammate in capabilities AND `hasAITeammateChanges = 0`), ask:
 
 ```
 How will your agent authenticate when calling downstream APIs?
@@ -241,7 +243,7 @@ How will your agent authenticate when calling downstream APIs?
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected), else `isAITeammate = false`.
+1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected) **OR** `hasAITeammateChanges = 1` (existing AI Teammate structure detected — already configured). Else `isAITeammate = false`.
 
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`

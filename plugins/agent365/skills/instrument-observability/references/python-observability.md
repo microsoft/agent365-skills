@@ -31,7 +31,7 @@ The agent's `authMode` (read from `.a365-workspace-detection.json`) determines w
 
 | Package | Purpose |
 |---------|---------|
-| `microsoft-opentelemetry` (1.1.x GA) | Sole entry point. Re-exports `use_microsoft_opentelemetry`, `shutdown_microsoft_opentelemetry`, baggage helpers (`populate`, `BaggageMiddleware`, `ObservabilityHostingManager`), `AgenticTokenCache`, all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`), and all contract types (`AgentDetails`, `CallerDetails`, `UserDetails`, `Request`, `Response`, `InvokeAgentScopeDetails`, `InferenceCallDetails`, `ToolCallDetails`, etc.) |
+| `microsoft-opentelemetry` (1.1.x GA) | Sole entry point. Re-exports `use_microsoft_opentelemetry`, baggage helpers (`populate`, `BaggageMiddleware`, `ObservabilityHostingManager`), `AgenticTokenCache`, all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`), and all contract types (`AgentDetails`, `CallerDetails`, `UserDetails`, `Request`, `Response`, `InvokeAgentScopeDetails`, `InferenceCallDetails`, `ToolCallDetails`, etc.). **Note:** Unlike Node.js, no `shutdown_microsoft_opentelemetry` helper is exported — see [Graceful Shutdown](#graceful-shutdown) for the OTel SDK-based pattern. |
 | `microsoft-opentelemetry[langchain]` | Optional extra — adds LangChain instrumentation deps (only if your agent uses LangChain) |
 | `msal` (^1.34) | MSAL Python `ConfidentialClientApplication` for Hop 3 token acquisition (S2S only) |
 | `azure-identity` (^1.20) | `ManagedIdentityCredential` for MSI-based token acquisition (S2S only) |
