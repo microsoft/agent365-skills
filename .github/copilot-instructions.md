@@ -27,9 +27,8 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 4. Writes a `ToolingManifest.json` pre-populated with Calendar and Mail WorkIQ servers, and all required environment variables
 5. Runs `a365 setup all --aiteammate` — creates the Blueprint and Agentic User identity in Entra ID (use `--m365` too for M365-registered AI Teammates with Teams/Copilot integration)
 6. Updates `manifest.json` with the correct Bot ID, App ID, and valid domains (values read from `a365.generated.config.json`), then runs `a365 publish` to upload to the Teams App Catalog; configures the bot endpoint in Teams Developer Portal and confirms the Agentic User UPN from `a365.generated.config.json`; guides a smoke test in Teams or AgentsPlayground
-7. Offers `instrument-observability` (Strongly Recommended) — if yes, reads and follows instrument-observability/SKILL.md
-8. Offers `add-workiq-tools` (Optional) — if yes, reads and follows add-workiq-tools/SKILL.md
-   Both offers are mandatory checkpoints: skill does not end until each is either invoked or explicitly skipped by the user.
+7. Runs `instrument-observability` automatically — part of the AI Teammate package, not optional
+8. Runs `add-workiq-tools` automatically — part of the AI Teammate package, not optional
 
 **Reference patterns:**
 - Node.js: [plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md)
@@ -241,8 +240,8 @@ Skills are **additive and idempotent** — never delete or restructure existing 
 a365-setup  →  make-ai-teammate    (AI Teammate path)
             →  make-a365-agent     (Registration / Observability / WorkIQ paths)
 
-make-ai-teammate  →  instrument-observability  (Strongly Recommended)
-                  →  add-workiq-tools          (Optional)
+make-ai-teammate  →  instrument-observability  (automatic — part of AI Teammate package)
+                  →  add-workiq-tools          (automatic — part of AI Teammate package)
 
 make-a365-agent   →  instrument-observability  (Optional — always offered)
                   →  add-workiq-tools          (Optional — skipped when authMode = s2s)

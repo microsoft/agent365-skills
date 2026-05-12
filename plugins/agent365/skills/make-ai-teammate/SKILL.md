@@ -65,11 +65,11 @@ hooks:
         13. Smoke test was completed (Teams or AgentsPlayground).
 
         Also verify for all languages:
-        - instrument-observability was offered and either invoked or explicitly skipped by user.
-        - add-workiq-tools was offered and either invoked or explicitly skipped by user.
+        - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
+        - add-workiq-tools ran (Phase 9.6 — part of AI Teammate package, not optional).
 
         If any item failed or was incomplete, return {"ok": false, "reason": "<specific item>"}.
-        If all items completed (or were explicitly skipped by the user), return {"ok": true}.
+        If all items completed, return {"ok": true}.
       timeout: 45000
 ---
 
@@ -332,8 +332,8 @@ TaskCreate: "Add src/client.ts — LLM client factory"               [skip if ex
 TaskCreate: "Add ToolingManifest.json"                              [skip if hasManifest]
 TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
-TaskCreate: "Add Observability (optional)"
-TaskCreate: "Add WorkIQ Tools (optional)"
+TaskCreate: "Add Observability"
+TaskCreate: "Add WorkIQ Tools"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
@@ -345,8 +345,8 @@ TaskCreate: "Add Agent/MyAgent.cs — AgentApplication subclass"                
 TaskCreate: "Update appsettings.json with A365 auth and connection config"
 TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Validate build (dotnet build)"
-TaskCreate: "Add Observability (optional)"
-TaskCreate: "Add WorkIQ Tools (optional)"
+TaskCreate: "Add Observability"
+TaskCreate: "Add WorkIQ Tools"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
@@ -359,8 +359,8 @@ TaskCreate: "Update agent.py — AgentInterface implementation"                 
 TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
-TaskCreate: "Add Observability (optional)"
-TaskCreate: "Add WorkIQ Tools (optional)"
+TaskCreate: "Add Observability"
+TaskCreate: "Add WorkIQ Tools"
 TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
 ```
 
@@ -662,51 +662,23 @@ Do NOT revert changes on build failure — fix forward.
 
 ---
 
-## Phase 9.5 — Offer Observability (Optional)
+## Phase 9.5 — Add Observability
 
-**Mark task in progress: "Add Observability (optional)"**
+**Mark task in progress: "Add Observability"**
 
-Ask the user:
+Observability is part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it now — do not ask whether to add it.
 
-```
-Your AI Teammate code is ready. Observability lets you track every message, LLM call,
-and tool invocation in the Agent 365 portal and Microsoft Defender.
-
-  Would you like to add observability now?
-    • yes  — I'll run the instrument-observability skill now
-    • skip — you can add it later by running the instrument-observability skill
-```
-
-**If yes:** **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it.
-
-**If skip:** Note that the user can run the `instrument-observability` skill at any time.
-
-**Mark task complete: "Add Observability (optional)"**
+**Mark task complete: "Add Observability"**
 
 ---
 
-## Phase 9.6 — Offer WorkIQ Tools (Optional)
+## Phase 9.6 — Add WorkIQ Tools
 
-**Mark task in progress: "Add WorkIQ Tools (optional)"**
+**Mark task in progress: "Add WorkIQ Tools"**
 
-Ask the user:
+WorkIQ tools are part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it now — do not ask whether to add them.
 
-```
-Would you like to add WorkIQ tools? These give your agent access to Microsoft 365 data —
-email, calendar, Teams messages, SharePoint files, OneDrive, and more.
-
-Note: WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens. Users will be prompted to
-consent the first time the agent accesses their data.
-
-  • yes  — I'll run the add-workiq-tools skill now
-  • skip — you can add it later by running the add-workiq-tools skill
-```
-
-**If yes:** **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it.
-
-**If skip:** Note that the user can run the `add-workiq-tools` skill at any time.
-
-**Mark task complete: "Add WorkIQ Tools (optional)"**
+**Mark task complete: "Add WorkIQ Tools"**
 
 ---
 
