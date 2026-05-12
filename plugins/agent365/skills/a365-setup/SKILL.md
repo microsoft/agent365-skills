@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. authMode was collected from the user (obo/s2s for non-AI Teammate; deferred to instrument-observability for AI Teammate) and written to .a365-workspace-detection.json.
+        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.json (authMode="" for AI Teammate — deferred to instrument-observability).
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -171,7 +171,7 @@ Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all values and proceed to the blueprint question (if applicable), then the auth mode question.
+- If the user replies **yes / y**: accept all values and proceed to the blueprint question (if applicable), then the capabilities question.
 - If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed.
 - If the user says it's Non-M365 / no Teams integration: set `usesTeamsOrCopilot = 0` and proceed.
 - If the user describes other corrections: update the relevant variable(s) and proceed.
@@ -189,38 +189,9 @@ Wait for the answer:
 - If **1 (reuse)**: ask "What is your blueprint ID?" if `existingBlueprintId` is empty. Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Downstream skills will skip `a365 setup all` and use this ID directly.
 - If **2 (fresh)**: set `reuseBlueprint = false`. Proceed normally — `a365 setup all` will run as usual.
 
-**Auth mode question (ask before capabilities, non-AI Teammate only):**
-
-> **What `authMode` means here:** For non-AI Teammate agents, `authMode` controls how the CLI grants Entra permissions to the blueprint service principal (`a365 setup all --authmode obo|s2s`). For AI Teammate agents, `--authmode` is not used with `--aiteammate` — the AI Teammate path always uses OBO via the Agentic User identity, and `authMode` for code instrumentation is collected later by `instrument-observability`.
-
-If `hasAITeammateChanges = 1`, **do not ask** — the agent already has AI Teammate code. Set `authMode = ""` (deferred). Tell the user: "Since this agent already has AI Teammate changes configured, auth mode will be confirmed when running `instrument-observability`."
-
-Otherwise, ask:
-
-```
-How will your agent authenticate when calling downstream APIs?
-
-  1. On-behalf-of (OBO) — the agent acts as the signed-in user (delegated permissions)
-     Choose this when the agent needs to access resources on behalf of a specific user
-     (e.g. reading the user's calendar, sending mail as them).
-
-  2. Service-to-service (S2S) — the agent acts as its own identity (application permissions)
-     Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
-     (e.g. reading all mailboxes, managing SharePoint sites).
-
-  Note: If you plan to select AI Teammate below, answer 1 (OBO) — AI Teammate agents always
-  use OBO via their Agentic User identity. The --authmode flag is not used for AI Teammate setup.
-```
-
-Wait for the answer. Store as `authMode`:
-- If 1 → `authMode = "obo"`
-- If 2 → `authMode = "s2s"`
-
-> **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
-
 ---
 
-**Final question: What capabilities do you want to enable?**
+**Capabilities question — ask first, before auth mode:**
 
 If `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and tell the user:
 
@@ -231,16 +202,35 @@ Otherwise, if `hasAITeammateChanges = 1`, only present these options (Observabil
   1. Register — make the agent findable in the Agent 365 catalog
   2. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
 
-Otherwise, present only the options that apply — **omit WorkIQ when `authMode = "s2s"`**:
+Otherwise, present all options:
 
   1. Register — make the agent findable in the Agent 365 catalog
-  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender. Will register your agent with the A365 catalog if not already registered.
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
-     _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
-  4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
-     _(omit this option when `authMode = "s2s"` — AI Teammate requires OBO-style auth; show for `authMode = "obo"` or `authMode = ""`)_
+  4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity
 
 Wait for the answer. Store as `capabilities`.
+
+**Auth mode question — ask only if AI Teammate is NOT in capabilities:**
+
+- If `capabilities` includes **AI Teammate**: set `authMode = ""` — AI Teammate always uses OBO via the Agentic User identity; `--authmode` is not used with `--aiteammate`. The specific OBO variant (`obo` vs `agentic-user`) is collected later by `instrument-observability` for code wiring.
+
+- If `capabilities` does **not** include AI Teammate, ask:
+
+```
+How will your agent authenticate when calling downstream APIs?
+
+  1. On-behalf-of (OBO) — agent acts as the signed-in user (delegated permissions)
+     e.g. reading a user's calendar, sending mail on their behalf
+
+  2. Service-to-service (S2S) — agent acts as its own identity (application permissions)
+     e.g. unattended background processing, tenant-wide access without a signed-in user
+```
+
+  Wait for the answer:
+  - If 1 → `authMode = "obo"`
+  - If 2 → `authMode = "s2s"`. If `capabilities` includes WorkIQ, warn the user and remove it:
+    > "⚠️ WorkIQ requires a delegated user token (OBO) and is not available for S2S agents. WorkIQ has been removed from your selected capabilities."
 
 > **Note:** Options can be combined — e.g. a user can say "1 and 2" for Register + Observability.
 
