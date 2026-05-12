@@ -248,7 +248,7 @@ describe('validate-observability — Python', () => {
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
-      assert.match(r.reason, /microsoft-agents-a365-observability/);
+      assert.match(r.reason, /microsoft-opentelemetry/);
     } finally { cleanup(dir); }
   });
 

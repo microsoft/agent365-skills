@@ -217,7 +217,9 @@ if (isNodejs) {
 // ── Python validation ───────────────────────────────────────────────────────
 
 if (isPython) {
-  // 1. Core package installed
+  // 1. Core package installed — microsoft-opentelemetry (GA 1.1+) is the unified package.
+  // Legacy microsoft-agents-a365-* packages are deprecated but still accepted here so
+  // agents instrumented before the rewrite pass validation until they migrate.
   const pyObservabilityPackages = [
     'microsoft-opentelemetry',
     'microsoft-agents-a365-observability-core',
@@ -229,8 +231,7 @@ if (isPython) {
     pyObservabilityPackages.some(pkg => fileContains(f, pkg)));
   if (!hasPyPkg) {
     issues.push(
-      'No Microsoft observability distribution found in requirements.txt or pyproject.toml ' +
-      '(expected microsoft-opentelemetry or a microsoft-agents-a365-observability-* package)'
+      'microsoft-opentelemetry not found in requirements.txt or pyproject.toml'
     );
   }
 

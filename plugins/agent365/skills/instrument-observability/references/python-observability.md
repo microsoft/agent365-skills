@@ -1,7 +1,29 @@
 # Python — A365 Observability Reference
 
 Authoritative package versions and code patterns for instrumenting A365 observability
-into a Python agent. All samples mirror the official Microsoft Learn docs (updated 2026-04-30).
+into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.1.x** (released 2026-05-11).
+
+> **Major shift from earlier 0.x:** the legacy packages
+> (`microsoft-agents-a365-observability-core`, `-hosting`, `-runtime`, and the four
+> `-extensions-*` packages) are **deprecated**. Everything ships from a single package
+> now: `microsoft-opentelemetry`. See `MIGRATION_A365.md` in the distro repo for the
+> authoritative migration guide.
+
+---
+
+## Auth Mode Mapping
+
+The agent's `authMode` (read from `.a365-workspace-detection.json`) determines which path to wire. The code shape is **identical** for `obo` and `agentic-user` — only the identity the token exchange returns differs. `s2s` uses a completely separate token-service scaffold.
+
+| `authMode` | Used by | Token mechanism | Identity in traces | Wiring | Per-turn token refresh |
+|---|---|---|---|---|---|
+| `agentic-user` | AI Teammate (always) | OBO exchange | Agent's own M365 identity (Agentic User — UPN, mailbox) | `AgenticTokenCache` or custom resolver | ✅ Call `exchange_token()` and cache the result |
+| `obo` | Non-AI Teammate | OBO exchange | Whatever the configured Azure AD auth handler resolves — typically the signed-in user, but can also be the agent's own identity | `AgenticTokenCache` or custom resolver | ✅ Call `exchange_token()` and cache the result |
+| `s2s` | Non-AI Teammate | Service principal client credentials (no token exchange) | Agent Identity SP — no user context | Custom `a365_token_resolver` + background FMI token service | ❌ Do NOT call `exchange_token()` |
+
+> AI Teammate is **always** `agentic-user` — no question is asked. Non-AI Teammate agents are asked at setup whether they want `obo` or `s2s`.
+>
+> Note: "OBO" describes the **token exchange mechanism**, not who the agent acts as. Both `obo` and `agentic-user` use OBO under the hood — they differ only in which identity the configured Azure AD auth handler returns. `s2s` does not use OBO at all.
 
 ---
 
@@ -9,43 +31,70 @@ into a Python agent. All samples mirror the official Microsoft Learn docs (updat
 
 | Package | Purpose |
 |---------|---------|
-| `microsoft-opentelemetry` | Unified distro entry point: `use_microsoft_opentelemetry()`, all scope types from `microsoft.opentelemetry.a365.core`, hosting helpers from `microsoft.opentelemetry.a365.hosting`, and OBO/S2S exporter wiring |
-| `msal` | MSAL Python `ConfidentialClientApplication` for Hop 3 token acquisition (Hop 1+2 uses direct HTTP POST — see known issue below) |
-| `azure-identity` | `ManagedIdentityCredential` for MSI-based token acquisition (async variant) |
-| `httpx` | Direct HTTP POST for FMI Hop 1+2 token acquisition (MSAL `fmi_path` workaround) |
+| `microsoft-opentelemetry` (1.1.x GA) | Sole entry point. Re-exports `use_microsoft_opentelemetry`, `shutdown_microsoft_opentelemetry`, baggage helpers (`populate`, `BaggageMiddleware`, `ObservabilityHostingManager`), `AgenticTokenCache`, all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`), and all contract types (`AgentDetails`, `CallerDetails`, `UserDetails`, `Request`, `Response`, `InvokeAgentScopeDetails`, `InferenceCallDetails`, `ToolCallDetails`, etc.) |
+| `microsoft-opentelemetry[langchain]` | Optional extra — adds LangChain instrumentation deps (only if your agent uses LangChain) |
+| `msal` (^1.34) | MSAL Python `ConfidentialClientApplication` for Hop 3 token acquisition (S2S only) |
+| `azure-identity` (^1.20) | `ManagedIdentityCredential` for MSI-based token acquisition (S2S only) |
+| `httpx` (^0.27) | Direct HTTP POST for FMI Hop 1+2 (MSAL `fmi_path` workaround — see Known Issues) |
 
-Install commands:
+Install:
 ```bash
-pip3 install microsoft-opentelemetry 2>/dev/null || pip install microsoft-opentelemetry
-pip3 install msal azure-identity httpx 2>/dev/null || pip install msal azure-identity httpx
+# Required for all agents
+pip install microsoft-opentelemetry
+
+# Optional LangChain extra
+pip install "microsoft-opentelemetry[langchain]"
+
+# S2S only
+pip install msal azure-identity httpx
 ```
+
+> **No `--pre` flag needed.** `microsoft-opentelemetry` is GA — install latest stable.
+
+Minimum Python: **3.10+** (for `str | None` typing in code samples; the package itself supports 3.9+).
 
 ---
 
-## Entry Point — Observability Init
+## Entry Point — Observability Init (before any LLM imports)
 
-### Unified Distro
+Initialize the unified distro **before** importing the rest of your app so OpenAI Agents,
+LangChain, Semantic Kernel, and Agent Framework auto-instrumentation can patch their
+target libraries.
+
+### OBO / agentic-user (same code; identity decided by the auth handler)
 
 ```python
 # A365 Observability — best-effort instrumentation (verify against official sample)
+# Must be called BEFORE importing other modules
+from dotenv import load_dotenv
+load_dotenv()
+
 from microsoft.opentelemetry import use_microsoft_opentelemetry
-from token_cache import get_cached_agentic_token
+from microsoft.opentelemetry.a365.hosting.token_cache_helpers import AgenticTokenCache
+
+_token_cache = AgenticTokenCache()
 
 use_microsoft_opentelemetry(
     enable_a365=True,
-    enable_azure_monitor=False,
-    a365_token_resolver=lambda agent_id, tenant_id: get_cached_agentic_token(
-        tenant_id, agent_id
-    ),
+    a365_enable_observability_exporter=True,   # REQUIRED in 1.0+ to actually export spans
+    a365_token_resolver=_token_cache.get_observability_token,
 )
 ```
 
-This matches the current official sample: initialize the unified distro once at startup,
-then refresh the per-turn OBO token in your message handler.
+> **Two flags required (1.0 breaking change):** `enable_a365=True` only registers
+> A365 span processors. You must **also** set `a365_enable_observability_exporter=True`
+> (or env `ENABLE_A365_OBSERVABILITY_EXPORTER=true`) to send spans to A365.
 
-### S2S configuration (`authMode: s2s`)
+> **GenAI auto-instrumentation is now ON by default.** OpenAI Agents, LangChain,
+> Semantic Kernel, and Agent Framework are auto-patched. Do NOT call legacy
+> `*Instrumentor().instrument()` — manual calls produce **duplicate spans**.
 
-S2S observability is supported for Python. The token service uses a **3-hop FMI (Federated Managed Identity) token chain**:
+> **Non-GenAI instrumentations** (HTTP, DB, etc.) are **disabled by default** when
+> `enable_a365=True`. Opt them back in via the distro's `instrumentation_options` kwarg if needed.
+
+### S2S (`authMode: s2s`)
+
+S2S uses the **3-hop FMI (Federated Managed Identity) token chain**:
 
 ```
 Blueprint (client_credentials / MSI)
@@ -54,210 +103,8 @@ Blueprint (client_credentials / MSI)
       → Hop 3: Observability API token (scope=api://9b975845-388f-4429-889e-eab1ef63949c/.default)
 ```
 
-No OBO user token is required.
-
-> **Auth strategy** is controlled by `AGENT365_USE_MANAGED_IDENTITY`:
->   - `true` (production) — MSI → Blueprint FIC → Agent Identity → API
->   - `false` (local dev) — Client Secret → Blueprint FIC → Agent Identity → API
-
-> **⚠️ Known Issue (msal v1.34.0):** Python MSAL does NOT properly support `fmi_path` as a parameter to `acquire_token_for_client()`. Passing it causes `TypeError: Session.request() got an unexpected keyword argument 'fmi_path'`. Use **direct HTTP POST** to the token endpoint with `fmi_path` as a form parameter for Hop 1+2 (same workaround as Node.js). MSAL is fine for Hop 3 (no `fmi_path` needed).
-
-> **Note:** As of CLI 1.1, `a365 setup all` automatically grants `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application). No manual role assignment is needed for newly provisioned agents.
-
-#### Step 1 — Create `observability/token_cache.py`
-
-Simple in-memory token cache shared by the token service and the OTel exporter:
-
 ```python
-# observability/token_cache.py
-# A365 Observability — best-effort instrumentation (verify against official sample)
-
-"""Simple in-memory token cache for observability tokens."""
-
-import threading
-from datetime import datetime, timedelta, timezone
-
-_lock = threading.Lock()
-_cache: dict[str, tuple[str, datetime]] = {}
-
-# Tokens are considered valid if they expire more than 5 minutes from now.
-_EXPIRY_BUFFER = timedelta(minutes=5)
-
-
-def cache_token(agent_id: str, tenant_id: str, token: str, expires_in: timedelta = timedelta(hours=1)) -> None:
-    """Cache an observability token for a specific agent/tenant pair."""
-    key = f"{agent_id}:{tenant_id}"
-    expires_at = datetime.now(timezone.utc) + expires_in
-    with _lock:
-        _cache[key] = (token, expires_at)
-
-
-def get_cached_token(agent_id: str, tenant_id: str) -> str | None:
-    """Retrieve a cached token if it exists and hasn't expired."""
-    key = f"{agent_id}:{tenant_id}"
-    with _lock:
-        entry = _cache.get(key)
-        if entry is None:
-            return None
-        token, expires_at = entry
-        if datetime.now(timezone.utc) + _EXPIRY_BUFFER >= expires_at:
-            del _cache[key]
-            return None
-        return token
-```
-
-#### Step 2 — Create `observability/observability_token_service.py`
-
-Background token acquisition via 3-hop FMI chain (direct HTTP POST for Hop 1+2, MSAL for Hop 3):
-
-```python
-# observability/observability_token_service.py
-# A365 Observability — best-effort instrumentation (verify against official sample)
-# A365 auth mode: S2S — 3-hop FMI token chain (direct HTTP POST + MSAL)
-#   Hop 1+2: Blueprint (MSI or client secret) → T1 via token endpoint POST + fmi_path → Agent Identity
-#   Hop 3:   Agent Identity uses T1 as assertion → Observability API token
-
-import asyncio
-import logging
-from datetime import timedelta
-
-import httpx
-import msal
-
-from observability import token_cache
-
-logger = logging.getLogger(__name__)
-
-FMI_SCOPE = "api://AzureADTokenExchange/.default"
-OBSERVABILITY_SCOPES = ["api://9b975845-388f-4429-889e-eab1ef63949c/.default"]
-REFRESH_INTERVAL_SECONDS = 50 * 60  # 50 minutes
-
-
-async def acquire_initial_token(
-    tenant_id: str,
-    agent_id: str,
-    blueprint_client_id: str,
-    blueprint_client_secret: str,
-    use_managed_identity: bool,
-) -> None:
-    """Acquire the first observability token before background services start."""
-    await _acquire_and_register_token(
-        tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity
-    )
-
-
-async def run_token_service(
-    tenant_id: str,
-    agent_id: str,
-    blueprint_client_id: str,
-    blueprint_client_secret: str,
-    use_managed_identity: bool,
-) -> None:
-    """Run the background token acquisition loop."""
-    logger.info("ObservabilityTokenService started (use_managed_identity=%s).", use_managed_identity)
-
-    while True:
-        try:
-            await _acquire_and_register_token(
-                tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.warning(
-                "Failed to acquire observability token; will retry in %d seconds.",
-                REFRESH_INTERVAL_SECONDS,
-                exc_info=True,
-            )
-
-        await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
-
-
-async def _acquire_and_register_token(
-    tenant_id: str,
-    agent_id: str,
-    blueprint_client_id: str,
-    blueprint_client_secret: str,
-    use_managed_identity: bool,
-) -> None:
-    authority = f"https://login.microsoftonline.com/{tenant_id}"
-    token_url = f"{authority}/oauth2/v2.0/token"
-
-    # Hop 1+2: Blueprint → T1 via FMI path
-    if use_managed_identity:
-        t1_token = await _acquire_t1_via_msi(token_url, blueprint_client_id, agent_id)
-    else:
-        t1_token = await _acquire_t1_via_client_secret(
-            token_url, blueprint_client_id, blueprint_client_secret, agent_id
-        )
-
-    # Hop 3: Agent Identity uses T1 → Observability API token
-    identity_app = msal.ConfidentialClientApplication(
-        client_id=agent_id,
-        client_credential={"client_assertion": t1_token},
-        authority=authority,
-    )
-    obs_result = identity_app.acquire_token_for_client(scopes=OBSERVABILITY_SCOPES)
-
-    if "access_token" not in obs_result:
-        raise RuntimeError(f"Failed to acquire observability token: {obs_result.get('error_description', obs_result)}")
-
-    token_cache.cache_token(agent_id, tenant_id, obs_result["access_token"], expires_in=timedelta(minutes=55))
-    logger.info("Observability token registered for agent %s.", agent_id)
-
-
-async def _acquire_t1_via_msi(token_url: str, blueprint_client_id: str, agent_id: str) -> str:
-    """Acquire T1 token using Managed Identity (production) — direct HTTP POST."""
-    from azure.identity.aio import ManagedIdentityCredential
-
-    async with ManagedIdentityCredential() as credential:
-        msi_token = await credential.get_token("api://AzureADTokenExchange")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": blueprint_client_id,
-                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-                "client_assertion": msi_token.token,
-                "scope": FMI_SCOPE,
-                "fmi_path": agent_id,
-            },
-        )
-        result = resp.json()
-
-    if "access_token" not in result:
-        raise RuntimeError(f"FMI T1 via MSI failed: {result.get('error_description', result)}")
-    return result["access_token"]
-
-
-async def _acquire_t1_via_client_secret(
-    token_url: str, blueprint_client_id: str, blueprint_client_secret: str, agent_id: str
-) -> str:
-    """Acquire T1 token using client secret (local dev) — direct HTTP POST with fmi_path."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": blueprint_client_id,
-                "client_secret": blueprint_client_secret,
-                "scope": FMI_SCOPE,
-                "fmi_path": agent_id,
-            },
-        )
-        result = resp.json()
-
-    if "access_token" not in result:
-        raise RuntimeError(f"FMI T1 via client secret failed: {result.get('error_description', result)}")
-    return result["access_token"]
-```
-
-#### Step 3 — Wire in entry point (`main.py` or `app.py`)
-
-```python
-# authMode: s2s — 3-hop FMI token chain via direct HTTP POST + MSAL, no user OBO.
+# authMode: s2s — service principal, no user OBO.
 import asyncio
 import logging
 import os
@@ -266,7 +113,7 @@ from dotenv import load_dotenv
 from aiohttp import web
 
 from microsoft.opentelemetry import use_microsoft_opentelemetry
-from microsoft.opentelemetry.a365.core import AgentDetails
+from microsoft.opentelemetry.a365.core import AgentDetails, CallerDetails, UserDetails
 
 from observability import token_cache
 from observability.observability_token_service import acquire_initial_token, run_token_service
@@ -283,6 +130,7 @@ AGENT_NAME = os.environ.get("AGENT365_AGENT_NAME", "my-agent")
 AGENT_DESCRIPTION = os.environ.get("AGENT365_AGENT_DESCRIPTION", "")
 USE_MANAGED_IDENTITY = os.environ.get("AGENT365_USE_MANAGED_IDENTITY", "true").lower() == "true"
 
+
 def _has_a365_credentials() -> bool:
     required_values = [TENANT_ID, AGENT_ID, CLIENT_ID]
     if not all(v and not v.startswith("<<") for v in required_values):
@@ -291,9 +139,10 @@ def _has_a365_credentials() -> bool:
         return True
     return bool(CLIENT_SECRET) and not CLIENT_SECRET.startswith("<<")
 
+
 A365_ENABLED = _has_a365_credentials()
 
-# ── Agent Details ────────────────────────────────────────────────────────────
+# ── Agent Details (shared across all scopes) ─────────────────────────────────
 agent_details = AgentDetails(
     agent_id=AGENT_ID or "local-dev",
     agent_name=AGENT_NAME,
@@ -302,13 +151,19 @@ agent_details = AgentDetails(
     tenant_id=TENANT_ID or "local-dev",
 )
 
-# ── Microsoft OpenTelemetry Distro ───────────────────────────────────────────
+caller_details = CallerDetails(
+    user_details=UserDetails(
+        user_id=os.environ.get("AGENT365_SPONSOR_USER_ID", CLIENT_ID),
+        user_email=os.environ.get("AGENT365_SPONSOR_USER_EMAIL", ""),
+        user_name=os.environ.get("AGENT365_SPONSOR_USER_NAME", AGENT_NAME),
+    ),
+)
+
+# ── Observability — clean S2S config (1.0+) ──────────────────────────────────
 use_microsoft_opentelemetry(
-    enable_a365=True,
-    enable_azure_monitor=False,
-    enable_console=True,  # disable in production
-    a365_use_s2s_endpoint=True,  # CRITICAL for S2S — posts to /observabilityService/
+    enable_a365=A365_ENABLED,
     a365_enable_observability_exporter=True,
+    a365_use_s2s_endpoint=True,             # ← first-class kwarg (no workaround needed)
     a365_token_resolver=lambda aid, tid: token_cache.get_cached_token(aid, tid) or "",
 )
 
@@ -340,11 +195,160 @@ async def start_background_tasks(app: web.Application) -> None:
             "Agent365 credentials not configured — skipping token service. "
             "Run 'a365 setup all' to enable A365 observability export."
         )
-
-    # ... rest of background task startup ...
 ```
 
-> **⚠️ `a365_use_s2s_endpoint=True` is required for S2S agents.** Without it, the exporter posts to `/observability/` (OBO endpoint) instead of `/observabilityService/` (S2S endpoint), causing 401 errors. The Python SDK uniquely supports this as a native kwarg — no custom `spanProcessors` workaround needed (unlike Node.js).
+> **`a365_use_s2s_endpoint=True` is required for S2S agents.** Without it, the exporter
+> posts to `/observability/` (OBO endpoint) instead of `/observabilityService/` (S2S endpoint),
+> causing 401 errors.
+
+---
+
+## S2S Token Service Scaffold
+
+#### Step 1 — `observability/token_cache.py`
+
+```python
+# observability/token_cache.py
+# A365 Observability — best-effort instrumentation (verify against official sample)
+
+import threading
+from datetime import datetime, timedelta, timezone
+
+_lock = threading.Lock()
+_cache: dict[str, tuple[str, datetime]] = {}
+_EXPIRY_BUFFER = timedelta(minutes=5)
+
+
+def cache_token(agent_id: str, tenant_id: str, token: str, expires_in: timedelta = timedelta(hours=1)) -> None:
+    key = f"{agent_id}:{tenant_id}"
+    expires_at = datetime.now(timezone.utc) + expires_in
+    with _lock:
+        _cache[key] = (token, expires_at)
+
+
+def get_cached_token(agent_id: str, tenant_id: str) -> str | None:
+    key = f"{agent_id}:{tenant_id}"
+    with _lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return None
+        token, expires_at = entry
+        if datetime.now(timezone.utc) + _EXPIRY_BUFFER >= expires_at:
+            del _cache[key]
+            return None
+        return token
+```
+
+#### Step 2 — `observability/observability_token_service.py`
+
+Background token acquisition via 3-hop FMI chain (direct HTTP POST for Hop 1+2 due to MSAL Python limitation, MSAL for Hop 3):
+
+```python
+# observability/observability_token_service.py
+# A365 Observability — best-effort instrumentation (verify against official sample)
+# A365 auth mode: S2S — 3-hop FMI token chain (direct HTTP POST + MSAL)
+#   Hop 1+2: Blueprint (MSI or client secret) → T1 via token endpoint POST + fmi_path → Agent Identity
+#   Hop 3:   Agent Identity uses T1 as assertion → Observability API token
+
+import asyncio
+import logging
+from datetime import timedelta
+
+import httpx
+import msal
+
+from observability import token_cache
+
+logger = logging.getLogger(__name__)
+
+FMI_SCOPE = "api://AzureADTokenExchange/.default"
+OBSERVABILITY_SCOPES = ["api://9b975845-388f-4429-889e-eab1ef63949c/.default"]
+REFRESH_INTERVAL_SECONDS = 50 * 60  # 50 minutes
+
+
+async def acquire_initial_token(tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity):
+    """Acquire the first observability token before background services start."""
+    await _acquire_and_register_token(tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity)
+
+
+async def run_token_service(tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity):
+    """Background token acquisition loop."""
+    logger.info("ObservabilityTokenService started (use_managed_identity=%s).", use_managed_identity)
+    while True:
+        try:
+            await _acquire_and_register_token(tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Failed to acquire observability token; will retry in %d seconds.", REFRESH_INTERVAL_SECONDS, exc_info=True)
+        await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
+
+
+async def _acquire_and_register_token(tenant_id, agent_id, blueprint_client_id, blueprint_client_secret, use_managed_identity):
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    token_url = f"{authority}/oauth2/v2.0/token"
+
+    # Hop 1+2: Blueprint → T1 via FMI path
+    if use_managed_identity:
+        t1_token = await _acquire_t1_via_msi(token_url, blueprint_client_id, agent_id)
+    else:
+        t1_token = await _acquire_t1_via_client_secret(token_url, blueprint_client_id, blueprint_client_secret, agent_id)
+
+    # Hop 3: Agent Identity uses T1 → Observability API token
+    identity_app = msal.ConfidentialClientApplication(
+        client_id=agent_id,
+        client_credential={"client_assertion": t1_token},
+        authority=authority,
+    )
+    obs_result = identity_app.acquire_token_for_client(scopes=OBSERVABILITY_SCOPES)
+    if "access_token" not in obs_result:
+        raise RuntimeError(f"Failed to acquire observability token: {obs_result.get('error_description', obs_result)}")
+
+    token_cache.cache_token(agent_id, tenant_id, obs_result["access_token"], expires_in=timedelta(minutes=55))
+    logger.info("Observability token registered for agent %s.", agent_id)
+
+
+async def _acquire_t1_via_msi(token_url, blueprint_client_id, agent_id):
+    """Acquire T1 token using Managed Identity (production) — direct HTTP POST."""
+    from azure.identity.aio import ManagedIdentityCredential
+
+    async with ManagedIdentityCredential() as credential:
+        msi_token = await credential.get_token("api://AzureADTokenExchange")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data={
+            "grant_type": "client_credentials",
+            "client_id": blueprint_client_id,
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_assertion": msi_token.token,
+            "scope": FMI_SCOPE,
+            "fmi_path": agent_id,
+        })
+        result = resp.json()
+
+    if "access_token" not in result:
+        raise RuntimeError(f"FMI T1 via MSI failed: {result.get('error_description', result)}")
+    return result["access_token"]
+
+
+async def _acquire_t1_via_client_secret(token_url, blueprint_client_id, blueprint_client_secret, agent_id):
+    """Acquire T1 token using client secret (local dev) — direct HTTP POST with fmi_path."""
+    # MSAL Python v1.34.0 does NOT properly support `fmi_path` as a kwarg.
+    # Workaround: direct HTTP POST with fmi_path as form data until MSAL ships native support.
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data={
+            "grant_type": "client_credentials",
+            "client_id": blueprint_client_id,
+            "client_secret": blueprint_client_secret,
+            "scope": FMI_SCOPE,
+            "fmi_path": agent_id,
+        })
+        result = resp.json()
+
+    if "access_token" not in result:
+        raise RuntimeError(f"FMI T1 via client secret failed: {result.get('error_description', result)}")
+    return result["access_token"]
+```
 
 #### S2S environment variables
 
@@ -359,69 +363,14 @@ AGENT365_AGENT_NAME=my-agent
 AGENT365_AGENT_DESCRIPTION=
 AGENT365_USE_MANAGED_IDENTITY=true
 
-# Sponsor identity for CallerDetails (MAC portal visibility)
+# Sponsor identity for CallerDetails (MAC portal visibility — S2S has no signed-in user)
 AGENT365_SPONSOR_USER_ID=<blueprint-sponsor-user-object-id>
 AGENT365_SPONSOR_USER_EMAIL=<sponsor@contoso.com>
 AGENT365_SPONSOR_USER_NAME=<Sponsor Display Name>
-```
 
-Message handler baggage setup is **identical** to `obo` / `agentic-user` — only the token resolver and credential source differ. Do **not** use the OBO per-turn token-registration flow for S2S agents.
-
-### Hosting path — OBO token cache (AI Teammate agents)
-
-#### Unified Distro
-
-```python
-# A365 Observability — best-effort instrumentation (verify against official sample)
-from microsoft.opentelemetry import use_microsoft_opentelemetry
-from token_cache import cache_agentic_token, get_cached_agentic_token
-
-use_microsoft_opentelemetry(
-    enable_a365=True,
-    a365_token_resolver=lambda agent_id, tenant_id: get_cached_agentic_token(
-        tenant_id, agent_id
-    ),
-)
-```
-
-```python
-# token_cache.py
-# A365 Observability — best-effort instrumentation (verify against official sample)
-
-"""Token caching utilities for Agent 365 Observability exporter authentication."""
-
-import logging
-
-logger = logging.getLogger(__name__)
-
-_agentic_token_cache = {}
-
-
-def cache_agentic_token(tenant_id: str, agent_id: str, token: str) -> None:
-    """Cache the agentic token for use by Agent 365 Observability exporter."""
-    key = f"{tenant_id}:{agent_id}"
-    _agentic_token_cache[key] = token
-    logger.debug(f"Cached agentic token for {key}")
-
-
-def get_cached_agentic_token(tenant_id: str, agent_id: str) -> str | None:
-    """Retrieve cached agentic token for Agent 365 Observability exporter."""
-    key = f"{tenant_id}:{agent_id}"
-    return _agentic_token_cache.get(key)
-```
-
-#### Alternative: AgenticTokenCache helper
-
-```python
-from microsoft.opentelemetry import use_microsoft_opentelemetry
-from microsoft.opentelemetry.a365.hosting.token_cache_helpers import AgenticTokenCache
-
-token_cache = AgenticTokenCache()
-
-use_microsoft_opentelemetry(
-    enable_a365=True,
-    a365_token_resolver=token_cache.get_observability_token,
-)
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+# Note: AGENT365_USE_S2S_ENDPOINT env var is no longer used —
+# `a365_use_s2s_endpoint=True` is set in code via use_microsoft_opentelemetry().
 ```
 
 ---
@@ -429,9 +378,7 @@ use_microsoft_opentelemetry(
 ## Adapter — Hosting Baggage
 
 Register hosting baggage helpers to auto-populate baggage from every incoming `TurnContext`.
-This removes the need to call `BaggageBuilder` manually in each activity handler.
-
-### Unified Distro
+This removes the need to call `BaggageBuilder` manually in each handler.
 
 ```python
 from microsoft.opentelemetry.a365.hosting import (
@@ -441,36 +388,49 @@ from microsoft.opentelemetry.a365.hosting import (
 
 ObservabilityHostingManager.configure(
     adapter.middleware_set,
-    ObservabilityHostingOptions(enable_baggage=True),
+    ObservabilityHostingOptions(
+        enable_baggage=True,           # defaults to False — must be explicitly set
+        enable_output_logging=True,    # defaults to False — optional output logging
+    ),
 )
 ```
 
-Use these import paths when you need manual baggage wiring too:
-
-```python
-from microsoft.opentelemetry.a365.core import BaggageBuilder, InvokeAgentScope
-from microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage import populate
-```
+> **Both options default to `False`.** Without `enable_baggage=True`, the middleware won't
+> populate baggage from `TurnContext`, and your spans will lack tenant/agent identity.
 
 ---
 
-## Message Handler — Token Refresh + BaggageBuilder
+## Message Handler
 
-### Unified Distro
+With `ObservabilityHostingManager.configure(..., enable_baggage=True)` registered at startup,
+the handler does NOT build baggage manually. Per-turn behavior differs by auth mode.
+
+### OBO and agentic-user — refresh exporter token per turn
+
+The handler shape is identical for both `obo` and `agentic-user`. The Azure AD auth handler
+configured in your `AgentApplication` decides which identity the token exchange returns:
+
+- **`agentic-user`** (AI Teammate) — `agent_app.auth.exchange_token(...)` returns a token for
+  the agent's own Azure AD user identity (Agentic User). Traces attribute to the agent.
+- **`obo`** (non-AI Teammate) — `agent_app.auth.exchange_token(...)` returns a token for
+  whatever the configured Azure AD auth handler resolves. Typically this is the signed-in user
+  (traces attribute to that user), but it can also be the agent's own identity if the handler
+  is configured that way.
 
 ```python
 # A365 Observability — best-effort instrumentation (verify against official sample)
-from microsoft.opentelemetry.a365.core import BaggageBuilder
-from microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage import populate
+# A365 auth mode: agentic-user  (or: obo)
 from microsoft.opentelemetry.a365.runtime import get_observability_authentication_scope
 from token_cache import cache_agentic_token
 
-async def _setup_observability_token(self, context: TurnContext, tenant_id: str, agent_id: str):
+
+async def _setup_observability_token(self, context, tenant_id, agent_id):
+    """OBO / agentic-user: exchange token and cache for the exporter to pick up."""
     try:
         exaau_token = await self.agent_app.auth.exchange_token(
             context,
             scopes=get_observability_authentication_scope(),
-            auth_handler_id=self.auth_handler_name,
+            auth_handler_id=self.auth_handler_name,   # from config — NOT hardcoded "AGENTIC"
         )
         cache_agentic_token(tenant_id, agent_id, exaau_token.token)
     except Exception as e:
@@ -482,30 +442,54 @@ async def on_message(context: TurnContext, state: TurnState):
     tenant_id = context.activity.recipient.tenant_id
     agent_id = context.activity.recipient.agentic_app_id
 
+    # OBO / agentic-user: refresh per-turn token (skip this for S2S).
     await self._setup_observability_token(context, tenant_id, agent_id)
 
-    builder = BaggageBuilder()
-    populate(builder, context)
-
-    with builder.build():
-        # ... your agent message handling logic ...
-        pass
+    # ObservabilityHostingManager (registered at startup) already populated baggage
+    # from TurnContext. Your handler logic can run directly:
+    response = await self.invoke_llm(context.activity.text)
+    await context.send_activity(response)
 ```
 
-Manual `BaggageBuilder` (without the `populate()` helper):
+> **`auth_handler_id`** must come from config (`AgentApplication:AgenticAuthHandlerName`)
+> — **never hardcode `"AGENTIC"`**. The handler is the auth handler registered in your
+> agent setup; its configured identity (user delegated or agent's own) determines whose
+> token gets returned.
+
+#### Optional manual baggage construction
+
+If you skipped `ObservabilityHostingManager` and want to build baggage manually per turn:
 
 ```python
 from microsoft.opentelemetry.a365.core import BaggageBuilder
+from microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage import populate
 
-with (
-    BaggageBuilder()
-    .tenant_id("tenant-123")
-    .agent_id("agent-456")
-    .conversation_id("conv-789")
-    .build()
-):
-    # Any spans started in this context will receive these as attributes
+builder = BaggageBuilder()
+populate(builder, context)   # auto-populates from TurnContext
+
+with builder.build():
+    # ... your handler logic ...
     pass
+```
+
+### S2S — no per-turn refresh
+
+For `s2s`, the background token service started in the entry point populates the in-memory
+cache every 50 minutes. The custom `a365_token_resolver` wired in `use_microsoft_opentelemetry()`
+reads from that cache on each export. The handler does NOT touch tokens.
+
+```python
+# A365 Observability — best-effort instrumentation (verify against official sample)
+# A365 auth mode: s2s
+
+@AGENT_APP.activity("message")
+async def on_message(context: TurnContext, state: TurnState):
+    # ObservabilityHostingManager (registered at startup) already populated baggage
+    # from TurnContext. No per-turn token refresh — background token service handles auth.
+    # Do NOT call _setup_observability_token / exchange_token for S2S.
+
+    response = await self.invoke_llm(context.activity.text)
+    await context.send_activity(response)
 ```
 
 ---
@@ -515,7 +499,10 @@ with (
 > **Store publishing requirement:** `InvokeAgentScope`, `InferenceScope`, and `ExecuteToolScope`
 > are **required** for store validation. Missing any one causes store validation failure.
 
-> **Import source:** Use the unified distro import path: `from microsoft.opentelemetry.a365.core import ...`.
+> **All scope types import from `microsoft.opentelemetry.a365.core`** — no other packages needed.
+
+> **`ScopeUtils.populate_*_from_context` is removed in 1.0+.** Construct scopes directly
+> with `.start(...)`.
 
 ```python
 from microsoft.opentelemetry.a365.core import (
@@ -529,25 +516,19 @@ from microsoft.opentelemetry.a365.core import (
     ExecuteToolScope,
     ToolCallDetails,
     Request,
+    Response,
     ServiceEndpoint,
+    CallerDetails,
+    UserDetails,
+    Channel,
+    SpanDetails,
+    OutputScope,
 )
 ```
 
 ### InvokeAgentScope
 
 ```python
-from microsoft.opentelemetry.a365.core import (
-    InvokeAgentScope,
-    InvokeAgentScopeDetails,
-    AgentDetails,
-    CallerDetails,
-    UserDetails,
-    Channel,
-    Request,
-    ServiceEndpoint,
-)
-
-# Reuse the same agent_details and request instances across all scopes in a request.
 agent_details = AgentDetails(
     agent_id="agent-456",
     agent_name="My Agent",
@@ -578,34 +559,24 @@ caller_details = CallerDetails(
 )
 
 with InvokeAgentScope.start(request, scope_details, agent_details, caller_details) as scope:
-    # Record input messages
     scope.record_input_messages(["User asks a question"])
-    # Perform agent invocation logic
     response = call_agent(...)
-    # Record output messages
     scope.record_output_messages([response])
 ```
 
 ### Shared Observability Context Module (`observability/obs_context.py`)
 
-For autonomous/S2S agents, create a shared module to avoid circular imports between agent, monitor, and main:
+For S2S agents, create a shared module to avoid circular imports between agent, monitor, and main:
 
 ```python
 # observability/obs_context.py
 import os
 from microsoft.opentelemetry.a365.core import AgentDetails, CallerDetails, UserDetails
 
-# ── Configuration from .env ──────────────────────────────────────────────────
-A365_ENABLED = os.environ.get("ENABLE_A365_OBSERVABILITY", "").lower() == "true"
 TENANT_ID = os.environ.get("AGENT365_TENANT_ID", "")
 AGENT_ID = os.environ.get("AGENT365_AGENT_ID", "")
 BLUEPRINT_ID = os.environ.get("AGENT365_BLUEPRINT_ID", "")
-CLIENT_ID = os.environ.get("AGENT365_CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("AGENT365_CLIENT_SECRET", "")
-USE_MANAGED_IDENTITY = os.environ.get("AGENT365_USE_MANAGED_IDENTITY", "false").lower() == "true"
-USE_S2S_ENDPOINT = os.environ.get("AGENT365_USE_S2S_ENDPOINT", "false").lower() == "true"
 
-# ── Shared instances (imported by agent & monitor modules) ───────────────────
 agent_details = AgentDetails(
     agent_id=AGENT_ID,
     agent_name=os.environ.get("AGENT365_AGENT_NAME", ""),
@@ -614,7 +585,7 @@ agent_details = AgentDetails(
     tenant_id=TENANT_ID,
 )
 
-# CallerDetails — for autonomous agents, use Blueprint sponsor identity
+# For S2S agents with no signed-in user, use Blueprint sponsor identity for CallerDetails.
 caller_details = CallerDetails(
     user_details=UserDetails(
         user_id=os.environ.get("AGENT365_SPONSOR_USER_ID", BLUEPRINT_ID),
@@ -624,22 +595,12 @@ caller_details = CallerDetails(
 )
 ```
 
-> **Why CallerDetails?** Without `CallerDetails`, traces will NOT appear in the Microsoft Admin Center (MAC) portal. For autonomous agents with no real user, use the Blueprint sponsor's identity. The `user.id`, `user.email`, and `user.name` span attributes are set from CallerDetails.
-
-> **Import pattern:** Import `agent_details` and `caller_details` from `obs_context` in your agent and monitor modules — do NOT create them inline to avoid circular imports with `main.py`.
+> **Why `CallerDetails`?** Without it, traces will NOT appear in the Microsoft Admin Center
+> (MAC) portal. For S2S agents with no real user, use the Blueprint sponsor's identity.
 
 ### ExecuteToolScope
 
 ```python
-from microsoft.opentelemetry.a365.core import (
-    ExecuteToolScope,
-    ToolCallDetails,
-    Request,
-    ServiceEndpoint,
-)
-
-# Use the same agent_details and request instances from InvokeAgentScope above.
-
 tool_details = ToolCallDetails(
     tool_name="summarize",
     tool_type="function",
@@ -661,14 +622,6 @@ with ExecuteToolScope.start(request, tool_details, agent_details) as scope:
 > Do NOT use snake_case (`operation_name`, `provider_name`) — this causes `TypeError` at runtime.
 
 ```python
-from microsoft.opentelemetry.a365.core import (
-    InferenceScope,
-    InferenceCallDetails,
-    InferenceOperationType,
-)
-
-# Use the same agent_details and request instances from InvokeAgentScope above.
-
 inference_details = InferenceCallDetails(
     operationName=InferenceOperationType.CHAT,
     model="gpt-4o-mini",
@@ -688,18 +641,8 @@ with InferenceScope.start(request, inference_details, agent_details) as scope:
 ### OutputScope (async scenarios)
 
 ```python
-from microsoft.opentelemetry.a365.core import (
-    OutputScope,
-    Response,
-    SpanDetails,
-)
-
-# Use the same agent_details and request instances from InvokeAgentScope above.
-
-# Get the parent context from the originating scope
 parent_context = invoke_scope.get_context()
-
-response = Response(messages=["Here is your organized inbox with 15 urgent emails."])
+response = Response(messages=["Here is your organized inbox."])
 
 with OutputScope.start(
     request,
@@ -707,81 +650,93 @@ with OutputScope.start(
     agent_details,
     span_details=SpanDetails(parent_context=parent_context),
 ):
-    # Output messages are recorded automatically from the response
     pass
 ```
 
 ---
 
-## Auto-Instrumentation Extensions
+## Auto-Instrumentation (now ON by default)
 
-The unified distro handles supported framework instrumentation automatically after startup.
-No framework-specific bootstrap call or manual extension instrumentor is needed.
-
-### Semantic Kernel
+OpenAI Agents SDK, LangChain, Semantic Kernel, and Agent Framework are **auto-instrumented**
+when the distro initializes — no manual `*Instrumentor().instrument()` calls needed.
 
 ```python
-from microsoft.opentelemetry import use_microsoft_opentelemetry
-
-use_microsoft_opentelemetry(enable_a365=True)
-# Semantic Kernel is auto-instrumented when installed.
+# Default behavior: all four auto-enabled when their packages are installed
+use_microsoft_opentelemetry(
+    enable_a365=True,
+    a365_enable_observability_exporter=True,
+    a365_token_resolver=...,
+)
 ```
 
-### OpenAI Agents SDK
+> **Calling legacy `*Instrumentor().instrument()` methods will produce duplicate spans.**
+> Remove any manual instrumentor calls if migrating from a 0.x prerelease.
+
+---
+
+## Graceful Shutdown
+
+The distro doesn't yet document an official shutdown helper (gap vs Node.js's
+`shutdownMicrosoftOpenTelemetry()`). For now, rely on the OTel SDK's `TracerProvider.shutdown()`
+and/or `atexit` to flush pending spans:
 
 ```python
-from microsoft.opentelemetry import use_microsoft_opentelemetry
+import atexit
+from opentelemetry import trace
 
-use_microsoft_opentelemetry(enable_a365=True)
-# OpenAI Agents SDK instrumentation is handled by the distro.
+def _shutdown_tracing():
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, "shutdown"):
+        provider.shutdown()
+
+atexit.register(_shutdown_tracing)
 ```
 
-### Agent Framework
+For aiohttp applications, also register an `on_cleanup` hook:
 
 ```python
-from microsoft.opentelemetry import use_microsoft_opentelemetry
+async def cleanup_observability(app):
+    _shutdown_tracing()
 
-use_microsoft_opentelemetry(enable_a365=True)
-# Agent Framework instrumentation is handled by the distro.
-```
-
-### LangChain
-
-```python
-from microsoft.opentelemetry import use_microsoft_opentelemetry
-
-use_microsoft_opentelemetry(enable_a365=True)
-# LangChain instrumentation is handled by the distro.
+app.on_cleanup.append(cleanup_observability)
 ```
 
 ---
 
 ## .env Variables
 
-> **⚠️ Python requires TWO env vars** (unlike Node.js and .NET which use a single flag):
-> - `ENABLE_A365_OBSERVABILITY_EXPORTER` — controls exporter creation
-> - `ENABLE_A365_OBSERVABILITY` — controls A365 span creation
->
-> Without **both** set to `true`, `use_microsoft_opentelemetry()` can initialize successfully but `InvokeAgentScope.start()` still creates a **no-op scope** (no actual OTel spans are produced or exported). This is the #1 cause of "spans seem to run but nothing is exported."
-
-> **Note:** If you ran `a365 setup`, `ENABLE_A365_OBSERVABILITY_EXPORTER=false` is **already
-> present** in your `.env` file. Preserve this value when instrumenting.
-
 ```dotenv
 # ── A365 Observability ────────────────────────────────────────────────────────
-# BOTH are required for Python (set to true for production):
-ENABLE_A365_OBSERVABILITY_EXPORTER=false
-ENABLE_A365_OBSERVABILITY=true
+# In 1.0+, both code kwargs OR env vars work — code is preferred.
+#   enable_a365=True                          ≈ ENABLE_A365_OBSERVABILITY=true
+#   a365_enable_observability_exporter=True   ≈ ENABLE_A365_OBSERVABILITY_EXPORTER=true
+#
+# When using code kwargs (recommended), the env vars are not required.
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+
+# Sponsor identity for CallerDetails (S2S agents — no signed-in user).
+AGENT365_SPONSOR_USER_ID=<<Blueprint ID>>
+AGENT365_SPONSOR_USER_NAME=<<Blueprint Name>>
+AGENT365_SPONSOR_USER_EMAIL=<<Sponsor Email>>
 # ─────────────────────────────────────────────────────────────────────────────
 ```
+
+| Variable | Local dev | Production |
+|---|---|---|
+| `ENABLE_A365_OBSERVABILITY_EXPORTER` | `false` (console only) | `true` |
+| `AGENT365_SPONSOR_USER_ID` | `<<Blueprint ID>>` | `<<Blueprint ID>>` |
+| `AGENT365_SPONSOR_USER_NAME` | `<<Blueprint Name>>` | `<<Blueprint Name>>` |
+| `AGENT365_SPONSOR_USER_EMAIL` | `<<Sponsor Email>>` | `<<Sponsor Email>>` |
+
+> **Removed:** `AGENT365_USE_S2S_ENDPOINT` env var (use `a365_use_s2s_endpoint=True` in code).
 
 ---
 
 ## Validate Locally
 
-Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` — spans export to the console.
+Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` (or omit `a365_enable_observability_exporter`) — spans go to the console only.
 
-To investigate export failures, enable verbose logging in your application startup:
+To investigate export failures, enable verbose logging:
 
 ```python
 import logging
@@ -792,7 +747,6 @@ logging.getLogger("microsoft.opentelemetry.a365").setLevel(logging.DEBUG)
 ```
 
 Key log messages:
-
 ```text
 DEBUG  Token resolved for agent {agentId} tenant {tenantId}
 DEBUG  Exporting {n} spans to {url}
@@ -802,8 +756,7 @@ ERROR  HTTP 401 exporting spans - correlation ID: abc-123
 INFO   No spans with tenant/agent identity found; nothing exported.
 ```
 
-Import check to verify packages are installed:
-
+Import check to verify the package is installed:
 ```bash
 python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from microsoft.opentelemetry.a365.hosting import ObservabilityHostingManager; print('A365 observability imports OK')"
 ```
@@ -814,38 +767,38 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 
 | Kwarg | Description |
 |-------|-------------|
-| `enable_a365` | Enables A365 observability instrumentation and exporter wiring |
-| `a365_token_resolver` | Sync callable `(agent_id, tenant_id) -> str \| None` for OBO or S2S export authentication |
+| `enable_a365` | Enables A365 observability instrumentation (registers span processors) |
+| `a365_enable_observability_exporter` | **Required in 1.0+** alongside `enable_a365` to actually export spans to A365 |
+| `a365_token_resolver` | Sync callable `(agent_id, tenant_id) -> str \| None` for export authentication |
+| `a365_use_s2s_endpoint` | `True` posts to `/observabilityService/` (S2S endpoint); `False` posts to `/observability/` (OBO endpoint) |
 | `a365_cluster_category` | Optional cluster label such as `prod` |
-| `a365_use_s2s_endpoint` | Uses the service-to-service export endpoint |
 | `a365_suppress_invoke_agent_input` | Suppresses input messages on `InvokeAgent` spans |
-| `a365_enable_observability_exporter` | Enables the A365 exporter in code instead of env-only configuration |
-| `a365_observability_scope_override` | Overrides the default observability OAuth scope |
+| `a365_observability_scope_override` | Overrides the default OAuth scope (default: `api://9b975845-388f-4429-889e-eab1ef63949c/.default`) |
 | `resource` | Standard OpenTelemetry `Resource` for `service.name` / `service.namespace` |
 
 ---
 
-## Key API Surface
+## Key API Surface (all from `microsoft-opentelemetry`)
 
 | Symbol | Module | Purpose |
 |--------|--------|---------|
-| `use_microsoft_opentelemetry()` | `microsoft.opentelemetry` | Configure the unified OTel pipeline with the A365 exporter |
+| `use_microsoft_opentelemetry()` | `microsoft.opentelemetry` | Configure the OTel pipeline with the A365 exporter |
 | `AgentDetails` | `microsoft.opentelemetry.a365.core` | Agent identity for manual scopes |
 | `BaggageBuilder` | `microsoft.opentelemetry.a365.core` | Propagates tenant/agent/conversation context across spans |
-| `populate(builder, turn_context)` | `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage` | Auto-populates `BaggageBuilder` from `TurnContext` |
+| `populate(builder, context)` | `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage` | Auto-populates `BaggageBuilder` from `TurnContext` |
 | `ObservabilityHostingManager` | `microsoft.opentelemetry.a365.hosting` | Composite hosting configuration for adapter middleware |
-| `AgenticTokenCache` | `microsoft.opentelemetry.a365.hosting.token_cache_helpers` | Official hosting token-cache helper for AI Teammate agents |
-| `cache_agentic_token()` / `get_cached_agentic_token()` | `token_cache` | Custom in-memory token cache module for per-turn OBO refresh |
-| `acquire_initial_token()` / `run_token_service()` | `observability.observability_token_service` | Background FMI token acquisition for S2S (direct HTTP POST for Hop 1+2, MSAL for Hop 3) |
-| `get_observability_authentication_scope()` | `microsoft.opentelemetry.a365.runtime` | Returns the OAuth2 scope string |
-| `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `microsoft.opentelemetry.a365.core` | Start agent invocation telemetry scope (context manager) |
-| `ExecuteToolScope.start(request, tool_details, agent_details)` | `microsoft.opentelemetry.a365.core` | Start tool execution telemetry scope (context manager) |
-| `InferenceScope.start(request, inference_details, agent_details)` | `microsoft.opentelemetry.a365.core` | Start LLM inference telemetry scope (context manager) |
-| `OutputScope.start(request, response, agent_details, span_details)` | `microsoft.opentelemetry.a365.core` | Start output telemetry scope (async scenarios) |
-| `scope.record_input_messages(msgs)` / `scope.record_output_messages(msgs)` | — | Record prompts and completions |
-| `scope.record_input_tokens(n)` / `scope.record_output_tokens(n)` | — | Record token counts |
+| `ObservabilityHostingOptions` | `microsoft.opentelemetry.a365.hosting` | Options for `ObservabilityHostingManager.configure` (defaults: `enable_baggage=False`, `enable_output_logging=False`) |
+| `BaggageMiddleware` | `microsoft.opentelemetry.a365.hosting` | Adapter middleware — registered by `ObservabilityHostingManager` |
+| `AgenticTokenCache` | `microsoft.opentelemetry.a365.hosting.token_cache_helpers` | Hosting token cache for OBO / agentic-user flows |
+| `get_observability_authentication_scope()` | `microsoft.opentelemetry.a365.runtime` | Returns the default OAuth scope string |
+| `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `microsoft.opentelemetry.a365.core` | Agent invocation scope (context manager) |
+| `ExecuteToolScope.start(request, tool_details, agent_details)` | `microsoft.opentelemetry.a365.core` | Tool execution scope (context manager) |
+| `InferenceScope.start(request, inference_details, agent_details)` | `microsoft.opentelemetry.a365.core` | LLM inference scope (context manager) |
+| `OutputScope.start(request, response, agent_details, span_details)` | `microsoft.opentelemetry.a365.core` | Async output scope |
+| `scope.record_input_messages` / `record_output_messages` | — | Record prompts and completions |
+| `scope.record_input_tokens` / `record_output_tokens` | — | Record token counts |
 | `scope.record_response(result)` | — | Record tool execution result |
-| `scope.get_context()` | — | Get OTel context for use as parent in `OutputScope` |
+| `scope.get_context()` | — | OTel context (used as parent in `OutputScope`) |
 
 ---
 
@@ -853,23 +806,19 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| No console traces | `use_microsoft_opentelemetry()` not called | Call the observability initializer before any spans are created |
-| Spans missing baggage | Handler not wrapped in baggage scope | Use `ObservabilityHostingManager.configure(...)` or `with builder.build():` |
-| Token resolver returns `None` | Per-turn OBO token cache was never refreshed | Call `exchange_token()` and `cache_agentic_token()` at the start of each message handler turn |
-| `ModuleNotFoundError` | Package not installed | Run `pip install microsoft-opentelemetry` and install `msal azure-identity httpx` when needed |
-| Traces not in Admin Center | Exporter env var not set | Set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in production |
-| 401 on export | Missing permission | Check if upgrading past `0.3.0` (requires new `Agent365.Observability.OtelWrite` permission) |
-| Spans dropped silently | Missing tenant/agent ID | Ensure `BaggageBuilder` or `populate()` adds tenant/agent identity before creating spans |
+| No console traces | `use_microsoft_opentelemetry()` not called | Call it before any spans are created (and before LLM/framework imports) |
+| Traces not in Admin Center | Missing `a365_enable_observability_exporter=True` (1.0 breaking change) | Set the kwarg in code, or `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in env |
+| Duplicate spans for OpenAI/LangChain/SK/AgentFramework | Manual `*Instrumentor().instrument()` call after migration | Remove the manual instrumentor calls — auto-instrumentation is ON by default in 1.0+ |
+| Spans missing baggage | `ObservabilityHostingManager.configure` not called or `enable_baggage` not set to `True` | Default is `False`. Pass `ObservabilityHostingOptions(enable_baggage=True)` explicitly |
+| Token resolver returns `None` | Per-turn OBO token cache was never refreshed | Call `exchange_token()` and cache the result at the start of each handler turn (OBO / agentic-user only) |
+| `ModuleNotFoundError: microsoft.opentelemetry` | Package not installed | `pip install microsoft-opentelemetry` |
+| 401 on export | Missing `Agent365.Observability.OtelWrite` permission | CLI 1.1+ grants this automatically via `a365 setup all`. For pre-1.1 agents, GA must grant manually |
+| Spans dropped silently | Missing tenant/agent ID in baggage | Ensure `enable_baggage=True` and that `populate(builder, context)` runs before scope creation |
 | S2S: OBO token-refresh code still runs in the handler | S2S does not use per-turn OBO token exchange | Remove the OBO handler refresh path; token comes from the background token service via `a365_token_resolver` |
 | S2S 401: wrong Hop 3 scope | FMI Hop 3 used `https://api.powerplatform.com/.default` from older samples | Change Hop 3 scope to `api://9b975845-388f-4429-889e-eab1ef63949c/.default` |
-| S2S 401 even with correct scope | `OtelWrite` role not on Agent Identity SP | For agents provisioned before CLI 1.1, manually assign `Agent365.Observability.OtelWrite` to the Agent Identity SP via Entra portal (App registrations > Blueprint app > API permissions) |
-| S2S: Spans appear to run but nothing is exported | `ENABLE_A365_OBSERVABILITY=true` not set | Python SDK has **two** env vars: `ENABLE_A365_OBSERVABILITY_EXPORTER` (exporter creation) AND `ENABLE_A365_OBSERVABILITY` (span creation). Both must be `true`. Without the second, `InvokeAgentScope.start()` creates a no-op scope. |
-| S2S: `_is_telemetry_enabled()` returns `False` | `ENABLE_A365_OBSERVABILITY` env var missing | Set `ENABLE_A365_OBSERVABILITY=true` in `.env` — this is separate from `ENABLE_A365_OBSERVABILITY_EXPORTER` |
+| S2S 401 even with correct scope | `OtelWrite` role not on Agent Identity SP | For agents provisioned before CLI 1.1, manually assign `Agent365.Observability.OtelWrite` to the Agent Identity SP via Entra portal |
 | S2S: MSI fails locally | No Managed Identity in dev | Set `AGENT365_USE_MANAGED_IDENTITY=false` and provide `AGENT365_CLIENT_SECRET` |
 | S2S: FMI Hop 1+2 returns 400 | `fmi_path` missing or wrong `client_id` | Ensure `fmi_path=<agentId>` (Agent Identity app ID, not Blueprint ID) and `client_id=<blueprintClientId>` |
-| S2S: `TypeError: Session.request() got an unexpected keyword argument 'fmi_path'` | MSAL Python v1.34.0 bug | Use direct HTTP POST to `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token` with `fmi_path` as form data instead of MSAL `acquire_token_for_client(fmi_path=...)`. MSAL is still used for Hop 3 (no `fmi_path` needed). |
-| S2S: `InferenceCallDetails.__init__() got an unexpected keyword argument 'operation_name'` | Python SDK uses camelCase kwargs | Use `operationName=`, `providerName=`, `inputTokens=`, `outputTokens=`, `finishReasons=` (camelCase, NOT snake_case) |
-| S2S: HTTP 400 TenantIdInvalid from exporter | Token not yet acquired when exporter first fires | Ensure `acquire_initial_token()` runs in lifespan BEFORE monitor starts. The `a365_token_resolver` returns `""` when no cached token exists, causing 400. |
-| S2S: HTTP 403 `insufficient_scope: Required app role: Agent365.Observability.OtelWrite` | OtelWrite role not assigned to Agent Identity SP | Run PowerShell: `Connect-MgGraph; $sp = Get-MgServicePrincipal -Filter "appId eq '<agentId>'"` then `New-MgServicePrincipalAppRoleAssignment` with OtelWrite role from observability API SP (`9b975845-388f-4429-889e-eab1ef63949c`) |
-| S2S: FMI Hop 3 returns `AADSTS700024` | Agent Identity has no FMI credential | Verify `a365 setup all` completed successfully — it creates the federated credential on the Agent Identity |
-| S2S: HTTP 200 but `rejectedSpans > 0` | Missing baggage context (tenant_id/agent_id) | Ensure `BaggageBuilder().tenant_id(...).agent_id(...).build()` wraps all scope code — without it, spans lack identity and are rejected |
+| S2S: `TypeError: Session.request() got an unexpected keyword argument 'fmi_path'` | MSAL Python v1.34.0 limitation | Use direct HTTP POST to `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token` with `fmi_path` as form data instead of MSAL `acquire_token_for_client(fmi_path=...)`. MSAL is still used for Hop 3 (no `fmi_path` needed) |
+| `InferenceCallDetails.__init__() got an unexpected keyword argument 'operation_name'` | Python SDK uses camelCase kwargs | Use `operationName=`, `providerName=`, `inputTokens=`, `outputTokens=`, `finishReasons=` (camelCase, NOT snake_case) |
+| Pending spans lost on exit | No shutdown handler | Register `atexit.register(_shutdown_tracing)` calling `trace.get_tracer_provider().shutdown()` |
