@@ -151,7 +151,7 @@ describe('validate-observability — Node.js', () => {
     } finally { cleanup(dir); }
   });
 
-  test('missing npm package → reports @microsoft/agents-a365-observability', () => {
+  test('missing npm package → reports @microsoft/opentelemetry', () => {
     const dir = createFixture({
       ...NODEJS_VALID,
       'package.json': JSON.stringify({ name: 'my-agent', dependencies: {} }, null, 2),
@@ -159,7 +159,7 @@ describe('validate-observability — Node.js', () => {
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
-      assert.match(r.reason, /@microsoft\/agents-a365-observability/);
+      assert.match(r.reason, /@microsoft\/opentelemetry/);
     } finally { cleanup(dir); }
   });
 
