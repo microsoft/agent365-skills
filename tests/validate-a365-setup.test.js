@@ -128,13 +128,24 @@ describe('validate-a365-setup — authMode in detection cache', () => {
     } finally { cleanup(dir); }
   });
 
-  test('detection file with authMode=both → ok', () => {
+  test('detection file with authMode=agentic-user → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'agentic-user' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with legacy authMode=both → reports unsupported', () => {
     const dir = createFixture({
       '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'both' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
-      assert.equal(r.ok, true, r.reason);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /unsupported authMode/);
     } finally { cleanup(dir); }
   });
 
@@ -157,6 +168,32 @@ describe('validate-a365-setup — authMode in detection cache', () => {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
       assert.match(r.reason, /authMode is empty/);
+    } finally { cleanup(dir); }
+  });
+
+  test('hasBlueprintConfig=1 with reuseBlueprint set → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework', authMode: 'obo',
+        hasBlueprintConfig: 1, reuseBlueprint: true, existingBlueprintId: 'bp-abc-123',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('hasBlueprintConfig=1 but reuseBlueprint not set → reports missing reuseBlueprint', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework', authMode: 'obo', hasBlueprintConfig: 1,
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /reuseBlueprint/);
     } finally { cleanup(dir); }
   });
 

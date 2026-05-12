@@ -1,13 +1,13 @@
 ---
 name: instrument-observability
-version: 1.5.0
+version: 1.6.0
 description: >
   Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
   instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — required for
   store publishing), and updates configuration files. Asks a two-stage question — agent kind
   (AI Teammate or Agent (Non AI Teammate)) and auth mode — to determine
-  the correct token path: OBO (user-delegated / agentic-identity / Assistive) or Autonomous S2S
+  the correct token path: OBO (obo / agentic-user) or Autonomous (s2s)
   (FMI 3-hop token chain with Power Platform scope supported for .NET, Node.js, and Python — each language
   gets a scaffold token-service file that acquires and refreshes the Observability API token via the FMI chain). Non-destructive and idempotent.
 compatibility:
@@ -30,7 +30,7 @@ hooks:
       prompt: |
         Before ending, verify ALL of the following:
         1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. agentType (ai-teammate/AI Teammate or system-agent/Agent (Non AI Teammate)) and authMode (user-delegated, agentic-identity, or S2S) were determined and authMode is recorded in an inline comment in the message handler.
+        2. agentType (ai-teammate/AI Teammate or system-agent/Agent (Non AI Teammate)) and authMode (obo, s2s, or agentic-user) were determined and authMode is recorded in an inline comment in the message handler.
         3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
         4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
         5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); per-turn token refresh (RegisterObservability/.RefreshObservabilityToken/cache_agentic_token) implemented. For S2S path — all languages: no per-turn token refresh call; token comes from the scaffold token-service file started at startup. .NET additionally: baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist. Node.js S2S: observability/observability-token-service.ts exists; startTokenService() called before useMicrosoftOpenTelemetry(). Python S2S: observability/observability_token_service.py exists; run_token_service() task created before use_microsoft_opentelemetry().
@@ -116,11 +116,12 @@ Reply **yes** to confirm, or describe any corrections.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
-If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
 Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
-- **AI Teammate:** `user-delegated` (OBO as signed-in user) or `agentic-identity` (OBO as agent's own M365 identity)
-- **Agent (Non AI Teammate):** `agentic-identity` (Assistive OBO) or `S2S` (Autonomous / Service Principal)
+- **AI Teammate:** `obo` (OBO as signed-in user or agent's own M365 identity)
+- **Agent (Non AI Teammate):** `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal)
+- **Agentic user flow:** `agentic-user`
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 
@@ -283,7 +284,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 2. **Edit** — Add observability wiring following the reference pattern in `dotnet-observability.md`:
    - Add using directives for the observability namespaces
-   - **OBO path** (`user-delegated` or `agentic-identity`): call `builder.Services.AddAgenticTracingExporter(clusterCategory: "production");` then `builder.AddA365Tracing(config => { config.WithAgentFramework(); });` — requires `using Microsoft.Agents.A365.Observability.Extensions.AgentFramework;` and the NuGet package `Microsoft.Agents.A365.Observability.Extensions.AgentFramework`. Also set `"EnableAgent365Exporter": true` in `appsettings.json` to activate the backend exporter (when `false`, traces are only emitted to console).
+   - **OBO path** (`obo` / `agentic-user`): call `builder.Services.AddAgenticTracingExporter(clusterCategory: "production");` then `builder.AddA365Tracing(config => { config.WithAgentFramework(); });` — requires `using Microsoft.Agents.A365.Observability.Extensions.AgentFramework;` and the NuGet package `Microsoft.Agents.A365.Observability.Extensions.AgentFramework`. Also set `"EnableAgent365Exporter": true` in `appsettings.json` to activate the backend exporter (when `false`, traces are only emitted to console).
    - **S2S path**: First **Write** the two scaffold files from the reference doc — `Observability/ObservabilityServiceExtensions.cs` (DI extension with `AddAgent365Observability()` using `ServiceTokenCache` and conditional `ObservabilityTokenService`) and `Observability/ObservabilityTokenService.cs` (background service that acquires the Observability API token via the MSAL FMI 3-hop chain with `.WithFmiPath()` targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback). Then call `builder.Services.AddAgent365Observability();` and `builder.UseMicrosoftOpenTelemetry(...)` with token resolver reading from the `ServiceTokenCache`. **Critical:** Set `o.Agent365.Exporter.UseS2SEndpoint = true` in the options callback — without this, the exporter posts to the wrong path (`/observability/` instead of `/observabilityService/`) and gets HTTP 401. See "Known Issues" section.
    - Optionally register `adapter.Use(new BaggageTurnMiddleware())` (OBO path only) to auto-populate baggage on every request
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -337,7 +338,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 2. **Edit** — Follow the reference pattern (see `Agent365-samples/dotnet/agent-framework/sample-agent/telemetry/A365OtelWrapper.cs`):
 
-   **OBO path** (`user-delegated` or `agentic-identity`):
+   **OBO path** (`obo` / `agentic-user`):
    - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor
    - **Resolve agent ID and tenant ID from the agentic request** — add a helper method:
      ```csharp
@@ -370,7 +371,7 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
      ```
      Note: Some SDK versions support object-initializer syntax instead. If the constructor form fails to compile, try property-initializer: `new AgenticTokenStruct { UserAuthorization = ..., TurnContext = ..., AuthHandlerName = ... }`.
    - The `authHandlerName` should be the agentic auth handler name (from config `AgentApplication:AgenticAuthHandlerName`) when `IsAgenticRequest()` is true, empty string otherwise.
-   - **No `Agent365Observability` config section needed** — all values are resolved from the agentic request at runtime.
+   - **Keep the `Agent365Observability` section in `appsettings.json`** (`EnableAgent365Exporter` and base exporter settings are still required — Phase 6 handles these). For **OBO**, you do **not** need to hardcode per-agent IDs, tenant IDs, or S2S credentials in that section — the agent ID and tenant ID are resolved from the agentic request at runtime on each turn.
    - **Recommended pattern:** Create a reusable static wrapper method (e.g. `A365OtelWrapper.InvokeObservedAgentOperation(...)`) that encapsulates agent ID resolution, baggage building, token registration, and the operation invocation. See the reference sample's `telemetry/A365OtelWrapper.cs`.
 
    **S2S path**:
@@ -389,15 +390,25 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the detected message handler file.
 
 2. **Edit** — Add BaggageBuilder context following the reference pattern in `nodejs-observability.md`:
-   - Import `BaggageBuilder` from `@microsoft/agents-a365-observability`
+   - Import `BaggageBuilder` from `@microsoft/opentelemetry`
    - Import `AgenticTokenCacheInstance`, `BaggageBuilderUtils` from `@microsoft/agents-a365-observability-hosting`
    - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
-   - **OBO paths only** (`user-delegated` / `agentic-identity`): Call `AgenticTokenCacheInstance.RefreshObservabilityToken(agentId, tenantId, context, authorization, scopes)` at the start of each turn (non-fatal, wrap in try/catch):
-     - `user-delegated`: `authorization` is the **user's** delegated token → traces attributed to the user
-     - `agentic-identity`: `authorization` resolves to the **agentic user** provisioned in Azure AD → traces attributed to the agent
+   - **OBO paths only** (`obo` / `agentic-user`): Resolve `agentId` and `tenantId` dynamically from TurnContext each turn (never from config), then refresh the exporter token (non-fatal, wrap in try/catch):
+     ```
+     const agentId  = turnContext.activity?.recipient?.agenticAppId ?? '';
+     const tenantId = turnContext.activity?.recipient?.tenantId     ?? '';
+     await AgenticTokenCacheInstance.RefreshObservabilityToken(
+       agentId, tenantId, turnContext,
+       agentApplication.authorization,   // ← the AgentApplication auth object, NOT an auth-handler name string
+       getObservabilityAuthenticationScope()
+     );
+     ```
+     - `obo` (signed-in user): `agentApplication.authorization` exchanges the token as the **signed-in user** → traces attributed to the user
+     - `obo` (agentic identity): `agentApplication.authorization` exchanges the token as the **agentic user** provisioned in Azure AD → traces attributed to the agent
+     - **Recommended pattern:** Extract the agentId/tenantId resolution and token refresh into a `preloadObservabilityToken(turnContext)` helper function to keep the handler clean. See `nodejs-observability.md` for the full helper implementation.
    - **S2S path**: Do **NOT** call `AgenticTokenCacheInstance.RefreshObservabilityToken` — there is no user authorization token. The `tokenResolver` passed to `useMicrosoftOpenTelemetry()` (set up in Phase 3) handles authentication via the FMI 3-hop chain token service.
-   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), context).build()` to build baggage automatically from TurnContext
-   - Wrap the handler body in `await baggageScope.run(async () => { ... })`
+   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext).build()` to build baggage automatically from TurnContext. **Note:** `fromTurnContext()` is a static method on `BaggageBuilderUtils` — it does **not** exist directly on `BaggageBuilder`; always use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), ctx)`.
+   - Wrap the handler body in `await baggageScope.run(async () => { ... })` and call `baggageScope.dispose()` in a `finally` block
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -408,15 +419,31 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the detected message handler file.
 
 2. **Edit** — Add BaggageBuilder context following the reference pattern in `python-observability.md`:
-   - Import `BaggageBuilder` from `microsoft_agents_a365.observability.core`
-   - Import `populate` from `microsoft_agents_a365.observability.hosting.scope_helpers.populate_baggage`
-   - Import `AgenticTokenCache`, `AgenticTokenStruct` from `microsoft_agents_a365.observability.hosting.token_cache_helpers`
-   - Import `get_observability_authentication_scope` from `microsoft_agents_a365.runtime`
-   - Call `token_cache.register_observability(agent_id=..., tenant_id=..., token_generator=AgenticTokenStruct(authorization=AGENT_APP.auth, turn_context=context), observability_scopes=get_observability_authentication_scope())`:
-     - `user-delegated`: the OBO exchange resolves to the **signed-in user's** identity
-     - `agentic-identity`: the OBO exchange resolves to the **agentic user** provisioned in Azure AD
-     - `S2S`: agent authenticates as itself — no user context available
-   - Use `populate(builder, turn_context)` to auto-populate baggage, then `with builder.build():`
+   - Import `BaggageBuilder` from `microsoft.opentelemetry.a365.core`
+   - Import `populate` from `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage`
+   - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5)
+   - Import `get_observability_authentication_scope` from `microsoft.opentelemetry.a365.runtime`
+   - **OBO paths only** (`obo` / `agentic-user`): Resolve `agent_id` and `tenant_id` dynamically from context each turn (never from config), then exchange the OBO token (non-fatal, wrap in try/except):
+     ```python
+     agent_id  = context.activity.recipient.agentic_app_id
+     tenant_id = context.activity.recipient.tenant_id
+     await self._setup_observability_token(context, tenant_id, agent_id)
+     ```
+     The `_setup_observability_token` helper exchanges and caches the token:
+     ```python
+     async def _setup_observability_token(self, context, tenant_id, agent_id):
+         exaau_token = await self.agent_app.auth.exchange_token(
+             context,
+             scopes=get_observability_authentication_scope(),
+             auth_handler_id=self.auth_handler_name  # from config — NOT hardcoded "AGENTIC"
+         )
+         cache_agentic_token(tenant_id, agent_id, exaau_token.token)
+     ```
+     - `auth_handler_name` must come from config (e.g., `AgentApplication:AgenticAuthHandlerName`) — **never hardcode `"AGENTIC"`**; it is the registered auth handler name in your agent setup.
+     - `obo` (signed-in user): exchange resolves to the **signed-in user's** identity
+     - `obo` (agentic identity): exchange resolves to the **agentic user** provisioned in Azure AD
+   - **S2S path**: Do **NOT** call `_setup_observability_token` — token comes from the background token service wired in Phases 3/5. Baggage setup below still applies.
+   - Use `populate(builder, context)` to auto-populate baggage (parameter is `context`, not `turn_context`), then `with builder.build():`
    - Wrap existing agent logic inside the baggage scope
    - Add inline comment: `# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
@@ -459,7 +486,7 @@ The `ObservabilityTokenService` background service (created in Phase 3 via the s
 
 ### For Python (OBO path)
 
-`AgenticTokenCache` from `microsoft_agents_a365.observability.hosting.token_cache_helpers` handles caching automatically. It was wired as the `token_resolver` in the `configure()` call in Phase 3. No additional module is needed.
+The `token_cache.py` custom module (located at project root or `observability/token_cache.py`) provides `cache_agentic_token` and `get_cached_agentic_token`. The `a365_token_resolver` in `use_microsoft_opentelemetry()` (Phase 3) is wired to `get_cached_agentic_token`. The per-turn `_setup_observability_token` helper (Phase 4) calls `cache_agentic_token` after each OBO exchange. If `token_cache.py` is absent (e.g., this phase is reached before Phase 4 ran), create it now following the OBO token cache pattern in `python-observability.md`.
 
 ### For Python (S2S path)
 
@@ -473,48 +500,68 @@ The `ObservabilityTokenService` background service (created in Phase 3 via the s
 
 ## Phase 5.5: Wire Manual Instrumentation Scopes
 
-**TaskCreate** — "Wire InvokeAgentScope, InferenceScope, ExecuteToolScope (required for store publishing)"
+**TaskCreate** — "Wire InvokeAgentScope, InferenceScope, ExecuteToolScope"
 
-> **Store publishing requirement:** The Agent 365 store validator requires `InvokeAgentScope`,
-> `InferenceScope`, and `ExecuteToolScope` to be present and populating telemetry. Missing any one
-> of these three scopes causes store validation failure.
+> **Auto-instrumentation vs manual:** Whether manual scopes are needed depends on `authMode` and
+> whether auto-instrumentation framework extensions were installed in Phase 2.
+>
+> | Situation | InvokeAgentScope | InferenceScope | ExecuteToolScope |
+> |---|---|---|---|
+> | `authMode = "s2s"` (autonomous) | Required — add always | Required — add always | Required — add always |
+> | OBO + framework extension installed (Phase 2) | Required — add always | **Skip** — auto-instrumentation generates these | Only for local/custom tools not covered by the extension |
+> | OBO + no framework extension | Required — add always | Required — add always | Required — add always |
+>
+> **Rule:** Never skip `InvokeAgentScope` — it wraps the turn and is always required for traces to
+> appear in the MAC portal. Auto-instrumentation extensions cover LLM calls (`InferenceScope`) and
+> framework-managed tool calls (`ExecuteToolScope`), but they do not wrap the agent turn itself.
 
-Ask the user: "Do you want to add the InvokeAgentScope, InferenceScope, and ExecuteToolScope wrappers now? These are required for store publishing."
+**Determine which scopes to add:**
 
-If the user confirms (or if this is for store publishing):
+- If `authMode = "s2s"`: proceed directly — add all three scopes without prompting (required for autonomous agents).
+- If OBO and a framework extension **was** installed in Phase 2:
+  - Add `InvokeAgentScope` always.
+  - **Skip `InferenceScope`** — the framework extension instruments LLM calls automatically.
+  - Ask: *"Does your agent make any local or custom tool calls that are **not** routed through the framework? If yes, I'll add `ExecuteToolScope` wrappers for those."* Add `ExecuteToolScope` only if the user confirms custom tool calls exist.
+- If OBO and **no** framework extension was installed in Phase 2:
+  - Ask: *"Do you want to add InvokeAgentScope, InferenceScope, and ExecuteToolScope wrappers? These are required for store publishing."*
+  - Add all three if the user confirms.
+
+> **Store publishing:** The Agent 365 store validator requires `InvokeAgentScope`, `InferenceScope`,
+> and `ExecuteToolScope` to be present. For OBO agents with framework extensions, the extension
+> satisfies `InferenceScope` and framework-managed `ExecuteToolScope` automatically.
 
 ### For .NET AgentFramework
 
-Follow the reference patterns in `dotnet-observability.md` for:
+Follow the reference patterns in `dotnet-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler to capture agent invocation telemetry
-- **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons
-- **`ExecuteToolScope`** — wrap each tool call to capture tool name, arguments, result
+- **`InferenceScope`** — wrap each LLM call to capture model, token counts, finish reasons *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — use for async response scenarios where output isn't captured synchronously
-- `CallerDetails` must be passed to `InvokeAgentScope.Start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` must be passed to `InvokeAgentScope.Start()` as the 4th parameter — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from config (`Agent365Observability:Sponsor` section) and construct `CallerDetails` with `UserDetails(userId, userName, userEmail)`
 - Pass `UserDetails` directly (not wrapped in `CallerDetails`) to `InferenceScope.Start()` and `ExecuteToolScope.Start()` as the optional 4th parameter
 - The `Agent365ObservabilityContext` singleton should hold both `AgentDetails` and `CallerDetails` properties
 
 ### For Node.js
 
-Follow the reference patterns in `nodejs-observability.md` for:
+Follow the reference patterns in `nodejs-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler. Use `ScopeUtils.populateInvokeAgentScopeFromTurnContext` from `@microsoft/agents-a365-observability-hosting` to auto-populate from TurnContext
-- **`InferenceScope`** — wrap each LLM call. Use `ScopeUtils.populateInferenceScopeFromTurnContext` if available
-- **`ExecuteToolScope`** — wrap each tool call. Use `ScopeUtils.populateExecuteToolScopeFromTurnContext` if available
+- **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async scenarios
-- `CallerDetails` must be passed to `InvokeAgentScope.start()` as the 4th parameter — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` must be passed to `InvokeAgentScope.start()` as the 4th parameter — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from env vars (`agent365Observability__sponsorUserId`, `agent365Observability__sponsorUserName`, `agent365Observability__sponsorUserEmail`) and construct the `CallerDetails` object
 - Pass `UserDetails` directly to `InferenceScope.start()` and `ExecuteToolScope.start()` as the optional 4th parameter
 - Export `callerDetails` (for `InvokeAgentScope`) and `userDetails` (for `InferenceScope`/`ExecuteToolScope`) from the entry point module alongside `agentDetails`
 
 ### For Python
 
-Follow the reference patterns in `python-observability.md` for:
+Follow the reference patterns in `python-observability.md` for each scope being added:
 - **`InvokeAgentScope`** — wrap the top-level message handler as a context manager
-- **`InferenceScope`** — wrap each LLM call
-- **`ExecuteToolScope`** — wrap each tool call
+- **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
+- **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async response scenarios
-- `CallerDetails` / `UserDetails` must be supplied when creating the top-level `InvokeAgentScope` — this is **required** for traces to appear in the MAC portal
+- `CallerDetails` / `UserDetails` must be supplied when creating the top-level `InvokeAgentScope` — **required** for traces to appear in the MAC portal
 - For S2S autonomous agents, read sponsor details from config or environment and construct `CallerDetails(UserDetails(userId, userName, userEmail))`
 - Pass `UserDetails` directly to `InferenceScope`, `ExecuteToolScope`, and `OutputScope` when their optional user parameter is available
 - Keep shared observability state with both `agent_details` and `caller_details` / `user_details` so nested scopes can reuse them consistently
@@ -727,12 +774,14 @@ If yes, invoke the `test-local` skill.
       - .NET: set EnableAgent365Exporter: true in appsettings.json
       - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env
    2. Run your agent and verify traces appear in the Observability dashboard.
-   3. [If authMode = user-delegated] Confirm the signed-in user's token is being passed correctly.
-      → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-   4. [If authMode = agentic-identity] Ensure the agentic user identity has been provisioned in Azure AD.
+   3. [If authMode = obo] Confirm the OBO token exchange is working correctly.
+      - Signed-in user sub-type: verify the signed-in user's token is passed correctly.
+        → OBO flow docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+      - Agentic identity sub-type: ensure the agentic user identity has been provisioned in Azure AD.
+        → Identity docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
+   4. [If authMode = agentic-user] Confirm the agentic-user M365 license and identity are provisioned.
       → Identity docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
-      → OBO flow docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-   5. [If authMode = S2S] No user token required — verify agent blueprint credentials are configured.
+   5. [If authMode = s2s] No user token required — verify agent blueprint credentials are configured.
       → Auth flow docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/authentication-flow
 
    All instrumented lines are marked with:
@@ -782,16 +831,16 @@ This skill is safe to rerun. On subsequent runs:
 
 ### OtelWrite App Role Assignment
 
-`a365 setup all` **attempts** to grant `Agent365.Observability.OtelWrite` to the Agent Identity SP, but this requires **Global Administrator** privileges. If the logged-in user is not a Global Admin, the assignment silently fails with 403 and trace exports will return HTTP 403 from the observability service.
+`a365 setup all` **automatically grants** `Agent365.Observability.OtelWrite` to the Agent Identity SP (both delegated and application) for all newly provisioned agents. No Global Administrator is required for agents set up with this CLI version.
 
-**The CLI prints a PowerShell admin consent script** in its output when the assignment fails. When running `a365 setup all`, **always scan the output for this script block** and display it to the user in a fenced code block so they can copy it and hand it to a Global Admin.
+**Upgrade path — agents provisioned before this CLI release:** OtelWrite must be granted manually. A Global Administrator must do one of the following:
 
-If the script was not captured, grant the permission manually via Entra portal (requires Global Admin):
+Option A — Entra portal:
 1. [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions
 2. Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c`
 3. Add both **Delegated** and **Application** `Agent365.Observability.OtelWrite` > Grant admin consent
 
-Alternatively, read the `agentIdentityClientId` from `a365.generated.config.json` and use the Graph API:
+Option B — Graph API (read `agentIdentityClientId` from `a365.generated.config.json`):
 
 ```bash
 # Create a temp JSON body file (required on Windows due to az rest escaping)

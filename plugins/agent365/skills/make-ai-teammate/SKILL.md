@@ -1,6 +1,6 @@
 ---
 name: make-ai-teammate
-version: 1.5.0
+version: 1.6.0
 description: >
   Transforms a non-M365 agent into a Microsoft Agent 365 AI Teammate. Supports all major
   frameworks across .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents
@@ -55,15 +55,14 @@ hooks:
         5. ToolingManifest.json exists.
         6. .env / .env.template has all required A365 variables.
 
-        Phase 9.7 (Register, Publish, Deploy, Teams Dev Portal):
+        Phase 9.7 (Register, Publish, Teams Dev Portal):
         7. a365 setup all --aiteammate (with or without --m365) completed without fatal errors.
-        8. Blueprint ID was retrieved via a365 status --field agentBlueprintId.
+        8. Blueprint ID was read from a365.generated.config.json after setup all completed.
         9. manifest.json was reviewed and updated (or user confirmed Teams Toolkit manages it).
         10. a365 publish ran (or sideload fallback was offered if auth failed).
-        11. a365 deploy ran (or user confirmed agent is self-hosted via dev tunnel).
-        12. Teams Developer Portal bot endpoint was confirmed.
-        13. a365 create-instance ran and Agentic User UPN was shown to user.
-        14. Smoke test was completed (Teams or AgentsPlayground).
+        11. Teams Developer Portal bot endpoint was confirmed.
+        12. Agentic User UPN was confirmed from a365.generated.config.json or setup output.
+        13. Smoke test was completed (Teams or AgentsPlayground).
 
         Also verify for all languages:
         - instrument-observability was offered and either invoked or explicitly skipped by user.
@@ -716,7 +715,7 @@ consent the first time the agent accesses their data.
 **Mark task in progress: "Register, publish, deploy, and configure in Teams Dev Portal"**
 
 This phase runs the full AI Teammate registration and publishing pipeline:
-`a365 setup all` → manifest update → `a365 publish` → `a365 deploy` → Teams Dev Portal → `a365 create-instance` → smoke test.
+`a365 setup all` → manifest update → `a365 publish` → Teams Dev Portal → Agentic User confirmation → smoke test.
 
 ---
 
@@ -742,20 +741,19 @@ a365 setup all --agent-name <name> --aiteammate
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
+**`--authmode` note:** `obo` is the default for AI Teammate agents and may be passed explicitly (`--authmode obo --aiteammate`) — the CLI accepts it with a warning. `--authmode s2s` and `--authmode both` are incompatible with `--aiteammate` and will error.
+
 **Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
 
 After completion:
 - Show the **Setup Summary table** verbatim from CLI output.
-- Extract and store `blueprintId`:
+- Extract and store `blueprintId` from `a365.generated.config.json`:
 
 ```bash
-a365 status --field agentBlueprintId
+node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint ID:', c.agentBlueprintId)"
 ```
 
-**Global Administrator consent** — if the CLI output includes a "Permission Grants" action item:
-> "A Global Administrator must grant consent via the Entra portal:  
-> [Entra portal](https://entra.microsoft.com) > App registrations > Blueprint app > API permissions > Grant admin consent.  
-> Alternatively, copy and run the PowerShell script shown in the CLI output above."
+**If the CLI output includes a "Permission Grants" action item or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can copy it. This is only expected for agents upgrading from a pre-1.1 CLI version where OtelWrite was not yet auto-granted. For newly provisioned agents no admin consent step is required.
 
 ---
 
@@ -763,13 +761,13 @@ a365 status --field agentBlueprintId
 
 **Glob** for `manifest.json` or `appPackage/manifest.json`.
 
-If found, **read** it and check/update these fields using values from `a365 status` output or the detection cache:
+If found, **read** it and check/update these fields using values from `a365.generated.config.json`:
 
 | Field | Value |
 |-------|-------|
 | `version` | bump minor (e.g. `1.0.0` → `1.0.1`) |
-| `id` | Teams App ID (`a365 status --field teamsAppId`) |
-| `bots[0].botId` | Agentic App ID (`a365 status --field agentAppId`) |
+| `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) |
+| `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) |
 | `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) |
 | `webApplicationInfo.id` | same as `bots[0].botId` |
 
@@ -804,32 +802,15 @@ a365 manifest package   # produces a .zip app package
 
 ---
 
-### Step 9.7.4 — Deploy (`a365 deploy`)
-
-```bash
-a365 deploy
-```
-
-Provisions remaining cloud resources and makes the agent live at its registered endpoint.
-
-| Output | Action |
-|--------|--------|
-| Deployment complete | Note the live endpoint URL shown in output |
-| `"Resource not found"` / `"Provisioning failed"` | Check `az login --allow-no-subscriptions` and Azure Contributor rights |
-
-> **Self-hosted / dev tunnel agents:** Skip `a365 deploy` — the agent is already live at the tunnel URL registered in Step 9.7.1.
-
----
-
-### Step 9.7.5 — Configure in Teams Developer Portal
+### Step 9.7.4 — Configure in Teams Developer Portal
 
 Open **https://dev.teams.microsoft.com** and guide the user:
 
 1. **Sign in** with the same M365 account used during setup.
-2. Go to **Apps** → find the app by name or search by App ID (`a365 status --field teamsAppId`).
-3. **Basic information** — confirm `App ID` matches the value from `a365 status`.
+2. Go to **Apps** → find the app by name or search by App ID (`teamsAppId` from `a365.generated.config.json`).
+3. **Basic information** — confirm `App ID` matches `teamsAppId` in `a365.generated.config.json`.
 4. **App features → Bot**:
-   - Confirm **Bot ID** matches the Agentic App ID (`a365 status --field agentAppId`).
+   - Confirm **Bot ID** matches `agentAppId` from `a365.generated.config.json`.
    - Confirm **Messaging endpoint** is set to the live `/api/messages` URL.
    - If the endpoint is wrong or missing — update it and click **Save**.
 5. **Permissions** — confirm delegated permissions include `User.Read` (and any WorkIQ scopes if WorkIQ was added).
@@ -839,31 +820,27 @@ Open **https://dev.teams.microsoft.com** and guide the user:
 
 ---
 
-### Step 9.7.6 — Create Agent Instance (`a365 create-instance`)
+### Step 9.7.5 — Confirm Agentic User
 
-```bash
-a365 create-instance --blueprint-id <blueprintId>
+The **Agentic User** (the agent's M365 identity with a UPN) is provisioned automatically by `a365 setup all --aiteammate`. Confirm it was created:
+
+1. Read `a365.generated.config.json` — look for `agentUpn` (e.g. `my-agent@contoso.onmicrosoft.com`).
+2. If `agentUpn` is present, show the user:
+
 ```
-
-Creates the **Agentic User** — the agent's M365 identity with a UPN. Required before the agent can receive messages in Teams or Copilot.
-
-| Output | Action |
-|--------|--------|
-| `"Instance created"` | Note the `agentUpn` (e.g. `my-agent@contoso.onmicrosoft.com`) |
-| `"Instance already exists"` | Safe to ignore — instance from a previous run exists |
-| `"Insufficient privileges"` | GA consent not yet granted — complete Step 9.7.1 GA handoff first, then retry |
-
-Show the user:
-```
-✅ Agentic User created!
+✅ Agentic User provisioned!
   UPN:          <agentUpn>
-  Blueprint ID: <blueprintId>
-  App ID:       <teamsAppId>
+  Blueprint ID: <agentBlueprintId>
+  App ID:       <agentAppId>
 ```
+
+3. If `agentUpn` is absent from the generated config, the Agentic User was not yet provisioned. Agentic User creation uses blueprint app-only credentials — no GA consent is required. Instruct the user to re-run `a365 setup all --aiteammate`, or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
+
+> To remove an existing Agentic User if needed: `a365 cleanup instance`
 
 ---
 
-### Step 9.7.7 — Smoke Test
+### Step 9.7.6 — Smoke Test
 
 Guide the user through a quick end-to-end test:
 
@@ -916,18 +893,14 @@ Your agent now has:
   [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 
 Useful commands:
-  a365 status                               — show Blueprint state and AGENTIC_APP_ID
-  a365 status --field agentBlueprintId      — retrieve Blueprint ID
-  a365 create-instance --blueprint-id <id>  — re-create Agentic User if needed
+  cat a365.generated.config.json            — show Blueprint ID, App ID, and agent details
+  a365 cleanup instance                     — remove Agentic User if re-provisioning is needed
   devtunnel host <name> --port 3978         — restart dev tunnel for local testing
 
 Next steps:
-  1. If admin consent is still pending: have a Global Admin grant consent via Entra portal
-     (App registrations > Blueprint app > API permissions > Grant admin consent)
-     or run the PowerShell script from the setup output
-  2. Run the test-local skill for guided local testing with AgentsPlayground
-  3. Add observability:  run the instrument-observability skill  (if not done)
-  4. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
+  1. Run the test-local skill for guided local testing with AgentsPlayground
+  2. Add observability:  run the instrument-observability skill  (if not done)
+  3. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
 ```
 
 ---

@@ -1,6 +1,6 @@
 ---
 name: test-local
-version: 1.5.0
+version: 1.6.0
 description: >
   Runs an Agent 365 AI Teammate agent locally and opens AgentsPlayground for interactive
   local testing. Works with any AI Teammate stack — .NET (AgentFramework, Semantic Kernel),

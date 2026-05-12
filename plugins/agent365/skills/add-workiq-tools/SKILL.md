@@ -1,6 +1,6 @@
 ---
 name: add-workiq-tools
-version: 1.5.0
+version: 1.6.0
 description: >
   Adds WorkIQ MCP tool servers to an existing .NET AgentFramework, Node.js, or Python agent
   using the A365 CLI. Runs a365 develop list-available to show the catalog, adds selected servers
@@ -26,7 +26,7 @@ hooks:
       prompt: |
         Before ending, verify ALL of the following:
         1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. a365 develop list-available was run and results were shown to the user.
+        2. a365 develop list-available was run, results were shown to the user, and the selection options were populated from the CLI output (not a hardcoded list).
         3. a365 develop add-mcp-servers was run for the selected WorkIQ servers.
         4. ToolingManifest.json now contains the selected WorkIQ server entries.
         5. McpToolRegistrationService (or equivalent) is wired in the agent code.
@@ -108,20 +108,20 @@ Reply **yes** to confirm, or describe any corrections.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
-If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions.
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
-Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`user-delegated`, `agentic-identity`, or `S2S`).
+Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`, or `agentic-user`).
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
 
-**If `authMode = S2S`, stop immediately and exit:**
+**If `authMode = s2s`, stop immediately and exit:**
 
 ```
 ❌  WorkIQ tools are not available for S2S (autonomous) agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
-    To use WorkIQ, switch your agent to Assistive mode (agentic-identity / OBO)
+    To use WorkIQ, switch your agent to Assistive mode (obo)
     and re-run this skill.
 ```
 
@@ -207,25 +207,23 @@ OneDrive, Word, user/presence, Copilot) and Dataverse/Dynamics 365.
 
 ### 2.2 Ask which tools to add
 
-If the user provided specific tool names as the skill argument, use those.
-Otherwise:
+If the user provided specific tool names as the skill argument, use those and skip the question.
+
+Otherwise, parse the `a365 develop list-available` output to extract the server names, then present them as numbered options. Also check `a365 develop list-configured` output (from Phase 1.2) to mark already-installed servers so the developer can see what's new vs already present.
 
 ```
 AskUserQuestion:
-  question: "Which WorkIQ tool servers would you like to add? (See catalog above)"
-  options:
-    - Work IQ Mail
-    - Work IQ Calendar
-    - Work IQ Teams
-    - Work IQ SharePoint
-    - Work IQ OneDrive
-    - Work IQ Word
-    - Work IQ User
-    - Work IQ Copilot
-    - Dataverse and Dynamics 365
-    - All of the above
-    - Let me type specific names from the catalog
+  question: |
+    Which WorkIQ tool servers would you like to add?
+    (Servers already in ToolingManifest.json are marked ✅)
+
+    <list every server name from a365 develop list-available output, numbered>
+    <N+1>. All of the above
+    <N+2>. Let me type specific names
+  options: <dynamically built from CLI output — one entry per server name>
 ```
+
+For each option: if the server name appears in the `a365 develop list-configured` output, append ` (✅ already configured)` to the label. Include it in the list anyway — user may want to re-add or upgrade version.
 
 **Mark task complete: "Show available WorkIQ tools catalog"**
 
@@ -312,7 +310,7 @@ If missing, **Edit** the agent class to add inside `OnMessageActivityAsync` (or 
 // A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 var workIQTools = await _toolService.GetMcpToolsAsync(
     agentId,
-    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
+    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
     handlerForMcp,
     context
 ).ConfigureAwait(false);
@@ -360,7 +358,7 @@ try {
   agentWithTools = await toolService.addToolServersToAgent(
     personalizedAgent,
     authorization,
-    authHandlerName,  // "AGENTIC" for all authMode values; identity (user-delegated, agentic-identity, or S2S) is determined by Azure AD
+    authHandlerName,  // "AGENTIC" for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
     turnContext,
     process.env.BEARER_TOKEN ?? '',
   );

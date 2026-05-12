@@ -73,8 +73,17 @@ const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
 if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
+    const VALID_AUTH_MODES = new Set(['obo', 's2s', 'agentic-user']);
     if (!detection.authMode || detection.authMode === '') {
-      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (OBO/S2S/Both) and write it to the detection cache');
+      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (obo/s2s/agentic-user) and write it to the detection cache');
+    } else if (!VALID_AUTH_MODES.has((detection.authMode || '').toLowerCase())) {
+      issues.push(`.a365-workspace-detection.json has unsupported authMode "${detection.authMode}" — expected obo, s2s, or agentic-user (old values like "both", "user-delegated", "S2S" are no longer valid)`);
+    }
+    // If an existing blueprint was detected, reuseBlueprint must have been explicitly set
+    // (true = reuse, false = fresh) — the skill must ask, never assume.
+    if ((detection.hasBlueprintConfig === 1 || detection.hasBlueprintConfig === true) &&
+        (detection.reuseBlueprint === undefined || detection.reuseBlueprint === null)) {
+      issues.push('.a365-workspace-detection.json has hasBlueprintConfig=1 but reuseBlueprint is not set — the skill must ask the developer whether to reuse the existing blueprint or create fresh before delegating');
     }
   } catch {
     issues.push('.a365-workspace-detection.json exists but cannot be parsed — file may be malformed');

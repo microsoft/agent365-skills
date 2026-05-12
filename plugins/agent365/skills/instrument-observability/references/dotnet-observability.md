@@ -11,7 +11,7 @@ into a .NET AgentFramework agent. All samples mirror the official Microsoft Lear
 | Package | Purpose |
 |---------|---------|
 | `Microsoft.Agents.A365.Observability.Runtime` | `AddA365Tracing()`, `BaggageBuilder`, `EnvironmentUtils` — required for all agents |
-| `Microsoft.Agents.A365.Observability.Hosting` | `AddAgenticTracingExporter()` — OBO token caching (user-delegated / agentic-identity); `AddServiceTracingExporter()` — S2S token cache (`IExporterTokenCache<string>`) |
+| `Microsoft.Agents.A365.Observability.Hosting` | `AddAgenticTracingExporter()` — OBO token caching (obo / agentic-user); `AddServiceTracingExporter()` — S2S token cache (`IExporterTokenCache<string>`) |
 | `Microsoft.Agents.A365.Observability.Hosting.Caching` | `IExporterTokenCache<T>`, `AgenticTokenStruct` |
 | `Microsoft.Agents.A365.Observability.Hosting.Extensions` | `FromTurnContext()` extension on `BaggageBuilder` |
 | `Microsoft.Agents.A365.Observability.Hosting.Middleware` | `BaggageTurnMiddleware`, `UseObservabilityRequestContext` |
@@ -46,7 +46,7 @@ Install commands (individual packages / OBO path):
 # Required for all agents
 dotnet add package Microsoft.Agents.A365.Observability.Runtime
 
-# Required for OBO agents (authMode: user-delegated or agentic-identity)
+# Required for OBO agents (authMode: obo or agentic-user)
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
 
 # Optional auto-instrumentation extensions
@@ -57,7 +57,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
 
 ---
 
-## Program.cs — S2S Path (`authMode: S2S`)
+## Program.cs — S2S Path (`authMode: s2s`)
 
 Use this pattern for Agent (Non AI Teammate) agents that run without a signed-in user (Autonomous / S2S).
 Requires two scaffold files in `Observability/` — create these before wiring Program.cs.
@@ -395,7 +395,7 @@ app.UseObservabilityRequestContext((httpContext) =>
 
 ---
 
-## Agent Class — Message Handler (OBO Path, `authMode: user-delegated` or `agentic-identity`)
+## Agent Class — Message Handler (OBO Path, `authMode: obo` or `agentic-user`)
 
 ```csharp
 using Microsoft.Agents.Builder;
@@ -465,7 +465,7 @@ public class MyAgent : AgentApplication
 
 ---
 
-## Agent Class — Message Handler (S2S Path, `authMode: S2S`)
+## Agent Class — Message Handler (S2S Path, `authMode: s2s`)
 
 Inject `Agent365ObservabilityContext` instead of `IExporterTokenCache<AgenticTokenStruct>`.
 `ObservabilityTokenService` holds the token in the background — no per-turn `RegisterObservability` call.
@@ -499,7 +499,7 @@ public class MyAgent : AgentApplication
         // IMPORTANT: FromTurnContext() is an extension on BaggageBuilder only — it does NOT
         // exist on InvokeAgentScope. InvokeAgentScopeDetails has no parameterless constructor;
         // pass at least `endpoint`. Keep baggage and scope as two separate using statements.
-        // authMode: S2S
+        // authMode: s2s
 
         // Step 1: propagate baggage from the incoming turn.
         // Requires: using Microsoft.Agents.A365.Observability.Hosting.Extensions;
@@ -721,7 +721,7 @@ using var scope = OutputScope.Start(
 > `appsettings.json`: `EnableAgent365Exporter: false`, `Agent365Observability.AgentBlueprintId`,
 > and `Agent365Observability.TenantId`. Preserve these existing values when instrumenting.
 
-**OBO path (`authMode: user-delegated` or `agentic-identity`):**
+**OBO path (`authMode: obo` or `agentic-user`):**
 
 ```json
 {
@@ -742,7 +742,7 @@ using var scope = OutputScope.Start(
 }
 ```
 
-**S2S path (`authMode: S2S`):**
+**S2S path (`authMode: s2s`):**
 
 ```json
 {
@@ -850,7 +850,7 @@ warn: Agent365ExporterCore: No token obtained for agent {agentId} tenant {tenant
 | `AgenticTokenStruct` | `Microsoft.Agents.A365.Observability.Hosting.Caching` | Wraps `TurnContext` + `UserAuthorization` + `AuthHandlerName` for token resolution. Uses **constructor** syntax: `new AgenticTokenStruct(userAuthorization: ..., turnContext: ..., authHandlerName: "AGENTIC")` |
 | `Agent365ExporterOptions` | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Exporters` | Exporter config (`TokenResolver`, `MaxQueueSize`, `ScheduledDelayMilliseconds`, etc.) |
 | `Agent365ExporterType` | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Exporters` | Enum for `AddA365Tracing()` exporter type param |
-| `AddAgenticTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for OBO token caching (`IExporterTokenCache<AgenticTokenStruct>`) — user-delegated / agentic-identity |
+| `AddAgenticTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | DI extension for OBO token caching (`IExporterTokenCache<AgenticTokenStruct>`) — obo / agentic-user |
 | `AddServiceTracingExporter()` | `Microsoft.Agents.A365.Observability.Hosting` | Legacy/manual DI extension for S2S token cache (`IExporterTokenCache<string>`) when not using the unified distro |
 | `Agent365ObservabilityContext` | Scaffold (`Observability/`) | Singleton wrapping `AgentDetails` for S2S agents — inject instead of per-turn `RegisterObservability` |
 | `ObservabilityTokenService` | Scaffold (`Observability/`) | `BackgroundService` — acquires the export token via the FMI 3-hop chain (`.WithFmiPath()` + agent assertion); refreshes every 50 min |

@@ -1,11 +1,11 @@
-﻿---
+---
 name: make-a365-agent
-version: 1.5.0
+version: 1.6.0
 description: >
   Provisions a non-AI Teammate agent with Agent 365 — use this skill for Register
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.
-  After setup, always offers instrument-observability (optional) and add-workiq-tools (optional)
-  as add-ons regardless of capability path. Supports .NET AgentFramework, Node.js, and Python agents.
+  After setup, always offers instrument-observability (optional) and add-workiq-tools (optional,
+  skipped automatically when authMode = s2s) as add-ons. Supports .NET AgentFramework, Node.js, and Python agents.
   Normally delegated to from a365-setup after CLI and Azure prerequisites are confirmed.
   Can also be invoked directly when those steps are already done.
 compatibility:
@@ -31,7 +31,7 @@ hooks:
         2. a365.generated.config.json exists with a valid agentBlueprintId.
         3. Setup Summary table was shown to the user verbatim.
         4. instrument-observability was offered and either invoked or explicitly skipped by user.
-        5. add-workiq-tools was offered and either invoked or explicitly skipped by user.
+        5. add-workiq-tools was offered and either invoked or explicitly skipped by user — OR authMode = s2s (WorkIQ is not available for S2S agents and must not be offered).
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If all items completed (or were explicitly skipped by the user), return {"ok": true}.
       timeout: 30000
@@ -84,6 +84,7 @@ What capabilities would you like to enable? (options can be combined)
   2. Observability — end-to-end activity tracing for every message, LLM call,
      and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+     (only show this option when authMode ≠ s2s — WorkIQ requires a user token)
   4. AI Teammate — the agent needs a first-class M365 identity
      (Agentic User with UPN, mailbox, presence). Handled by a different skill.
 ```
@@ -103,6 +104,41 @@ Mark Todo 1 in-progress.
 ---
 
 ## Phase 1 — Collect Provisioning Inputs
+
+### 1.0 — Check for Existing Blueprint
+
+**Before asking for any inputs**, check whether a blueprint config already exists:
+
+```bash
+ls a365.config.json a365.generated.config.json 2>/dev/null
+```
+
+If either file exists, read it and extract the blueprint ID — the field name differs by file:
+- `a365.config.json` → read `blueprintId`
+- `a365.generated.config.json` → read `agentBlueprintId`
+
+Store whichever is present as `existingBlueprintId`. Then ask:
+
+```
+I found an existing Agent 365 config in this project.
+  • File: {filename found}
+  • Blueprint ID: {existingBlueprintId if found, otherwise "not yet set"}
+
+What would you like to do?
+
+  1. Reuse the existing blueprint — I'll skip `a365 setup all` and use this blueprint directly
+     (use this if setup already ran successfully and you just want to add capabilities)
+  2. Create a fresh blueprint — runs `a365 setup all` and overwrites the existing config
+     (use this if you want to start over or the existing config is stale)
+```
+
+Wait for the answer:
+- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. **Write** both values back to `.a365-workspace-detection.json` (merge, preserve all other fields) so the stop-hook validator and follow-on skills can read them. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
+- If **2 (fresh)**: set `reuseBlueprint = false`. **Write** `reuseBlueprint: false` to `.a365-workspace-detection.json`. Continue with Phase 1 inputs and Phase 2 as normal.
+
+If no existing config is found: set `reuseBlueprint = false` and continue.
+
+---
 
 Ask both questions in a single message:
 
@@ -233,6 +269,7 @@ Monitor output carefully:
 | `Graph API Forbidden / Authorization_RequestDenied` | Stop. Resolve permission issue (return to a365-setup Step 2 or grant the role). Then re-run. |
 | Interactive browser auth required | If headless, instruct user to use `az login --device-code` first. |
 | `managerApplications` error / blueprint rejected | Blueprint was created before May 2025 and lacks `managerApplications`. Delete and re-run `a365 setup all`, or patch via Graph API. |
+| `AADSTS700016` / `Authorization_IdentityNotFound` immediately after blueprint creation | Entra replication lag — the CLI retries automatically with exponential back-off (up to 5× for identity, 12× for blueprint token, 60-second cap). No manual retry needed; wait for the CLI to complete. |
 
 `a365 setup all` is idempotent — safe to re-run after fixing an issue.
 
@@ -241,12 +278,7 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **If the CLI printed an admin consent action item (Permission Grants) or any role assignment failed (403):**
-   - **Extract the PowerShell admin consent script** from the CLI output and display it in a fenced code block so the user can copy it easily. The CLI typically prints a `Connect-AzAccount` / `New-AzADServicePrincipalAppRoleAssignment` script block — find and display it verbatim.
-   - If no PowerShell script was printed, provide the manual Entra portal steps:
-     [Entra portal](https://entra.microsoft.com) > App registrations > select Blueprint app > API permissions > Add a permission > APIs my organization uses > search `9b975845-388f-4429-889e-eab1ef63949c` > add both Delegated and Application `Agent365.Observability.OtelWrite` > Grant admin consent
-   - Tell the user:
-     > "⚠️ The OtelWrite app role assignment requires **Global Administrator**. Copy the PowerShell script above and have a Global Admin run it — without this, trace exports will fail with HTTP 403."
+2. **`Agent365.Observability.OtelWrite` is automatically granted** to the agent identity by `a365 setup all` — no GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.
@@ -281,6 +313,8 @@ Mark Todo 2 as completed when done (or skipped by user).
 
 Mark Todo 3 in-progress.
 
+**If `authMode = s2s`:** Skip this phase entirely — WorkIQ is not available for S2S agents (requires a user token). Mark Todo 3 as completed and proceed to Phase 5.
+
 Ask the user:
 
 ```
@@ -310,7 +344,7 @@ Show the user a summary:
 ✅ Agent provisioned with Agent 365!
 
 Your agent now has:
-  • Blueprint:       Created in Entra ID (run `a365 status --field agentBlueprintId` to retrieve)
+  • Blueprint:       Created in Entra ID (Blueprint ID in `a365.generated.config.json`)
   • Register: Agent appears in the Agent 365 catalog
   [• Observability:  OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:   M365 data access via MCP]                     (if added)

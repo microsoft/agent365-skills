@@ -43,7 +43,7 @@ use_microsoft_opentelemetry(
 This matches the current official sample: initialize the unified distro once at startup,
 then refresh the per-turn OBO token in your message handler.
 
-### S2S configuration (`authMode: S2S`)
+### S2S configuration (`authMode: s2s`)
 
 S2S observability is supported for Python. The token service uses a **3-hop FMI (Federated Managed Identity) token chain**:
 
@@ -257,7 +257,7 @@ async def _acquire_t1_via_client_secret(
 #### Step 3 — Wire in entry point (`main.py` or `app.py`)
 
 ```python
-# authMode: S2S — 3-hop FMI token chain via direct HTTP POST + MSAL, no user OBO.
+# authMode: s2s — 3-hop FMI token chain via direct HTTP POST + MSAL, no user OBO.
 import asyncio
 import logging
 import os
@@ -365,7 +365,7 @@ AGENT365_SPONSOR_USER_EMAIL=<sponsor@contoso.com>
 AGENT365_SPONSOR_USER_NAME=<Sponsor Display Name>
 ```
 
-Message handler baggage setup is **identical** to `user-delegated` / `agentic-identity` — only the token resolver and credential source differ. Do **not** use the OBO per-turn token-registration flow for S2S agents.
+Message handler baggage setup is **identical** to `obo` / `agentic-user` — only the token resolver and credential source differ. Do **not** use the OBO per-turn token-registration flow for S2S agents.
 
 ### Hosting path — OBO token cache (AI Teammate agents)
 
