@@ -9,14 +9,33 @@ nodejs samples.
 ## Required Packages
 
 ### A365 SDK packages (all frameworks)
+
+All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01. Use stable versions — no `--prerelease` flag needed.
+
 ```bash
 npm install \
-  @microsoft/agents-hosting \
+  @microsoft/agents-hosting@^1.2.2 \
   @microsoft/agents-activity \
-  @microsoft/agents-a365-runtime \
-  @microsoft/agents-a365-notifications \
+  @microsoft/agents-a365-runtime@^1.0.0 \
+  @microsoft/agents-a365-notifications@^1.0.0 \
+  @microsoft/agents-a365-tooling@^1.0.0 \
   dotenv \
   express
+```
+
+### MCP tooling adapter (install one for your framework)
+
+For parity with the .NET pattern (`IMcpToolRegistrationService` DI hook in `Program.cs`), Node.js uses a module-level `McpToolRegistrationService` singleton from the framework-specific extension package. Install the one matching your LLM stack:
+
+```bash
+# LangChain
+npm install @microsoft/agents-a365-tooling-extensions-langchain @langchain/mcp-adapters@^1.0.0
+
+# OpenAI Agents SDK
+npm install @microsoft/agents-a365-tooling-extensions-openai
+
+# Claude SDK
+npm install @microsoft/agents-a365-tooling-extensions-claude
 ```
 
 Dev dependencies (all frameworks):
@@ -26,8 +45,11 @@ npm install --save-dev \
   @types/node \
   typescript \
   ts-node \
-  nodemon
+  nodemon \
+  @microsoft/m365agentsplayground@^0.2.18
 ```
+
+`@microsoft/m365agentsplayground` is used by the `test-local` skill for `npm run test-tool`.
 
 ### Framework-specific packages (install one)
 ```bash
@@ -37,8 +59,8 @@ npm install langchain @langchain/openai @langchain/core
 # OpenAI Agents SDK
 npm install @openai/agents
 
-# Claude SDK
-npm install @anthropic-ai/sdk
+# Claude SDK — use claude-agent-sdk (NOT the plain @anthropic-ai/sdk)
+npm install @anthropic-ai/claude-agent-sdk
 
 # Semantic Kernel
 npm install @microsoft/semantic-kernel
@@ -135,6 +157,31 @@ Key rules:
 - `/api/health` MUST be before `authorizeJWT` — health checks must work without auth
 - Production detection: `WEBSITE_SITE_NAME` is set automatically by Azure App Service
 - In dev, `authConfig` is `{}` so JWT validation is skipped
+
+---
+
+## src/mcp-tool-service.ts — MCP Tool Registration (module-level singleton)
+
+For parity with the .NET `IMcpToolRegistrationService` DI hook, Node.js uses a **module-level singleton** of the framework-specific `McpToolRegistrationService` and imports it from `client.ts` (per-turn) and `agent.ts` (initialization). This keeps a single MCP tool loader across the whole process and mirrors .NET's DI registration.
+
+```typescript
+// src/mcp-tool-service.ts
+// A365 MCP — single instance shared by client.ts and agent.ts.
+// Import the extension matching your LLM framework:
+
+// LangChain:
+import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';
+
+// OpenAI Agents SDK:
+// import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-openai';
+
+// Claude SDK:
+// import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-claude';
+
+export const mcpToolService = new McpToolRegistrationService();
+```
+
+The per-turn usage lives in `src/client.ts` (`mcpToolService.addToolServersToAgent(...)`). The `add-workiq-tools` skill writes server entries to `ToolingManifest.json`; this singleton reads them and resolves tools at runtime.
 
 ---
 
@@ -457,7 +504,7 @@ Source: [Agent365-Samples/nodejs/claude/sample-agent](https://github.com/microso
 import { configDotenv } from 'dotenv';
 configDotenv();
 
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic from '@anthropic-ai/claude-agent-sdk';
 import { Authorization, TurnContext } from '@microsoft/agents-hosting';
 
 export interface Client {
