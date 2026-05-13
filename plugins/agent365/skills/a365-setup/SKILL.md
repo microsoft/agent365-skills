@@ -138,7 +138,6 @@ Run all checks **in parallel** (Glob + Grep):
 - `@microsoft/agents-a365-notifications` in `package.json`
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
-- `agentUpn` present in `a365.generated.config.json` (definitive: Agentic User already provisioned)
 
 *Observability signals (from `instrument-observability`) — any one counts:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)

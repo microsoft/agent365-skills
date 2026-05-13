@@ -159,7 +159,6 @@ Glob: **/ToolingManifest.json
 Grep: "isDigitalWorker" in ToolingManifest.json
 Grep: "digital_worker"  in ToolingManifest.json
 Grep: "digitalWorker"   in *.json
-Grep: "agentUpn"        in a365.generated.config.json   ← definitive: Agentic User already provisioned
 ```
 
 **If AI Teammate detected:**
@@ -429,7 +428,7 @@ The cache is written in stages as values become known — always preserve fields
 ```
 
 - `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
-  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, `ToolingManifest.json` exists, or `agentUpn` present in `a365.generated.config.json`
+  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists
   - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
@@ -575,7 +574,7 @@ Add this inline comment wherever the auth handler is wired:
 
 **`obo`** — signed-in user OBO; no additional Azure AD setup required. Uses the signed-in user's existing token.
 
-**`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If `agentUpn` is absent from `a365.generated.config.json` after setup, run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
+**`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If the Agentic User did not get provisioned (e.g. the CLI reported a partial setup), re-run `a365 setup all --aiteammate` (idempotent) or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
 
 **`s2s`** — service principal / autonomous. Authenticates with the agent blueprint's own credentials (service principal). No signed-in user token.
 

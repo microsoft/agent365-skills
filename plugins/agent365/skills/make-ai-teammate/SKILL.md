@@ -58,11 +58,10 @@ hooks:
         Phase 9.7 (Register, Publish, Teams Dev Portal):
         7. a365 setup all --aiteammate (with or without --m365) completed without fatal errors.
         8. Blueprint ID was read from a365.generated.config.json after setup all completed.
-        9. manifest.json was reviewed and updated (or user confirmed Teams Toolkit manages it).
+        9. manifest.json was reviewed (read-only verification — CLI owns the file; not hand-edited).
         10. a365 publish ran (or sideload fallback was offered if auth failed).
         11. Teams Developer Portal bot endpoint was confirmed.
-        12. Agentic User UPN was confirmed from a365.generated.config.json or setup output.
-        13. Smoke test was completed (Teams or AgentsPlayground).
+        12. Smoke test was completed (Teams or AgentsPlayground).
 
         Also verify for all languages:
         - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
@@ -827,27 +826,7 @@ Open **https://dev.teams.microsoft.com** and guide the user:
 
 ---
 
-### Step 9.7.5 — Confirm Agentic User
-
-The **Agentic User** (the agent's M365 identity with a UPN) is provisioned automatically by `a365 setup all --aiteammate`. Confirm it was created:
-
-1. Read `a365.generated.config.json` — look for `agentUpn` (e.g. `my-agent@contoso.onmicrosoft.com`).
-2. If `agentUpn` is present, show the user:
-
-```
-✅ Agentic User provisioned!
-  UPN:          <agentUpn>
-  Blueprint ID: <agentBlueprintId>
-  App ID:       <agentAppId>
-```
-
-3. If `agentUpn` is absent from the generated config, the Agentic User was not yet provisioned. Agentic User creation uses blueprint app-only credentials — no GA consent is required. Instruct the user to re-run `a365 setup all --aiteammate`, or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
-
-> To remove an existing Agentic User if needed: `a365 cleanup instance`
-
----
-
-### Step 9.7.6 — Smoke Test
+### Step 9.7.5 — Smoke Test
 
 Guide the user through a quick end-to-end test:
 
@@ -895,7 +874,6 @@ Your agent now has:
   • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
   • Blueprint registered  (a365 setup all --aiteammate)
   • Published to Teams    (a365 publish)
-  • Agent instance        (Agentic User UPN: <agentUpn>)
   [• Observability:        OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 
