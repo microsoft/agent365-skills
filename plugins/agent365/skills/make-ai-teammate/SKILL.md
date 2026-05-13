@@ -773,6 +773,15 @@ Do NOT overwrite existing values that are already correct.
 
 > **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of direct ID substitution — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
 
+**Remove stale `agenticUserTemplates` block** — if the manifest has a top-level `agenticUserTemplates` property, delete it. This property is not defined in the Teams v1.22 schema (`additionalProperties: false` rejects it) and causes the following publish error:
+
+> ```
+> Manifest is not valid: [ "Property 'agenticUserTemplates' has not been defined and
+> the schema does not allow additional properties. Path 'agenticUserTemplates'..." ]
+> ```
+
+The Agentic User identity is provisioned by `a365 setup all --aiteammate` regardless of whether `agenticUserTemplates` appears in the Teams manifest — declaring it inline is not required. Confirm with the user before deleting if the value looks intentional (e.g. it has populated template fields), otherwise remove it.
+
 If `manifest.json` does **not** exist:
 > "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. To create one, run `a365 manifest init --agent-name <name>` then return here."
 
@@ -795,6 +804,7 @@ In CLI 1.1+, this command:
 |--------|--------|
 | `"Published successfully"` / `"Upload complete"` | Proceed to next step |
 | `"Manifest validation failed"` | Fix `manifest.json` (common: missing `bots[0].botId`, wrong `validDomains`) then retry |
+| `"Property 'agenticUserTemplates' has not been defined and the schema does not allow additional properties"` | Delete the top-level `agenticUserTemplates` block from `manifest.json` — it's not part of the Teams v1.22 schema and the Agentic User is provisioned by `a365 setup all --aiteammate` regardless. Then retry `a365 publish`. |
 | `"Authorization denied"` | Account needs **Teams Administrator** role. Offer sideload fallback below |
 
 **Sideload fallback** (if publish authorization fails — installs for current user only):
