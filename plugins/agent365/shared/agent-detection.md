@@ -64,13 +64,27 @@ Run these checks in parallel (Glob + Grep).
 
 **Strong standalone signals — any one → CEA:**
 ```
+Grep: "copilotAgents"+"customEngineAgents" in manifest.json
+     (any path)                                         → CEA (definitive — Teams v1.22+ AI Teammate marker)
 teamsapp.yml or teamsapp.local.yml                      → CEA (Teams Toolkit project)
-appPackage/manifest.json or manifest/manifest.json      → CEA (Teams app package)
-a365.config.json or a365.generated.config.json          → CEA (already A365-registered)
 @microsoft/teams-ai in package.json                     → CEA (Teams AI SDK, Node.js-specific)
 Microsoft.Teams.AI in .csproj                           → CEA (.NET Teams AI SDK)
 teams-ai in requirements.txt or pyproject.toml          → CEA (Python Teams AI SDK)
 ```
+
+> **Why `copilotAgents.customEngineAgents` is the definitive marker:** Teams v1.22+
+> requires this top-level manifest block to identify a custom-engine agent (vs a plain
+> channel bot). Example:
+> ```json
+> "copilotAgents": {
+>   "customEngineAgents": [
+>     { "type": "bot", "id": "<bot-id-matching-bots[0].botId>" }
+>   ]
+> }
+> ```
+> Plain `appPackage/manifest.json` file presence is NOT sufficient — channel bots also
+> ship a Teams manifest. Always grep for the `copilotAgents` / `customEngineAgents`
+> content, not just file existence.
 
 **Paired signals — CEA only when a structural file signal above is also present:**
 ```
@@ -114,8 +128,7 @@ Grep: "teams.?channel" (regex)   in ToolingManifest.json, manifest.json
 
 ```
 Glob: teamsapp.yml or teamsapp.local.yml                    → Teams Toolkit CEA (allowed)
-Glob: appPackage/manifest.json or manifest/manifest.json    → Teams app package (allowed)
-Glob: a365.config.json or a365.generated.config.json        → already A365-registered (allowed)
+Grep: "copilotAgents"+"customEngineAgents" in manifest.json → CEA (definitive — Teams v1.22+ AI Teammate marker; allowed)
 Grep: @microsoft/teams-ai in package.json                   → Teams AI SDK — Node.js CEA (allowed)
 Grep: Microsoft.Teams.AI in .csproj                         → Teams AI SDK — .NET CEA (allowed)
 Grep: teams-ai in requirements.txt/pyproject.toml           → Teams AI SDK — Python CEA (allowed)

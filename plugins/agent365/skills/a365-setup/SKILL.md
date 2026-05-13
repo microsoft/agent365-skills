@@ -101,9 +101,8 @@ Run all three detection steps **in parallel** (single tool call with multiple Gl
 Check the following signals **in parallel** (Glob + Grep).
 
 *Strong standalone signals — any one → CEA:*
+- Grep `"copilotAgents"` AND `"customEngineAgents"` in `manifest.json` / `appPackage/manifest.json` / `manifest/manifest.json` (definitive — Teams v1.22+ AI Teammate marker; see `shared/agent-detection.md` for the example block)
 - `teamsapp.yml` or `teamsapp.local.yml` exists (Teams Toolkit project)
-- `appPackage/manifest.json` or `manifest/manifest.json` exists (Teams app package)
-- `a365.config.json` or `a365.generated.config.json` exists (already A365-registered)
 - `@microsoft/teams-ai` in package.json (Teams AI SDK — Node.js specific)
 - `Microsoft.Teams.AI` in .csproj (.NET Teams AI SDK)
 - `teams-ai` in requirements.txt or pyproject.toml (Python Teams AI SDK)
