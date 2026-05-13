@@ -254,11 +254,11 @@
       "id": 13,
       "prompt": "Make this agent an AI Teammate",
       "description": "Non-CEA agent selecting AI Teammate from capabilities menu — agentic-user authMode set automatically (not user-selectable in auth mode question)",
-      "expected_output": "Skill outputs intro message. Phase 1A detects a standard non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows capabilities menu first (all 4 options). User selects option 4 (AI Teammate). Auth mode question is NOT shown — authMode is auto-set to agentic-user (agent's own M365 identity). isAITeammate=true stored in cache. Delegates to make-ai-teammate.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects a non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows capabilities menu first (all 4 options). User selects option 4 (AI Teammate). Auth mode question is NOT shown — authMode is auto-set to agentic-user (agent's own M365 identity). isAITeammate=true stored in cache. Delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
-        "Phase 1A: usesTeamsOrCopilot=0 and hasAITeammateChanges=0 detected (standard non-CEA agent)",
+        "Phase 1A: usesTeamsOrCopilot=0 and hasAITeammateChanges=0 detected (non-CEA agent)",
         "Phase 1B: Capabilities menu shown FIRST with all four options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1B: User selects option 4 (AI Teammate)",
         "Phase 1B: Auth mode question NOT shown — AI Teammate always uses agentic-user (agent's own M365 identity, not the caller's token)",
@@ -288,7 +288,7 @@
       "id": 15,
       "prompt": "Set up A365 for this autonomous agent",
       "description": "s2s auth mode — non-AI Teammate agent; user selects s2s after capabilities; WorkIQ is dropped with warning",
-      "expected_output": "Skill outputs intro message. Phase 1A detects standard non-CEA agent. Phase 1B shows capabilities menu first (all 4 options including WorkIQ). User selects Register. Auth mode question shown after capabilities; user selects s2s. If WorkIQ had been selected, skill warns and drops it. authMode=s2s stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects non-CEA agent. Phase 1B shows capabilities menu first (all 4 options including WorkIQ). User selects Register. Auth mode question shown after capabilities; user selects s2s. If WorkIQ had been selected, skill warns and drops it. authMode=s2s stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",

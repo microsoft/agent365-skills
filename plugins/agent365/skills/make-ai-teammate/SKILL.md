@@ -716,7 +716,7 @@ Show the full dry-run output and ask:
 **If yes**, ask: "Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?" Store as `isM365 = true/false`. Then apply:
 
 ```bash
-# Standard AI Teammate (no Teams/Copilot catalog integration)
+# Default AI Teammate (no Teams/Copilot catalog integration)
 a365 setup all --agent-name <name> --aiteammate
 
 # M365-registered AI Teammate (Teams / Microsoft Copilot integration)

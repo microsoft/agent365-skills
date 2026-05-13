@@ -317,7 +317,7 @@ The agent has both an Entra app registration AND an existing A365 Blueprint. You
 
 ### registrationType 3 — All other agents
 
-Standard A365 agent with no M365 custom engine configuration. Fresh setup or Register-only registration.
+Agent (Non AI Teammate) with no M365 custom engine configuration. Fresh setup or Register-only registration.
 
 | Signal | Detection |
 |--------|-----------|
@@ -336,7 +336,7 @@ Agents needing Register capability (registrationType 3, non-AI Teammate) typical
 | No `a365.config.json` | Agent has never been registered |
 | No `ToolingManifest.json` | No WorkIQ tools configured |
 | No `manifest/manifest.json` | Agent has never been published |
-| Agent has observable business logic | Standard LLM agent with no Teams/M365 channel config |
+| Agent has observable business logic | Agent (Non AI Teammate) LLM agent with no Teams/M365 channel config |
 
 If all four signals are true and the user hasn't specified AI Teammate intent, suggest: **"Would you like to register this agent for registration only, or deploy it as an AI Teammate?"**
 
