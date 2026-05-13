@@ -250,6 +250,21 @@ auth required.
 
 ---
 
+### `validate-observability` — Validate A365 Observability Traces
+
+> **Prerequisite:** Agent must have observability instrumented via `instrument-observability`.
+
+Captures the OTLP traffic your A365 SDK emits and reports schema violations and common-mistake findings (missing CallerDetails, broken baggage propagation, etc.) with concrete fix hints. Two flows: live (iterate while the daemon stays up) and one-shot (quick verdict).
+
+**Trigger phrases:**
+```
+"Validate my agent's observability data"    "Check my agent's OTLP traces"
+"Validate observability traces"             "Audit my observability instrumentation"
+"Check for observability issues"            "Validate A365 tracing"
+```
+
+---
+
 ## Starter Prompts
 
 **New agent — full AI Teammate setup in one prompt:**

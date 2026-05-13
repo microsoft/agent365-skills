@@ -1,0 +1,29 @@
+[
+  {
+    "traceId": "bb00000000000000bb00000000000000",
+    "spanId":  "bb00000000000001",
+    "parentSpanId": "",
+    "name": "invoke_agent",
+    "startTimeUnixNano": "2000",
+    "endTimeUnixNano":   "3000",
+    "attributes": {
+      "gen_ai.operation.name":  "invoke_agent",
+      "microsoft.a365.caller.agent.id": "caller-x",
+      "gen_ai.conversation.id": "conv-2",
+      "request.ingestionSource": "Foundry"
+    }
+  },
+  {
+    "traceId": "bb00000000000000bb00000000000000",
+    "spanId":  "bb00000000000002",
+    "parentSpanId": "bb00000000000001",
+    "name": "inference",
+    "startTimeUnixNano": "1000",
+    "endTimeUnixNano":   "1500",
+    "attributes": {
+      "gen_ai.operation.name":  "inference",
+      "gen_ai.conversation.id": "conv-2",
+      "request.ingestionSource": "Foundry"
+    }
+  }
+]

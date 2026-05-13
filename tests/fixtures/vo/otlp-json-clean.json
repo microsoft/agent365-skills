@@ -1,0 +1,63 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "demo-agent"
+            }
+          },
+          {
+            "key": "service.namespace",
+            "value": {
+              "stringValue": "demo"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "Microsoft.Agents.A365.Observability",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "ASNFZ4mrze8BI0VniavN7w==",
+              "spanId": "ASNFZ4mrze8=",
+              "name": "invoke_agent",
+              "kind": 1,
+              "startTimeUnixNano": "1714932000000000000",
+              "endTimeUnixNano": "1714932001000000000",
+              "attributes": [
+                {
+                  "key": "gen_ai.operation.name",
+                  "value": {
+                    "stringValue": "invoke_agent"
+                  }
+                },
+                {
+                  "key": "gen_ai.agent.id",
+                  "value": {
+                    "stringValue": "30ed5699-b157-4e87-bb45-9b0cfb13b8e5"
+                  }
+                },
+                {
+                  "key": "gen_ai.conversation.id",
+                  "value": {
+                    "stringValue": "19:thread@demo"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

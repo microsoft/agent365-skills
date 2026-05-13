@@ -1,0 +1,82 @@
+{
+  "rules": [
+    {
+      "ruleId": "rule-store_publishing_scopes_present",
+      "appliesTo": { "operationName": "invoke_agent" },
+      "check": "trace_must_contain_operation_names",
+      "args":  { "names": ["execute_tool", "inference"] },
+      "severity": "error",
+      "fixHint": "InvokeAgentScope is present but no InferenceScope or ExecuteToolScope was found in the same trace. Both are required for store publishing — see instrument-observability Phase 5.5."
+    },
+    {
+      "ruleId": "rule-s2s_caller_details_required",
+      "appliesTo": { "operationName": "invoke_agent" },
+      "check": "any_attribute_present",
+      "args":  { "prefixes": ["microsoft.a365.caller.", "gen_ai.caller."] },
+      "severity": "error",
+      "fixHint": "S2S agents must populate CallerDetails on InvokeAgentScope.Start(); without it, traces reach the API (200) but stay invisible in the MAC portal."
+    },
+    {
+      "ruleId": "rule-s2s_endpoint_path",
+      "appliesTo": { "operationName": "invoke_agent" },
+      "check": "url_path_pattern",
+      "args":  { "deny": "/observability/", "allow": "/observabilityService/" },
+      "severity": "error",
+      "fixHint": "S2S agent posted to /observability/ instead of /observabilityService/ — set Agent365.Exporter.UseS2SEndpoint=true (.NET) or AGENT365_USE_S2S_ENDPOINT=true (Node.js)."
+    },
+    {
+      "ruleId": "rule-resource_service_name_present",
+      "appliesTo": { "operationName": "*" },
+      "check": "resource_attribute_present",
+      "args":  { "key": "service.name" },
+      "severity": "warning",
+      "fixHint": "service.name resource attribute is missing — set SERVICE_NAME (Node.js/Python) or use_microsoft_opentelemetry(service_name=...)."
+    },
+    {
+      "ruleId": "rule-parent_span_resolution",
+      "appliesTo": { "operationName": "*" },
+      "check": "parent_span_resolves_in_trace",
+      "severity": "warning",
+      "fixHint": "Span has parentSpanId but no matching parent in the same trace's captures — likely the parent emit was lost or the agent broke the parent context."
+    },
+    {
+      "ruleId": "rule-conversation_id_consistency",
+      "appliesTo": { "operationName": "*" },
+      "check": "trace_attribute_consistent",
+      "args":  { "key": "gen_ai.conversation.id" },
+      "severity": "warning",
+      "fixHint": "gen_ai.conversation.id differs across spans within one trace — baggage propagation likely broken; check BaggageBuilder usage in the message handler."
+    },
+    {
+      "ruleId": "rule-baggage_propagation",
+      "appliesTo": { "operationName": "*" },
+      "check": "baggage_keys_present",
+      "args":  { "keys": ["microsoft.a365.agent.id", "microsoft.a365.tenant.id"] },
+      "severity": "warning",
+      "fixHint": "Required baggage keys missing on a non-root span — baggage was set on the InvokeAgent but not propagated to children. Confirm BaggageBuilder.run() wraps the entire handler body."
+    },
+    {
+      "ruleId": "rule-otlp_path_canonical",
+      "appliesTo": { "operationName": "*" },
+      "check": "url_path_does_not_contain",
+      "args":  { "fragment": "/otlp/" },
+      "severity": "warning",
+      "fixHint": "URL contains /otlp/ — Node.js / .NET SDK bug. Status: pending SDK fix; no client-side workaround is correct."
+    },
+    {
+      "ruleId": "rule-fmi_token_audience",
+      "appliesTo": { "operationName": "*" },
+      "check": "resource_attribute_equals_if_present",
+      "args":  { "key": "microsoft.a365.exporter.token_aud", "expected": "api://9b975845-388f-4429-889e-eab1ef63949c/.default" },
+      "severity": "warning",
+      "fixHint": "FMI token audience does not match the Observability API scope — token may be rejected by the gateway."
+    },
+    {
+      "ruleId": "rule-scope_ordering",
+      "appliesTo": { "operationName": "inference" },
+      "check": "child_within_parent_time_window",
+      "severity": "warning",
+      "fixHint": "Child scope start time precedes its parent InvokeAgent start — likely a clock skew or the scope was opened outside the parent's using-block."
+    }
+  ]
+}

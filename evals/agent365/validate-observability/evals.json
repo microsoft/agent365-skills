@@ -1,0 +1,89 @@
+{
+  "skill_name": "validate-observability",
+  "eval_instructions": "These evals exercise the validate-observability skill against canned OTLP captures stored in `tests/fixtures/vo/`. The eval runner should pre-populate `.a365-observability-capture/traces.jsonl` with the relevant fixture content, write a `state.json` with a fake live PID (or leave it absent for one-shot mode tests), then invoke the skill with the listed prompt. Assertions inspect the markdown report printed to the console. The deferred endpoint-override spike (Task 0) means one-shot mode is not yet end-to-end runnable against a real agent — these evals exercise live mode by pre-seeding traces.jsonl directly.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "validate my agent's observability data",
+      "description": "Clean trace produces zero findings — both the schema-driven and common-mistakes validators are silent.",
+      "expected_output": "The skill reads the pre-seeded traces.jsonl, runs schema-driven and common-mistakes validators, and prints a markdown report stating zero errors, zero warnings, zero info findings.",
+      "files": ["tests/fixtures/vo/span-good-invoke.json"],
+      "expectations": [
+        "Phase 0: state.json detected (live mode) OR absent (one-shot mode)",
+        "Phase 1A: traces.jsonl read and grouped by traceId",
+        "schema-driven.js validateSpan called for each span",
+        "common-mistakes.js validateTrace called for each trace",
+        "report.js format called on the merged findings",
+        "Final report shows 0 errors, 0 warnings, 0 info",
+        "Cursor advanced after the run"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "validate my agent's observability data",
+      "description": "Missing required field surfaces a presence_check finding.",
+      "expected_output": "The skill detects the missing gen_ai.conversation.id field and emits one rule-presence_check finding with severity error and a fixHint pointing at the field's role.",
+      "files": ["tests/fixtures/vo/span-bad-missing-field.json"],
+      "expectations": [
+        "schema-driven.js validateSpan emits a rule-presence_check finding",
+        "Finding's metadata.field equals 'gen_ai.conversation.id'",
+        "Finding's severity is 'error'",
+        "Finding's fixHint mentions the field name and its required role",
+        "Markdown report groups the finding under its traceId"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "validate my agent's observability data",
+      "description": "Wrong-type field surfaces a type_conformance finding.",
+      "expected_output": "The skill detects gen_ai.agent.id is an integer (schema declares String) and emits one rule-type_conformance finding with severity error.",
+      "files": ["tests/fixtures/vo/span-bad-wrong-type.json"],
+      "expectations": [
+        "schema-driven.js validateSpan emits a rule-type_conformance finding",
+        "Finding's metadata.field equals 'gen_ai.agent.id'",
+        "Finding's metadata.expected equals 'String'",
+        "Finding's severity is 'error'",
+        "Markdown report shows the type mismatch"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "validate my agent's observability data",
+      "description": "S2S agent without CallerDetails surfaces rule-s2s_caller_details_required.",
+      "expected_output": "The skill detects the invoke_agent span has no microsoft.a365.caller.* (or gen_ai.caller.*) attributes and emits rule-s2s_caller_details_required with severity error.",
+      "files": ["tests/fixtures/vo/trace-bad-no-caller.json"],
+      "expectations": [
+        "common-mistakes.js validateTrace emits rule-s2s_caller_details_required",
+        "Finding fires on the invoke_agent span",
+        "Finding's severity is 'error'",
+        "Finding's fixHint references CallerDetails on InvokeAgentScope.Start() and the MAC portal visibility issue"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "validate my agent's observability data",
+      "description": "Inference span starting before its parent invoke_agent surfaces rule-scope_ordering.",
+      "expected_output": "The skill detects the time-ordering violation and emits rule-scope_ordering with severity warning.",
+      "files": ["tests/fixtures/vo/trace-bad-scope-order.json"],
+      "expectations": [
+        "common-mistakes.js validateTrace emits rule-scope_ordering",
+        "Finding fires on the inference span",
+        "Finding's severity is 'warning'",
+        "Finding's fixHint mentions clock skew or scope-outside-using-block"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "validate my agent's observability data",
+      "description": "JSON and protobuf wire formats produce identical findings on the same logical trace.",
+      "expected_output": "Running the skill twice — once with a JSONL produced from a protobuf POST, once from an equivalent JSON POST — produces identical sets of rule findings (same ruleIds, same severities, same metadata fields). The wire format is invisible to the validator pipeline.",
+      "files": ["tests/fixtures/vo/otlp-protobuf-clean.bin", "tests/fixtures/vo/otlp-json-clean.json"],
+      "expectations": [
+        "decoder.decode() handles both content-types and yields the same uniform shape",
+        "schema-driven.js validateSpan emits the same findings (same count, same ruleIds) for both wire formats",
+        "common-mistakes.js validateTrace emits the same findings for both wire formats",
+        "report.js format produces identical markdown for both runs"
+      ]
+    }
+  ]
+}

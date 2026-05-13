@@ -1,0 +1,667 @@
+{
+  "fields": [
+    {
+      "key": "traceId",
+      "type": "Bytes",
+      "description": "Unique identifier for a trace. All spans from the same trace share this ID. 16-byte array, hex-encoded to 32 chars.",
+      "structural": true,
+      "required": [[]]
+    },
+    {
+      "key": "spanId",
+      "type": "Bytes",
+      "description": "Unique identifier for a span within a trace, assigned when the span is created. 8-byte array, hex-encoded to 16 chars by mappers.",
+      "structural": true,
+      "required": [[]]
+    },
+    {
+      "key": "parentSpanId",
+      "type": "Bytes",
+      "description": "The span_id of this span's parent span. Empty for root spans. 8-byte array, hex-encoded by mappers.",
+      "structural": true,
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool", "inference", "chat"] }], [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent"] }, { "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]]
+    },
+    {
+      "key": "name",
+      "type": "String",
+      "description": "A description of the span's operation. Used by some mappers for operation name resolution.",
+      "structural": true
+    },
+    {
+      "key": "kind",
+      "type": "String",
+      "description": "Span kind indicating the relationship type (Client, Server, Internal, Producer, Consumer).",
+      "structural": true
+    },
+    {
+      "key": "startTimeUnixNano",
+      "type": "UInt64",
+      "description": "Start time of the span in nanoseconds since Unix epoch. Converted to DateTime by mappers.",
+      "structural": true,
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "not_in", "values": ["output_messages"] }]]
+    },
+    {
+      "key": "endTimeUnixNano",
+      "type": "UInt64",
+      "description": "End time of the span in nanoseconds since Unix epoch. Converted to DateTime by mappers.",
+      "structural": true,
+      "required": [[{ "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio"] }], [{ "field": "gen_ai.operation.name", "condition": "not_in", "values": ["invoke_agent", "inference"] }]]
+    },
+    {
+      "key": "status",
+      "type": "Object",
+      "description": "Final status of the span containing Code (Unset/Ok/Error) and optional Message. Mappers extract ErrorType and ErrorMessage from this.",
+      "structural": true
+    },
+    {
+      "key": "gen_ai.operation.name",
+      "type": "String",
+      "description": "Name of the operation being performed.",
+      "examples": ["invoke_agent", "execute_tool", "inference", "chat", "output_messages"],
+      "required": [[]]
+    },
+    {
+      "key": "gen_ai.agent.id",
+      "type": "String",
+      "description": "A365 GUID of the target agent.",
+      "examples": ["30ed5699-b157-4e87-bb45-9b0cfb13b8e5"],
+      "privacy": "EUPI",
+      "required": [[{ "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.agent.name",
+      "type": "String",
+      "description": "Name of the target agent.",
+      "examples": ["GraphAgent", "ScrumAssistant"],
+      "privacy": "CustomerContent",
+      "required": [[{ "field": "request.ingestionSource", "condition": "not_in", "values": ["Foundry"] }]]
+    },
+    {
+      "key": "gen_ai.agent.description",
+      "type": "String",
+      "description": "Description of the target agent.",
+      "examples": ["Looks up Graph", "Helps with scrum"],
+      "privacy": "CustomerContent"
+    },
+    {
+      "key": "gen_ai.conversation.id",
+      "type": "String",
+      "description": "Conversation identifier.",
+      "examples": ["19:threadid@unq.gbl.spaces"],
+      "privacy": "EUPI",
+      "required": [[]]
+    },
+    {
+      "key": "gen_ai.execution.type",
+      "type": "String",
+      "description": "Execution type classifying how the agent was invoked.",
+      "examples": ["HumanToAgent", "Agent2Agent", "EventToAgent"]
+    },
+    {
+      "key": "gen_ai.input.messages",
+      "type": "String",
+      "description": "Request payload or input messages sent to the agent or model (JSON).",
+      "examples": ["Here is the org structure..."],
+      "privacy": "CustomerContent",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.output.messages",
+      "type": "String",
+      "description": "Response payload or output messages returned by the agent or model (JSON).",
+      "examples": ["Here are the results..."],
+      "privacy": "CustomerContent",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.agent.invocation_input",
+      "type": "String",
+      "description": "Full input payload for an agent invocation (JSON).",
+      "privacy": "CustomerContent"
+    },
+    {
+      "key": "gen_ai.agent.invocation_output",
+      "type": "String",
+      "description": "Full output payload from an agent invocation (JSON).",
+      "privacy": "CustomerContent"
+    },
+    {
+      "key": "gen_ai.tool.call.id",
+      "type": "String",
+      "description": "Identifier of the tool call.",
+      "examples": ["call_xmS8WyT3sBrSVbX1uedGw2CA"],
+      "privacy": "EUPI",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }]]
+    },
+    {
+      "key": "gen_ai.tool.name",
+      "type": "String",
+      "description": "Name of the tool being invoked.",
+      "examples": ["get-current-user-email"],
+      "privacy": "CustomerContent",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }]]
+    },
+    {
+      "key": "gen_ai.tool.description",
+      "type": "String",
+      "description": "Description of the tool being invoked.",
+      "examples": ["Returns current user email"],
+      "privacy": "CustomerContent"
+    },
+    {
+      "key": "gen_ai.tool.type",
+      "type": "String",
+      "description": "Tool type classification.",
+      "examples": ["function", "Power Platform Connector", "MCP Server", "API", "Knowledge Source", "bing_grounding", "code_interpreter", "file_search"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }]]
+    },
+    {
+      "key": "gen_ai.provider.name",
+      "type": "String",
+      "description": "AI provider name.",
+      "examples": ["openai"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.system",
+      "type": "String",
+      "description": "AI system name (provider identifier used by OTel semantic conventions).",
+      "examples": ["openai"]
+    },
+    {
+      "key": "gen_ai.request.model",
+      "type": "String",
+      "description": "Model used for inference.",
+      "examples": ["gpt-4o"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.usage.input_tokens",
+      "type": "Int",
+      "description": "Number of input tokens consumed by the model.",
+      "examples": ["133"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "in", "values": ["Foundry"] }]]
+    },
+    {
+      "key": "gen_ai.usage.output_tokens",
+      "type": "Int",
+      "description": "Number of output tokens produced by the model.",
+      "examples": ["24"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "in", "values": ["Foundry"] }]]
+    },
+    {
+      "key": "gen_ai.response.finish_reasons",
+      "type": "StringArray",
+      "description": "Model stop reasons as a JSON array.",
+      "examples": ["[\"ToolCalls\"]"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "in", "values": ["Foundry"] }]]
+    },
+    {
+      "key": "gen_ai.response.finish_reason",
+      "type": "String",
+      "description": "Model stop reason (single value).",
+      "examples": ["stop"]
+    },
+    {
+      "key": "gen_ai.caller.agent.type",
+      "type": "String",
+      "description": "Type classification of the calling agent.",
+      "examples": ["CopilotStudio", "Foundry", "DeclarativeAgent", "Custom"],
+      "required": [[{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]]
+    },
+    {
+      "key": "gen_ai.agent.type",
+      "type": "String",
+      "description": "Type classification of the target agent.",
+      "examples": ["CopilotStudio", "Foundry", "DeclarativeAgent", "Custom"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]]
+    },
+    {
+      "key": "server.address",
+      "type": "String",
+      "description": "Endpoint address of the target service.",
+      "examples": ["app.azurewebsites.net", "api.openai.com"],
+      "privacy": "OII",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "execute_tool", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]]
+    },
+    {
+      "key": "server.port",
+      "type": "String",
+      "description": "Port of the target service.",
+      "examples": ["443"],
+      "privacy": "OII",
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "execute_tool", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]]
+    },
+    {
+      "key": "host.name",
+      "type": "String",
+      "description": "Hostname of the reporting service instance.",
+      "privacy": "OII"
+    },
+    {
+      "key": "correlation.id",
+      "type": "String",
+      "description": "Correlation identifier for request tracing.",
+      "privacy": "EUPI",
+      "required": [[{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "threat.diagnostics.summary",
+      "type": "String",
+      "description": "Security threat diagnostics summary for the span."
+    },
+    {
+      "key": "hiring.manager.id",
+      "type": "String",
+      "description": "HR hiring manager ID associated with the operation.",
+      "privacy": "EUII"
+    },
+    {
+      "key": "gen_ai.caller.tenantid",
+      "type": "String",
+      "description": "Tenant ID of the calling user (for cross-tenant scenarios).",
+      "privacy": "EUPI"
+    },
+    {
+      "key": "gen_ai.tool.server.name",
+      "type": "String",
+      "description": "Hostname of the server hosting the tool.",
+      "privacy": "OII"
+    },
+    {
+      "key": "gen_ai.author.app.id",
+      "type": "String",
+      "description": "AAD app ID of the agent author/creator application.",
+      "privacy": "OII"
+    },
+    {
+      "key": "microsoft.tenant.id",
+      "type": "String",
+      "description": "GUID representing the tenant.",
+      "examples": ["30ed5699-b157-4e87-bb45-9b0cfb13b8e5"],
+      "privacy": "EUPI",
+      "legacy_names": ["tenant.id"],
+      "required": [[]]
+    },
+    {
+      "key": "operation.source",
+      "type": "String",
+      "description": "SDK or service emitting the telemetry (consolidates telemetry.sdk.* and service.name).",
+      "examples": ["A365ObservabilitySDK", "ATG"],
+      "legacy_names": ["telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version", "service.name"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]]
+    },
+    {
+      "key": "microsoft.channel.name",
+      "type": "String",
+      "description": "Channel name through which the interaction occurred.",
+      "examples": ["msteams", "outlook"],
+      "legacy_names": ["gen_ai.channel.name"],
+      "required": [[]]
+    },
+    {
+      "key": "microsoft.channel.link",
+      "type": "String",
+      "description": "Deep link to the channel where the interaction occurred.",
+      "examples": ["https://teams.microsoft.com/l/message/..."],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.channel.link"]
+    },
+    {
+      "key": "microsoft.conversation.item.link",
+      "type": "String",
+      "description": "Deep link to the specific message in the conversation.",
+      "examples": ["https://teams.microsoft.com/l/message/..."],
+      "privacy": "CustomerContent",
+      "legacy_names": ["gen_ai.conversation.item.link"]
+    },
+    {
+      "key": "microsoft.session.id",
+      "type": "String",
+      "description": "Session identifier grouping related interactions.",
+      "examples": ["session-12345"],
+      "privacy": "EUPI",
+      "legacy_names": ["session.id"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "microsoft.session.description",
+      "type": "String",
+      "description": "User-defined session description.",
+      "examples": ["Hiring discussion"],
+      "privacy": "CustomerContent",
+      "legacy_names": ["session.description"]
+    },
+    {
+      "key": "user.id",
+      "type": "String",
+      "description": "Human caller AAD object ID.",
+      "examples": ["16679922-4623-4b74-81df-9cb111735e3c"],
+      "privacy": "EUPI",
+      "legacy_names": ["microsoft.caller.id", "gen_ai.caller.id"],
+      "required": [[]]
+    },
+    {
+      "key": "user.name",
+      "type": "String",
+      "description": "Human caller display name.",
+      "examples": ["John Doe"],
+      "privacy": "EUII",
+      "legacy_names": ["microsoft.caller.name", "gen_ai.caller.name"]
+    },
+    {
+      "key": "user.email",
+      "type": "String",
+      "description": "Human caller UPN (email address).",
+      "examples": ["john.doe@contoso.com"],
+      "privacy": "EUII",
+      "legacy_names": ["microsoft.caller.upn", "gen_ai.caller.upn"],
+      "required": [[]]
+    },
+    {
+      "key": "client.address",
+      "type": "String",
+      "description": "IP address of the human caller.",
+      "examples": ["10.1.2.80"],
+      "privacy": "EUII",
+      "legacy_names": ["gen_ai.caller.client.ip"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]]
+    },
+    {
+      "key": "microsoft.agent.user.id",
+      "type": "String",
+      "description": "A365 user GUID representing the embodied agent identity.",
+      "examples": ["77679922-4623-4b74-81df-9cb111735e3c"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"],
+      "required": [[]]
+    },
+    {
+      "key": "microsoft.agent.user.email",
+      "type": "String",
+      "description": "Agent user email (UPN) of the embodied agent identity. Required for Embodied Agent A2A scenarios.",
+      "examples": ["agentuser@contoso.com"],
+      "privacy": "EUII",
+      "legacy_names": ["microsoft.agent.user.upn", "gen_ai.agent.upn"],
+      "required": [[{ "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]]
+    },
+    {
+      "key": "microsoft.a365.agent.blueprint.id",
+      "type": "String",
+      "description": "Agent blueprint (template) ID.",
+      "examples": ["blueprint-123"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.agent.applicationid"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]]
+    },
+    {
+      "key": "microsoft.a365.agent.platform.id",
+      "type": "String",
+      "description": "Alternate agent identifier for non-GUID scenarios. Only used by 1P agents.",
+      "examples": ["graph-agent-1p"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.agent.platformid"],
+      "required": [[{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney"] }]]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.id",
+      "type": "String",
+      "description": "Caller agent ID in AgentToAgent scenarios.",
+      "examples": ["agent-123"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.caller.agent.id"]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.name",
+      "type": "String",
+      "description": "Caller agent name in Embodied Agent A2A scenarios.",
+      "examples": ["GraphAgent"],
+      "privacy": "CustomerContent",
+      "legacy_names": ["gen_ai.caller.agent.name"],
+      "required": [[{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }, { "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }]]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.blueprint.id",
+      "type": "String",
+      "description": "Caller agent blueprint ID in Embodied Agent A2A scenarios.",
+      "examples": ["blueprint-abc"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.caller.agent.applicationid"],
+      "required": [[{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }, { "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }]]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.user.id",
+      "type": "String",
+      "description": "Caller agent user ID in Embodied Agent A2A scenarios.",
+      "examples": ["77679922-4623-4b74-81df-9cb111735e3c"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.caller.agent.userid"],
+      "required": [[{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }, { "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }]]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.user.email",
+      "type": "String",
+      "description": "Caller agent UPN in AgentToAgent scenarios.",
+      "examples": ["johnAgent.doe@contoso.com"],
+      "privacy": "EUII",
+      "legacy_names": ["microsoft.a365.caller.agent.user.upn", "gen_ai.caller.agent.upn"]
+    },
+    {
+      "key": "microsoft.a365.caller.agent.platform.id",
+      "type": "String",
+      "description": "Alternate caller agent identifier for non-GUID scenarios in AgentToAgent.",
+      "examples": ["graph-agent-1p"],
+      "privacy": "EUPI",
+      "legacy_names": ["gen_ai.caller.agent.platformid"]
+    },
+    {
+      "key": "microsoft.a365.agent.thought.process",
+      "type": "String",
+      "description": "Agent reasoning or thought process during inference.",
+      "examples": ["User intent resolved via Graph lookup"],
+      "privacy": "CustomerContent",
+      "legacy_names": ["gen_ai.agent.thought.process"]
+    },
+    {
+      "key": "gen_ai.tool.call.arguments",
+      "type": "String",
+      "description": "Arguments passed to the tool (JSON).",
+      "examples": ["{'name':'input'}"],
+      "privacy": "CustomerContent",
+      "legacy_names": ["gen_ai.tool.arguments"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.tool.call.result",
+      "type": "String",
+      "description": "Result returned from the tool (JSON).",
+      "examples": ["{'value':'user@contoso.com'}"],
+      "privacy": "CustomerContent",
+      "legacy_names": ["gen_ai.event.content"],
+      "required": [[{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]]
+    },
+    {
+      "key": "gen_ai.event.content",
+      "type": "String",
+      "description": "Legacy SDK catch-all event content key, superseded by span-type-specific attributes.",
+      "privacy": "CustomerContent"
+    }
+  ],
+  "required_rules": [
+    {
+      "conditions": [
+        []
+      ],
+      "fields": [
+        { "key": "traceId" },
+        { "key": "spanId" },
+        { "key": "gen_ai.operation.name" },
+        { "key": "gen_ai.conversation.id" },
+        { "key": "microsoft.tenant.id", "legacy_names": ["tenant.id"] },
+        { "key": "microsoft.channel.name", "legacy_names": ["gen_ai.channel.name"] },
+        { "key": "user.id", "legacy_names": ["microsoft.caller.id", "gen_ai.caller.id"] },
+        { "key": "user.email", "legacy_names": ["microsoft.caller.upn", "gen_ai.caller.upn"] },
+        { "key": "microsoft.agent.user.id", "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool", "inference", "chat"] }],
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent"] }, { "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]
+      ],
+      "fields": [
+        { "key": "parentSpanId" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "not_in", "values": ["output_messages"] }]
+      ],
+      "fields": [
+        { "key": "startTimeUnixNano" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio"] }],
+        [{ "field": "gen_ai.operation.name", "condition": "not_in", "values": ["invoke_agent", "inference"] }]
+      ],
+      "fields": [
+        { "key": "endTimeUnixNano" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.agent.id" },
+        { "key": "microsoft.a365.agent.blueprint.id", "legacy_names": ["gen_ai.agent.applicationid"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "not_in", "values": ["Foundry"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.agent.name" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.input.messages" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.output.messages" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.tool.call.id" },
+        { "key": "gen_ai.tool.name" },
+        { "key": "gen_ai.tool.type" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.provider.name" },
+        { "key": "gen_ai.request.model" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["inference", "chat"] }, { "field": "request.ingestionSource", "condition": "in", "values": ["Foundry"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.usage.input_tokens" },
+        { "key": "gen_ai.usage.output_tokens" },
+        { "key": "gen_ai.response.finish_reasons" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.caller.agent.type" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.agent.type" },
+        { "key": "operation.source", "legacy_names": ["telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version", "service.name"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["invoke_agent", "execute_tool", "inference", "chat"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]
+      ],
+      "fields": [
+        { "key": "server.address" },
+        { "key": "server.port" }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "in", "values": ["CopilotStudio", "Sydney"] }]
+      ],
+      "fields": [
+        { "key": "correlation.id" },
+        { "key": "microsoft.session.id", "legacy_names": ["session.id"] },
+        { "key": "microsoft.a365.agent.platform.id", "legacy_names": ["gen_ai.agent.platformid"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "request.ingestionSource", "condition": "not_in", "values": ["CopilotStudio", "Sydney", "Foundry"] }]
+      ],
+      "fields": [
+        { "key": "client.address", "legacy_names": ["gen_ai.caller.client.ip"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }]
+      ],
+      "fields": [
+        { "key": "microsoft.agent.user.email", "legacy_names": ["microsoft.agent.user.upn", "gen_ai.agent.upn"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "microsoft.a365.caller.agent.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.caller.agent.id"] }, { "field": "microsoft.agent.user.id", "condition": "in", "values": ["*"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }, { "field": "microsoft.agent.user.id", "condition": "not_in", "values": ["00000000-0000-0000-0000-000000000000"], "legacy_names": ["gen_ai.agent.user.id", "gen_ai.agent.userid"] }]
+      ],
+      "fields": [
+        { "key": "microsoft.a365.caller.agent.name", "legacy_names": ["gen_ai.caller.agent.name"] },
+        { "key": "microsoft.a365.caller.agent.blueprint.id", "legacy_names": ["gen_ai.caller.agent.applicationid"] },
+        { "key": "microsoft.a365.caller.agent.user.id", "legacy_names": ["gen_ai.caller.agent.userid"] }
+      ]
+    },
+    {
+      "conditions": [
+        [{ "field": "gen_ai.operation.name", "condition": "in", "values": ["execute_tool"] }, { "field": "request.ingestionSource", "condition": "not_in", "values": ["Sydney"] }]
+      ],
+      "fields": [
+        { "key": "gen_ai.tool.call.arguments", "legacy_names": ["gen_ai.tool.arguments"] },
+        { "key": "gen_ai.tool.call.result", "legacy_names": ["gen_ai.event.content"] }
+      ]
+    }
+  ]
+}
