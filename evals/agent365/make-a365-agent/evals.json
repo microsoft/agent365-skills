@@ -5,7 +5,7 @@
     {
       "id": 1,
       "prompt": "Run a365 setup for this agent",
-      "description": "Register path (Standard Agent) — .NET AgentFramework, delegated from a365-setup",
+      "description": "Register path (Agent (Non AI Teammate)) — .NET AgentFramework, delegated from a365-setup",
       "expected_output": "Skill reads context (capabilities=Register, usesTeamsOrCopilot=0) from session. Creates 3 todos (Register, Add Observability optional, Add WorkIQ optional). Runs a365 setup all --dry-run, confirms, runs setup. Shows Setup Summary verbatim. Then always offers observability (Phase 3) and WorkIQ (Phase 4) as optional add-ons.",
       "files": [],
       "expectations": [
@@ -27,7 +27,7 @@
     {
       "id": 2,
       "prompt": "Set up observability for this agent",
-      "description": "Standard Agent (Node.js LangChain) — user accepts observability offer in Phase 3",
+      "description": "Agent (Non AI Teammate) (Node.js LangChain) — user accepts observability offer in Phase 3",
       "expected_output": "Skill runs a365 setup all, then in Phase 3 user says yes to observability — instrument-observability SKILL.md is read and followed. Phase 4 WorkIQ offer shown regardless.",
       "files": [],
       "expectations": [

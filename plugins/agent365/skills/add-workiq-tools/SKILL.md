@@ -121,7 +121,7 @@ Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
-    To use WorkIQ, switch your agent to Assistive mode (obo)
+    To use WorkIQ, switch your agent to On-Behalf-Of mode (`obo`)
     and re-run this skill.
 ```
 

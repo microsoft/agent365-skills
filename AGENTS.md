@@ -223,7 +223,7 @@ Skills reference shared docs via `Read ${CLAUDE_PLUGIN_ROOT}/shared/<file>.md`.
 - **Stage 1 — Agent kind:** AI Teammate or Agent (Non AI Teammate) (pre-filled from `usesTeamsOrCopilot` cache if available).
 - **Stage 2 — Auth mode:** depends on agent kind:
   - AI Teammate → `obo` (signed-in user OBO) or `agentic-user` (agent's own Azure AD user — persistent M365 identity)
-  - Agent (Non AI Teammate) → `obo` (Assistive / OBO) or `s2s` (Autonomous / Service Principal, no user token)
+  - Agent (Non AI Teammate) → `obo` (On-Behalf-Of) or `s2s` (Service Principal, no user token)
 
 All three `authMode` values use an auth handler reference in SDK code — the difference is Azure AD provisioning. For OBO paths: .NET reads `authHandlerName` from config (`AgentApplication:AgenticAuthHandlerName`); Node.js passes `agentApplication.authorization` (the auth object) to `RefreshObservabilityToken`; Python uses `auth_handler_id=self.auth_handler_name` (from config) in `exchange_token()` — never hardcode `"AGENTIC"`. Agent IDs are always resolved dynamically from TurnContext — .NET: `turnContext.Activity.GetAgenticInstanceId()` (service principal object ID); Node.js/Python: `recipient.agenticAppId` / `agentic_app_id`. Results are cached in `.a365-workspace-detection.json` under `agentType` and `authMode` fields so subsequent skill invocations skip re-questioning. If `authMode = s2s` and the skill is `add-workiq-tools`, the skill exits immediately — WorkIQ is not available for s2s agents (requires a delegated OBO token).
 

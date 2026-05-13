@@ -264,7 +264,7 @@ Then create all todos for the path and mark Todo 1 in-progress:
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-ai-teammate skill`
 
-**Standard path** — `registrationType = 3, isAITeammate = false` (3 todos total):
+**Agent (Non AI Teammate) path** — `registrationType = 3, isAITeammate = false` (3 todos total):
 - Todo 1: `Step 1: Install and Verify All Prerequisites`
 - Todo 2: `Step 2: Ensure Prerequisites and Environment Configuration`
 - Todo 3: `Step 3: Run the make-a365-agent skill`
@@ -286,7 +286,7 @@ Then create all todos for the path and mark Todo 1 in-progress:
 
 **RULE 7 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
 - **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
-- **Standard paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
+- **Agent (Non AI Teammate) paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 
 ---
 
@@ -714,7 +714,7 @@ The `make-ai-teammate` skill handles everything: code generation, a365.config.js
 
 ---
 
-**Standard paths** (`isAITeammate = false` — Register, Observability, WorkIQ):
+**Agent (Non AI Teammate) paths** (`isAITeammate = false` — Register, Observability, WorkIQ):
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-a365-agent/SKILL.md` and follow it from the beginning.
 

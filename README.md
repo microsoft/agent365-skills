@@ -89,8 +89,8 @@ a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 │     agentic-user (agent's own M365 identity)      └─ add-workiq-tools          (optional, offered automatically)
 │
 └─ Agent (Non AI Teammate) → make-a365-agent  (Blueprint + Entra permissions)
-      obo (Assistive) or                       ├─ instrument-observability  (optional, offered automatically)
-      s2s (Autonomous)                         └─ add-workiq-tools          (optional, obo only)
+      obo (On-Behalf-Of) or                    ├─ instrument-observability  (optional, offered automatically)
+      s2s (Service Principal)                  └─ add-workiq-tools          (optional, obo only)
 
 test-local  ← standalone; run at any point to test your agent locally
 ```
@@ -153,14 +153,14 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 ### `make-a365-agent` — Provision Agent (Non AI Teammate) Agents
 
-Provisions an **Agent (Non AI Teammate)** with Agent 365. A Standard Agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
+Provisions an **Agent (Non AI Teammate)** with Agent 365. A Agent (Non AI Teammate) has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
-> **Taxonomy:** Agent (Non AI Teammate) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Agent (Non AI Teammate), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
+> **Taxonomy:** Agent (Non AI Teammate) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Agent (Non AI Teammate), but not all Agent (Non AI Teammate)s are CEAs. Other Agent (Non AI Teammate) types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
 >
-> CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate.
+> CEA is the primary supported Agent (Non AI Teammate) path. CEA is **not** supported as an AI Teammate.
 
-- **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
-- **Autonomous (S2S / Service Principal)** — runs independently, no user required
+- **`obo` (On-Behalf-Of)** — acts on behalf of the signed-in user via On-Behalf-Of flow
+- **`s2s` (Service Principal, no user token)** — runs independently with service principal credentials, no user required
 
 Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirmed, but can also be called directly.
 
@@ -168,7 +168,7 @@ Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirm
 |-----------|-------------|
 | **Register** | Blueprint + Entra permissions. Agent appears in the Agent 365 catalog. |
 | **Register + Observability** | Same, then invokes `instrument-observability`. |
-| **Observability** (Custom Engine Agent / Standard Agent) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
+| **Observability** (Custom Engine Agent / Agent (Non AI Teammate)) | Blueprint + permissions, then invokes `instrument-observability`. Supports both `obo` (On-Behalf-Of) and `s2s` (Service Principal). |
 | **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
 
 Always shows a dry-run preview before applying anything. `a365 setup all` is idempotent — safe to re-run. WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens; users consent on first data access.
@@ -186,7 +186,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 ### `add-workiq-tools` — Add WorkIQ MCP servers
 
 > **Prerequisite:** `a365-setup` must be run first.
-> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates and Agent (Non AI Teammate) Assistive (OBO). Not available for Standard Agent Autonomous (S2S).
+> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates (`agentic-user`) and Agent (Non AI Teammate) with `obo` (On-Behalf-Of). Not available for Agent (Non AI Teammate) with `s2s` (Service Principal).
 
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
@@ -214,11 +214,11 @@ wiring any code, asks a two-stage question to determine **agent kind** and **aut
 
 **Stage 1 — Agent kind:**
 - **AI Teammate**: has Agentic User with UPN; then asks whether it uses `obo` (signed-in user) or `agentic-user` (agent's own M365 identity). **Both support Observability and WorkIQ.**
-- **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal). **Observability supports both; WorkIQ is obo only (Assistive mode).**
+- **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `obo` (On-Behalf-Of) or `s2s` (Service Principal, no user token). **Observability supports both; WorkIQ requires `obo` (delegated user token).**
 
 **Wiring by auth mode:**
-- **obo / agentic-user (Assistive OBO)**: `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
-- **Autonomous S2S** (all languages): creates a scaffold token-service file per language (`Observability/ObservabilityTokenService.cs` for .NET, `observability/observability-token-service.ts` for Node.js, `observability/observability_token_service.py` for Python) that acquires the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials and refreshes every 50 min — no per-turn token call
+- **`obo` / `agentic-user`** (OBO token exchange): `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
+- **`s2s`** (Service Principal, all languages): creates a scaffold token-service file per language (`Observability/ObservabilityTokenService.cs` for .NET, `observability/observability-token-service.ts` for Node.js, `observability/observability_token_service.py` for Python) that acquires the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials and refreshes every 50 min — no per-turn token call
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 

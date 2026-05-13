@@ -317,13 +317,13 @@ The agent has both an Entra app registration AND an existing A365 Blueprint. You
 
 ### registrationType 3 — All other agents
 
-Standard A365 agent with no M365 custom engine configuration. Fresh setup or Register-only registration.
+Agent (Non AI Teammate) with no M365 custom engine configuration. Fresh setup or Register-only registration.
 
 | Signal | Detection |
 |--------|-----------|
 | No M365 signals | Step 1 greps return nothing |
 | No existing a365 config | `a365.config.json` absent |
-| Standard agent framework | dotnet-agentframework or nodejs-langchain detected |
+| Common agent framework detected | dotnet-agentframework or nodejs-langchain |
 
 **Pre-fill:** `registrationType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
 
@@ -336,7 +336,7 @@ Agents needing Register capability (registrationType 3, non-AI Teammate) typical
 | No `a365.config.json` | Agent has never been registered |
 | No `ToolingManifest.json` | No WorkIQ tools configured |
 | No `manifest/manifest.json` | Agent has never been published |
-| Agent has observable business logic | Standard LLM agent with no Teams/M365 channel config |
+| Agent has observable business logic | Agent (Non AI Teammate) LLM agent with no Teams/M365 channel config |
 
 If all four signals are true and the user hasn't specified AI Teammate intent, suggest: **"Would you like to register this agent for registration only, or deploy it as an AI Teammate?"**
 
@@ -498,26 +498,26 @@ AskUserQuestion:
   question: |
     How does this Agent (Non AI Teammate) execute?
 
-    1 — Autonomous (S2S / Service Principal)
+    1 — Service Principal (s2s, no user token)
         Agent runs independently as itself — no signed-in user required.
         Authenticates with Entra App ID or Agent Blueprint credentials.
         → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/authentication-flow
 
-    2 — Assistive (OBO)
-        Agent acts on behalf of the signed-in user via On-Behalf-Of flow.
+    2 — On-Behalf-Of (obo)
+        Agent acts on behalf of the signed-in user via the OBO token exchange.
         → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
 
     ✅ Both modes work with Observability
-    ❌  Autonomous (S2S) cannot use WorkIQ tools — WorkIQ requires a delegated user token (OBO)
+    ❌  s2s (Service Principal) cannot use WorkIQ tools — WorkIQ requires a delegated user token (obo)
   options:
-    - "1 — Autonomous (S2S / Service Principal)"
-    - "2 — Assistive (OBO)"
+    - "1 — Service Principal (s2s, no user token)"
+    - "2 — On-Behalf-Of (obo)"
 ```
 
 | Choice | `authMode` |
 |--------|-----------|
-| Autonomous (S2S / Service Principal) | `s2s` |
-| Assistive (OBO) | `obo` |
+| Service Principal (s2s, no user token) | `s2s` |
+| On-Behalf-Of (obo) | `obo` |
 
 ---
 
@@ -581,7 +581,7 @@ Add this inline comment wherever the auth handler is wired:
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
-    To use WorkIQ, switch your agent to Assistive mode (obo) and re-run this skill.
+    To use WorkIQ, switch your agent to On-Behalf-Of mode (`obo`) and re-run this skill.
 ```
 
 Do **not** proceed. Do **not** show a server list. End the session.
