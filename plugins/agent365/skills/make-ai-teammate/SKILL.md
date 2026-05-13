@@ -750,53 +750,35 @@ node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint
 
 ---
 
-### Step 9.7.2 — Update `manifest.json`
+### Step 9.7.2 — Verify `manifest.json` (do NOT hand-edit)
 
 **Glob** for `manifest.json` or `appPackage/manifest.json`.
 
-If found, **read** it and check each field below. If a field is missing, **add it**; if a field exists with a different value than expected, **update it** using values from `a365.generated.config.json`:
+**The CLI owns this file.** `a365 setup all --aiteammate` (Step 9.7.1) creates or updates the manifest with the correct `$schema` (Teams v1.22+), `manifestVersion`, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents`, and `validDomains` based on `a365.generated.config.json`. `a365 publish` (Step 9.7.3) re-substitutes IDs at package time. **Do NOT hand-write or modify these fields in this step** — let the CLI generate them.
 
-| Field | Value | Action if missing |
-|-------|-------|---|
-| `$schema` | `https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json` (Teams 1.22+ for AI Teammates) | Add |
-| `manifestVersion` | `"1.22"` | Add |
-| `version` | bump minor (e.g. `1.0.0` → `1.0.1`) | Set to `1.0.0` |
-| `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) | Add |
-| `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) | Add `bots` array with one entry |
-| `bots[0].supportsFiles` | `false` | Add |
-| `bots[0].isNotificationOnly` | `false` | Add |
-| `copilotAgents.customEngineAgents` | **AI Teammate marker (REQUIRED in v1.22+)** — `[{ "id": "<agentAppId>", "type": "bot" }]` where `<agentAppId>` matches `bots[0].botId`. This top-level block is what distinguishes an AI Teammate from a regular Teams bot. Without it, the agent will publish as a plain Teams bot. | **Add the entire `copilotAgents` block** if absent |
-| `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) | Add as `[]` and append the domain |
-| `webApplicationInfo.id` | same as `bots[0].botId` | Add |
+This step is a **read-only verification**. Read the manifest and confirm to the user:
 
-Do NOT overwrite existing values that are already correct.
+- ✅ File exists at `manifest.json` or `appPackage/manifest.json`
+- ✅ `$schema` references a Teams v1.22+ schema
+- ✅ `bots[0].botId` is populated (or contains a Teams Toolkit token like `${{TEAMS_APP_ID}}`)
+- ✅ `copilotAgents.customEngineAgents` block is present (the AI Teammate marker — distinguishes an AI Teammate from a regular Teams bot)
 
-Example of the required `copilotAgents` block (top-level — sibling of `bots`, NOT nested inside it):
+If anything looks missing or wrong, re-run `a365 setup all --aiteammate` (idempotent) — the CLI will regenerate the missing fields. Do NOT patch them by hand.
+
+For reference, the AI Teammate marker block looks like this (top-level — sibling of `bots`, not nested inside it):
 
 ```json
 "copilotAgents": {
   "customEngineAgents": [
-    {
-      "id": "<agentAppId — same as bots[0].botId>",
-      "type": "bot"
-    }
+    { "id": "<agentAppId — same as bots[0].botId>", "type": "bot" }
   ]
 }
 ```
 
-> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of direct ID substitution — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
-
-**Remove stale `agenticUserTemplates` block** — if the manifest has a top-level `agenticUserTemplates` property, delete it. This property is not defined in the Teams v1.22 schema (`additionalProperties: false` rejects it) and causes the following publish error:
-
-> ```
-> Manifest is not valid: [ "Property 'agenticUserTemplates' has not been defined and
-> the schema does not allow additional properties. Path 'agenticUserTemplates'..." ]
-> ```
-
-The Agentic User identity is provisioned by `a365 setup all --aiteammate` regardless of whether `agenticUserTemplates` appears in the Teams manifest — declaring it inline is not required. Confirm with the user before deleting if the value looks intentional (e.g. it has populated template fields), otherwise remove it.
+> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of literal IDs — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
 
 If `manifest.json` does **not** exist:
-> "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. To create one, run `a365 manifest init --agent-name <name>` then return here."
+> "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. Otherwise, re-run `a365 setup all --aiteammate` — the CLI will generate it."
 
 Stop until the user confirms whether to continue.
 
@@ -809,15 +791,14 @@ a365 publish
 ```
 
 In CLI 1.1+, this command:
-1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (so step 9.7.2 manual edits are usually redundant — the CLI handles ID substitution).
+1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (the CLI handles ID substitution end-to-end; Step 9.7.2 is read-only verification).
 2. Packages the manifest + icons into `manifest.zip` (or `appPackage.zip` for Teams Toolkit projects).
 3. Attempts upload to the Teams App Catalog; if direct upload is not possible (e.g. user lacks Teams Administrator role), prints upload instructions for **Microsoft 365 Admin Center → Agents → All agents → Upload custom agent** using the produced `manifest.zip`.
 
 | Output | Action |
 |--------|--------|
 | `"Published successfully"` / `"Upload complete"` | Proceed to next step |
-| `"Manifest validation failed"` | Fix `manifest.json` (common: missing `bots[0].botId`, wrong `validDomains`) then retry |
-| `"Property 'agenticUserTemplates' has not been defined and the schema does not allow additional properties"` | Delete the top-level `agenticUserTemplates` block from `manifest.json` — it's not part of the Teams v1.22 schema and the Agentic User is provisioned by `a365 setup all --aiteammate` regardless. Then retry `a365 publish`. |
+| `"Manifest validation failed"` (any schema error) | Re-run `a365 setup all --aiteammate` (idempotent) so the CLI regenerates the manifest fields, then retry `a365 publish`. If the error persists, show the CLI output verbatim to the user and report to the A365 CLI team — do NOT hand-edit `manifest.json`. |
 | `"Authorization denied"` | Account needs **Teams Administrator** role. Offer sideload fallback below |
 
 **Sideload fallback** (if publish authorization fails — installs for current user only):
