@@ -282,10 +282,10 @@ Check `.csproj` for `Microsoft.Agents.A365.Tooling`:
 
 If missing, install core + the adapter for the detected framework:
 ```bash
-dotnet add package Microsoft.Agents.A365.Tooling --prerelease
-dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease
+dotnet add package Microsoft.Agents.A365.Tooling
+dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 # or for Semantic Kernel:
-# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel --prerelease
+# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel
 ```
 
 #### 4B — Register services in Program.cs
@@ -597,6 +597,77 @@ If yes, invoke the `test-local` skill.
 
 ---
 
+## MCP CLI Commands Reference
+
+All commands the skill uses — show this table to the user on request.
+
+| Command | What it does | Who |
+|---------|-------------|-----|
+| `a365 develop list-available` | Full WorkIQ server catalog with V1/V2 labels | Developer |
+| `a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"` | Writes selected servers to `ToolingManifest.json` — no permissions yet | Developer |
+| `a365 develop list-configured` | Shows servers currently in `ToolingManifest.json` | Developer |
+| `a365 develop get-token` | Browser auth → bearer token for local testing | Developer |
+| `a365 develop get-token --resource mcp -o raw` | Raw token string (pipe to clipboard or `.env`) | Developer |
+| `a365 setup permissions mcp` | Grants OAuth2 delegated scopes for all servers in manifest | **Global Admin** |
+| `a365 setup permissions mcp --remove-legacy-scopes --dry-run` | Preview removal of V1 shared-audience scopes (V1→V2 migration) | **Global Admin** |
+| `a365 setup permissions mcp --remove-legacy-scopes` | Apply V1 scope removal | **Global Admin** |
+| `a365 develop add-permissions` | Grant permissions for a custom client app (not blueprint) | Developer (`Application.ReadWrite.All`) |
+| `a365 setup all` | Provision blueprint AND grant MCP permissions in one step | Developer |
+| `a365 develop-mcp` | Manage Dataverse-hosted MCP servers (separate command) | Developer |
+
+---
+
+## MCP Permissions by Server
+
+All WorkIQ servers require **delegated (OBO) permissions** — this is why `authMode = s2s` blocks WorkIQ entirely. The agent code wires the unified scope `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level by `a365 setup permissions mcp`.
+
+| WorkIQ Server | V1/V2 | Graph Delegated Scopes | Signed-in user required? |
+|---------------|-------|------------------------|--------------------------|
+| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` | ✅ Yes |
+| Work IQ Calendar | V2 | `Calendars.ReadWrite` | ✅ Yes |
+| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` | ✅ Yes |
+| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` | ✅ Yes |
+| Work IQ OneDrive | V2 | `Files.ReadWrite.All` | ✅ Yes |
+| Work IQ Word | V2 | `Files.ReadWrite.All` | ✅ Yes |
+| Work IQ User | V2 | `User.Read`, `Presence.Read.All` | ✅ Yes |
+| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` | ✅ Yes |
+| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) | ✅ Yes |
+
+> **agentic-user path:** The Agentic User identity (AI Teammate) satisfies the "signed-in user" requirement — `a365 setup all --aiteammate` provisions the Agentic User and grants all delegated scopes to it. WorkIQ calls are made on behalf of the Agentic User, not the human caller.
+
+---
+
+## Permissions Workflow
+
+```
+Developer                                  Global Administrator
+─────────────────────────────────          ──────────────────────────────────────
+1. a365 develop list-available
+   (browse catalog)
+
+2. a365 develop add-mcp-servers
+   "Work IQ Mail" "Work IQ Calendar"
+   → writes ToolingManifest.json
+   → NO permissions granted yet
+
+3a. No blueprint yet:
+    a365 setup all
+    → provisions blueprint
+    → grants MCP permissions ✅
+
+3b. Blueprint already exists:
+    Share ToolingManifest.json ───────→   a365 setup permissions mcp
+    with admin                             (grants OAuth2 delegated scopes)
+                                           → permissions granted ✅
+
+4. a365 develop get-token
+   set BEARER_TOKEN in .env
+   set SKIP_TOOLING_ON_ERRORS=true
+   → test locally ✅
+```
+
+---
+
 ## Error Handling
 
 | Situation | Action |
@@ -608,6 +679,7 @@ If yes, invoke the `test-local` skill.
 | `add-mcp-servers` fails | Run `a365 develop list-available` again to verify exact server name spelling |
 | Tooling package install fails | Check NuGet/npm/pip registry access; verify runtime is installed |
 | Build fails after wiring | Do not revert; show error and offer to debug |
+| 403 from WorkIQ at runtime | GA has not run `a365 setup permissions mcp` — share `ToolingManifest.json` with admin |
 | Token errors at runtime | Run `a365 develop get-token`; set env vars; enable `SKIP_TOOLING_ON_ERRORS=true` |
 
 ---

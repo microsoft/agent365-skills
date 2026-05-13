@@ -170,11 +170,29 @@ and bearer token env vars are not used — token exchange happens per-audience v
 |----------|---------|-----|
 | Blueprint not yet created | `a365 setup all` (reads manifest automatically) | Developer |
 | Blueprint already exists | `a365 setup permissions mcp` | **Global Administrator** |
+| V1→V2 migration (remove legacy scopes) | `a365 setup permissions mcp --remove-legacy-scopes` | **Global Administrator** |
+| Custom client app | `a365 develop add-permissions` | Developer (needs `Application.ReadWrite.All`) |
 
-The GA must run these commands from the project directory (where `a365.config.json` lives):
+The GA must run from the project directory (where `a365.config.json` lives):
 ```bash
 a365 setup permissions mcp
 ```
+
+### Permissions per server
+
+All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level.
+
+| WorkIQ Server | V1/V2 | Graph Delegated Scopes |
+|---------------|-------|------------------------|
+| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` |
+| Work IQ Calendar | V2 | `Calendars.ReadWrite` |
+| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` |
+| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
+| Work IQ OneDrive | V2 | `Files.ReadWrite.All` |
+| Work IQ Word | V2 | `Files.ReadWrite.All` |
+| Work IQ User | V2 | `User.Read`, `Presence.Read.All` |
+| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` |
+| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) |
 
 ---
 

@@ -31,7 +31,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. authMode was collected from the user (obo/s2s/agentic-user) and written to .a365-workspace-detection.json.
+        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -139,11 +139,12 @@ Run all checks **in parallel** (Glob + Grep):
 - `@microsoft/agents-a365-notifications` in `package.json`
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
+- `agentUpn` present in `a365.generated.config.json` (definitive: Agentic User already provisioned)
 
 *Observability signals (from `instrument-observability`) — any one counts:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
 - `@microsoft/agents-a365-observability` or `@microsoft/opentelemetry` in `package.json` (Node.js)
-- `microsoft-agents-a365-observability-core` in `requirements.txt` or `pyproject.toml` (Python)
+- `microsoft-agents-a365-observability-core` or `microsoft-opentelemetry` in `requirements.txt` or `pyproject.toml` (Python)
 - `A365 Observability` comment in any `src/**/*.ts`, `**/*.cs`, or `**/*.py` file
 
 If at least one signal from **each** category is found → `hasAITeammateChanges = 1`
@@ -171,7 +172,7 @@ Reply **yes** to confirm, or describe any corrections.
 Examples: "language is NodeJS", "it's a Custom Engine Agent", "it's not Teams".
 ```
 
-- If the user replies **yes / y**: accept all values and proceed to the blueprint question (if applicable), then the auth mode question.
+- If the user replies **yes / y**: accept all values and proceed to the blueprint question (if applicable), then the capabilities question.
 - If the user says it's a CEA / Custom Engine Agent: set `usesTeamsOrCopilot = 1` and proceed.
 - If the user says it's Non-M365 / no Teams integration: set `usesTeamsOrCopilot = 0` and proceed.
 - If the user describes other corrections: update the relevant variable(s) and proceed.
@@ -189,42 +190,9 @@ Wait for the answer:
 - If **1 (reuse)**: ask "What is your blueprint ID?" if `existingBlueprintId` is empty. Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Downstream skills will skip `a365 setup all` and use this ID directly.
 - If **2 (fresh)**: set `reuseBlueprint = false`. Proceed normally — `a365 setup all` will run as usual.
 
-**Auth mode question (ask before capabilities):**
-
-If `usesTeamsOrCopilot = 1` (CEA) or `hasAITeammateChanges = 1`, **do not ask** — automatically set `authMode = "agentic-user"` and tell the user:
-
-- If `usesTeamsOrCopilot = 1`: "This is a Custom Engine Agent (CEA) — the only supported auth mode is **Agent User Account (agentic-user)**."
-- If `hasAITeammateChanges = 1`: "Since this agent already has AI Teammate changes configured, **Agent User Account (agentic-user)** is the only supported auth mode. Your agent authenticates using its own Entra identity provisioned via the Agent 365 Blueprint."
-
-Otherwise, ask:
-
-```
-How will your agent authenticate when calling downstream APIs?
-
-  1. On-behalf-of (OBO) — the agent acts as the signed-in user (delegated permissions)
-     Choose this when the agent needs to access resources on behalf of a specific user
-     (e.g. reading the user's calendar, sending mail as them).
-
-  2. Service-to-service (S2S) — the agent acts as its own identity (application permissions)
-     Choose this when the agent runs unattended or needs tenant-wide access without a signed-in user
-     (e.g. reading all mailboxes, managing SharePoint sites).
-
-  3. Agent User Account — the agent has its own Entra User Account based on an Entra Blueprint
-     and authenticates with its own credentials. This is a special mode for AI Teammate agents
-     that interact with workflows using their own user identity.
-     https://learn.microsoft.com/en-us/entra/agent-id/agent-users
-```
-
-Wait for the answer. Store as `authMode`:
-- If 1 → `authMode = "obo"`
-- If 2 → `authMode = "s2s"`
-- If 3 → `authMode = "agentic-user"`
-
-> **Note:** WorkIQ MCP servers require delegated (OBO) permissions — they are not available for S2S-only agents.
-
 ---
 
-**Final question: What capabilities do you want to enable?**
+**Capabilities question — ask first, before auth mode:**
 
 If `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and tell the user:
 
@@ -235,31 +203,52 @@ Otherwise, if `hasAITeammateChanges = 1`, only present these options (Observabil
   1. Register — make the agent findable in the Agent 365 catalog
   2. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
 
-Otherwise, present only the options that apply — **omit WorkIQ when `authMode = "s2s"`**:
+Otherwise, present all options:
 
   1. Register — make the agent findable in the Agent 365 catalog
-  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender. Will register your agent with the A365 catalog if not already registered.
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
   3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
-     _(omit this option when `authMode = "s2s"` — WorkIQ requires a user token)_
-  4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity.
-     _(only show this option when `authMode = "agentic-user"` or `authMode = "obo"` — AI Teammate requires a delegated/OBO-style auth mode)_
+  4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity
 
 Wait for the answer. Store as `capabilities`.
 
+**Auth mode question — ask only if AI Teammate is NOT in capabilities AND `hasAITeammateChanges = 0`:**
+
+- If `hasAITeammateChanges = 1`: set `authMode = "agentic-user"` — the agent is already an AI Teammate (existing structure detected); skip the auth mode question.
+
+- If `capabilities` includes **AI Teammate**: set `authMode = "agentic-user"` — AI Teammate uses the Agentic User identity (the agent's own M365 identity, not the caller's token). `--authmode` is not used with `--aiteammate`.
+
+- Otherwise (no AI Teammate in capabilities AND `hasAITeammateChanges = 0`), ask:
+
+```
+How will your agent authenticate when calling downstream APIs?
+
+  1. On-behalf-of (OBO) — agent acts as the signed-in user (delegated permissions)
+     e.g. reading a user's calendar, sending mail on their behalf
+
+  2. Service-to-service (S2S) — agent acts as its own identity (application permissions)
+     e.g. unattended background processing, tenant-wide access without a signed-in user
+```
+
+  Wait for the answer:
+  - If 1 → `authMode = "obo"`
+  - If 2 → `authMode = "s2s"`. If `capabilities` includes WorkIQ, warn the user and remove it:
+    > "⚠️ WorkIQ requires a delegated user token (OBO) and is not available for S2S agents. WorkIQ has been removed from your selected capabilities."
+
 > **Note:** Options can be combined — e.g. a user can say "1 and 2" for Register + Observability.
 
-> **AI Teammate auto-select:** If the user selects option 4 (AI Teammate), automatically include options 1 (Register), 2 (Observability), and 3 (WorkIQ) — set `capabilities = [Register, Observability, WorkIQ, AI Teammate]` and inform the user: "AI Teammate includes Register, Observability, and WorkIQ automatically."
+> **AI Teammate auto-select:** If the user selects option 4 (AI Teammate), automatically include options 1 (Register) and 2 (Observability) — set `capabilities = [Register, Observability, AI Teammate]` and inform the user: "AI Teammate includes Register and Observability automatically. WorkIQ tools are optional and will be offered during make-ai-teammate."
 
 ### Phase 1C: Determine Path and Create Todos
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected), else `isAITeammate = false`.
+1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected) **OR** `hasAITeammateChanges = 1` (existing AI Teammate structure detected — already configured). Else `isAITeammate = false`.
 
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
-   - Write `authMode` as collected (`"obo"`, `"s2s"`, or `"agentic-user"`) — downstream skills (`instrument-observability`, `add-workiq-tools`) read this to skip re-asking.
+   - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `"agentic-user"` for AI Teammate).
    - Write `hasAITeammateChanges` as detected in Phase 1A Step 5 (`1` or `0`).
    - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
 
@@ -293,7 +282,9 @@ Then create all todos for the path and mark Todo 1 in-progress:
 
 **RULE 5 — SILENT EXECUTION.** After the mandatory intro message, work silently. Do NOT narrate what you are about to do, announce step transitions ("Proceeding to Step 2", "CLI installed, moving on"), print todo state, emoji checklists, or step completion summaries. Only speak to the user when you need input, have an error to report, or need confirmation before a destructive action. Exception: the mandatory intro message at the top of this skill is always shown — it is orientation, not narration.
 
-**RULE 6 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
+**RULE 6 — CLI ERROR SURFACING.** When any `a365`, `az`, `dotnet`, or `npm` command exits with a non-zero exit code or prints a warning/error line, **always show the complete output verbatim** to the user before attempting any fix. Do NOT abstract, paraphrase, or silently discard CLI output. If the CLI prints a multi-line error or warning block, display it in a fenced code block exactly as printed. Only after showing the raw output should you cross-reference the error table and suggest a resolution. If the error is not in the table, show it and ask the user how to proceed.
+
+**RULE 7 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
 - **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
 - **Standard paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 
@@ -365,25 +356,27 @@ After install, open a new terminal and run `dotnet --version` to confirm. Report
 
 **Required by:** all `a365` commands.
 
-> **Skip this section if the quick scan showed ✅ for a365 CLI at an acceptable version.**
+> **Always run this section** — check current version and update to latest regardless of whether a365 is already installed. This is an explicit exception to the Step 1 "skip ✅ tools" rule.
 
 ```bash
 a365 --version 2>/dev/null || echo "NOT FOUND"
+dotnet tool list -g 2>/dev/null
 ```
+(Look for `microsoft.agents.a365.devtools.cli` in the `dotnet tool list` output.)
 
-If the quick scan returned **NOT FOUND** for a365, install it:
+**If NOT FOUND — install:**
 
 ```bash
 dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
 
-If the quick scan returned a version that is outdated (older than the latest release), update it:
+**If already installed — always update to latest:**
 
 ```bash
 dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
 ```
 
-If the quick scan showed ✅ with an acceptable version, skip this section entirely.
+Run `a365 --version` after install or update and show the version to the user so they can confirm they are on the latest release.
 
 If `a365` is still not found after install, the dotnet tools directory is not on PATH:
 
@@ -613,18 +606,54 @@ a365 setup requirements --category PowerShell
 
 ### Azure CLI login
 
-> **CRITICAL:** Use `az login --allow-no-subscriptions` — not plain `az login`. The A365 setup flow does not require an Azure subscription, and plain `az login` will fail for users who have none. After a successful login, the CLI acquires Graph tokens silently from the cache with no interactive prompts.
+First, check whether a valid Azure CLI session already exists:
 
 ```bash
+az account show --query "{user:user.name, tenantId:tenantId, name:name}" -o json 2>/dev/null || echo "NO_SESSION"
+```
+
+**If an active session is found**, present the current account and tenant to the user and ask:
+
+```
+Found an existing Azure CLI session:
+  Signed in as: <user.name>
+  Tenant ID:    <tenantId>
+  Subscription: <name>  (may be empty if no Azure subscription)
+
+Would you like to:
+  1. Use this tenant  (recommended if this is your A365 tenant)
+  2. Switch to a different tenant  (provide a tenant ID or domain)
+  3. Log in fresh  (clears the current session)
+```
+
+- **Option 1 — use existing:** confirm `az account show` returns the correct account and proceed.
+- **Option 2 — switch tenant:** ask "What is your tenant ID or domain?" then run:
+  ```bash
+  az login --allow-no-subscriptions --tenant <tenantId>
+  ```
+- **Option 3 — fresh login:** run:
+  ```bash
+  az login --allow-no-subscriptions
+  ```
+
+**If no session exists (NO_SESSION)**, ask: "Would you like to log in to a specific tenant or to your default tenant?" then run the appropriate command:
+
+```bash
+# Default tenant:
 az login --allow-no-subscriptions
-# If multiple tenants, target a specific one:
+# Specific tenant:
 az login --allow-no-subscriptions --tenant <tenantId>
-# Confirm the active account:
+```
+
+> **CRITICAL:** Always use `--allow-no-subscriptions` — the A365 setup flow does not require an Azure subscription, and plain `az login` fails for users who have none.
+
+After login, confirm the active account:
+
+```bash
 az account show --query "{user:user.name, tenantId:tenantId}" -o json
 ```
 
-- **If `az account show` succeeds**: login is active — continue.
-- **If `az account show` fails or returns no output**: STOP. Tell the user to run `az login --allow-no-subscriptions` in their terminal and complete the login, then confirm back. Do NOT proceed until `az account show` returns a valid account.
+STOP and do not proceed until `az account show` returns a valid account. If no valid account is returned, ask the user to complete the login in their terminal and confirm back.
 
 If interactive login is not possible (headless / CI environment), use device-code flow:
 

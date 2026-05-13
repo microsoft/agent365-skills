@@ -36,7 +36,7 @@ Semantic Kernel  → .csproj + Microsoft.SemanticKernel
 # Node.js ────────────────────────────────────────────────────────────────── (check in order)
 LangChain        → package.json + @langchain/* OR "langchain"
 OpenAI           → package.json + @openai/agents OR "openai" (no LangChain)
-Claude           → package.json + @anthropic-ai/sdk OR "anthropic"
+Claude           → package.json + @anthropic-ai/claude-agent-sdk OR @anthropic-ai/sdk OR "anthropic"
 Semantic Kernel  → package.json + @microsoft/semantic-kernel
 Google ADK       → package.json + @google/generative-ai OR @google-cloud/vertexai OR @google/adk
 
@@ -146,6 +146,7 @@ Glob: **/ToolingManifest.json
 Grep: "isDigitalWorker" in ToolingManifest.json
 Grep: "digital_worker"  in ToolingManifest.json
 Grep: "digitalWorker"   in *.json
+Grep: "agentUpn"        in a365.generated.config.json   ← definitive: Agentic User already provisioned
 ```
 
 **If AI Teammate detected:**
@@ -233,7 +234,7 @@ Official sample: `https://github.com/microsoft/Agent365-Samples/tree/main/python
 | Detected Type | Key Signal(s) in `package.json` | Official Sample |
 |--------------|--------------------------------|-----------------|
 | `nodejs-openai` | `@openai/agents` or `"openai"` (no LangChain) | `nodejs/openai` |
-| `nodejs-claude` | `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
+| `nodejs-claude` | `@anthropic-ai/claude-agent-sdk` (current) or `@anthropic-ai/sdk` or `"anthropic"` | `nodejs/claude` |
 | `nodejs-semantic-kernel` | `@microsoft/semantic-kernel` | — |
 | `nodejs-google-adk` | `@google/generative-ai` or `@google-cloud/vertexai` or `@google/adk` | — |
 
@@ -415,8 +416,8 @@ The cache is written in stages as values become known — always preserve fields
 ```
 
 - `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
-  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists
-  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
+  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, `ToolingManifest.json` exists, or `agentUpn` present in `a365.generated.config.json`
+  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
 - `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.
@@ -482,29 +483,11 @@ Store as **`agentType`**: A → `ai-teammate` · B → `system-agent`
 
 ### Stage 2a — If AI Teammate
 
-```
-AskUserQuestion:
-  question: |
-    What does your agent need?
+> **AI Teammate always uses `agentic-user`:** The agent acts through its own M365 identity (Agentic User — a dedicated Azure AD user with UPN, mailbox, and presence). This is **not** the caller's OBO token. No question is needed — auto-set `authMode = "agentic-user"`.
+>
+> **CLI note:** `--authmode` is not supported with `--aiteammate`; the Agentic User identity is provisioned automatically by `a365 setup all --aiteammate`. The `authMode` value is for **code wiring only** (which token path is instrumented in the agent code).
 
-    1 — Access data as the signed-in user
-        Agent acts on behalf of whoever is using it
-        → Docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-
-    2 — Its own persistent identity in your org
-        Agent has its own mailbox, name, and presence — like a digital employee
-        → Docs: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity
-
-    ✅ Both options work with Observability and WorkIQ tools
-  options:
-    - "1 — Access data as the signed-in user"
-    - "2 — Its own persistent identity in your org"
-```
-
-| Choice | `authMode` |
-|--------|-----------|
-| Access data as the signed-in user | `obo` |
-| Its own persistent identity in your org | `agentic-user` |
+Set `authMode = "agentic-user"` and continue to the next stage — no question asked.
 
 ---
 
@@ -540,12 +523,11 @@ AskUserQuestion:
 
 ### Full result mapping
 
-| `agentType` | Label | `authMode` |
-|------------|-------|-----------|
-| `ai-teammate` | Access data as the signed-in user | `obo` |
-| `ai-teammate` | Its own persistent identity in your org | `agentic-user` |
-| `system-agent` (Agent (Non AI Teammate)) | Autonomous (S2S / Service Principal) | `s2s` |
-| `system-agent` (Agent (Non AI Teammate)) | Assistive (OBO) | `obo` |
+| `agentType` | `authMode` | How it's chosen |
+|------------|-----------|------------------|
+| `ai-teammate` | `agentic-user` | Auto-set in Stage 2a — no question asked. AI Teammate always uses the Agentic User identity. |
+| `system-agent` (Agent (Non AI Teammate)) | `obo` | Stage 2b option 2 — agent acts on behalf of the signed-in user |
+| `system-agent` (Agent (Non AI Teammate)) | `s2s` | Stage 2b option 1 — agent acts as its own service principal (no user token) |
 
 ---
 
@@ -553,10 +535,9 @@ AskUserQuestion:
 
 | Agent kind | `authMode` | Observability | WorkIQ tools |
 |-----------|-----------|---------------|-------------|
-| AI Teammate | `obo` (signed-in user access) | ✅ | ✅ M365 data scoped to signed-in user |
-| AI Teammate | `agentic-user` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent identity |
-| Agent (Non AI Teammate) | `obo` / Assistive (OBO) | ✅ | ✅ OBO only |
-| Agent (Non AI Teammate) | `s2s` / Autonomous (Service Principal) | ✅ | ❌ Not available — WorkIQ requires a delegated user token (OBO) |
+| AI Teammate | `agentic-user` (agent's own M365 identity) | ✅ | ✅ M365 data scoped to agent's Agentic User identity |
+| Agent (Non AI Teammate) | `obo` | ✅ | ✅ M365 data scoped to whatever the auth handler resolves (typically the signed-in user) |
+| Agent (Non AI Teammate) | `s2s` | ✅ | ❌ Not available — WorkIQ requires a delegated user token |
 
 ---
 
@@ -581,10 +562,7 @@ Add this inline comment wherever the auth handler is wired:
 
 **`obo`** — signed-in user OBO; no additional Azure AD setup required. Uses the signed-in user's existing token.
 
-**`agentic-user`** — agent's own persistent M365 identity. Requires an agentic user provisioned in Azure AD: a real user object with a mailbox, OneDrive, and `agent@tenant` UPN. If not yet provisioned, remind the user:
-> "An AI Teammate requires an agentic user provisioned in Azure AD.
-> Follow the identity setup guide:
-> https://learn.microsoft.com/en-us/microsoft-agent-365/developer/identity"
+**`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If `agentUpn` is absent from `a365.generated.config.json` after setup, run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
 
 **`s2s`** — service principal / autonomous. Authenticates with the agent blueprint's own credentials (service principal). No signed-in user token.
 
@@ -592,9 +570,10 @@ Add this inline comment wherever the auth handler is wired:
 
 ### WorkIQ guard — `s2s` agents
 
-**WorkIQ must never be presented as an option when `authMode = s2s`.** This applies everywhere:
+**WorkIQ is incompatible with `authMode = s2s`** and must be removed from any session where s2s is selected. Two patterns are valid depending on when `authMode` is known:
 
-- **In capabilities menus** (e.g., `a365-setup`): omit WorkIQ from the list entirely — do not show it, do not grey it out.
+- **When `authMode` is known up-front** (e.g., from cache, or from a flow that asks auth mode before capabilities): omit WorkIQ from the capabilities menu entirely — do not show it, do not grey it out.
+- **When capabilities are asked before `authMode`** (current `a365-setup` flow): WorkIQ may appear in the menu. If the user later picks s2s, the skill must warn and drop WorkIQ from the selection: *"⚠️ WorkIQ requires a delegated user token (OBO) and is not available for S2S agents. WorkIQ has been removed from your selected capabilities."*
 - **In `add-workiq-tools`**: if `authMode = s2s` is detected (from cache or from the auth mode question), **exit immediately before any further questions or actions**:
 
 ```

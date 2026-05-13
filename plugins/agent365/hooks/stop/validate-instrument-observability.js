@@ -154,12 +154,14 @@ if (isDotnet) {
 // ── Node.js validation ──────────────────────────────────────────────────────
 
 if (isNodejs) {
-  // 1. Core package installed
+  // 1. Core package installed — @microsoft/opentelemetry (GA 1.0+) is the unified package.
+  // Legacy @microsoft/agents-a365-observability* packages are deprecated but still accepted
+  // here so agents instrumented before the rewrite pass validation until they migrate.
   const hasNpmPkg = packageJsonFiles.some(f =>
-    fileContains(f, '@microsoft/agents-a365-observability') ||
-    fileContains(f, '@microsoft/opentelemetry'));
+    fileContains(f, '@microsoft/opentelemetry') ||
+    fileContains(f, '@microsoft/agents-a365-observability'));
   if (!hasNpmPkg) {
-    issues.push('@microsoft/opentelemetry (or @microsoft/agents-a365-observability) is not in package.json');
+    issues.push('@microsoft/opentelemetry is not in package.json');
   }
 
   // 2. useMicrosoftOpenTelemetry called (or legacy ObservabilityManager.configure)
@@ -169,13 +171,14 @@ if (isNodejs) {
     issues.push('No TypeScript/JS file calls useMicrosoftOpenTelemetry()');
   }
 
-  // 3. BaggageBuilder or BaggageMiddleware in handler
-  // BaggageBuilderUtils.fromTurnContext is the recommended OBO pattern (fromTurnContext is on Utils, not BaggageBuilder)
-  const hasBaggage = anyFileContains(tsFiles, 'BaggageBuilder') ||
+  // 3. Baggage wiring — in 1.0+ the recommended pattern is configureA365Hosting({ enableBaggage: true }).
+  // Legacy patterns (BaggageBuilder, BaggageMiddleware, BaggageBuilderUtils) still accepted.
+  const hasBaggage = anyFileContains(tsFiles, 'configureA365Hosting') ||
                      anyFileContains(tsFiles, 'BaggageMiddleware') ||
+                     anyFileContains(tsFiles, 'BaggageBuilder') ||
                      anyFileContains(tsFiles, 'BaggageBuilderUtils');
   if (!hasBaggage) {
-    issues.push('No TypeScript/JS file uses BaggageBuilder, BaggageBuilderUtils, or BaggageMiddleware — baggage context missing');
+    issues.push('No TypeScript/JS file uses configureA365Hosting, BaggageMiddleware, BaggageBuilder, or BaggageBuilderUtils — baggage context missing');
   }
 
   // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, preloadObservabilityToken helper, or S2S token service)
@@ -214,7 +217,9 @@ if (isNodejs) {
 // ── Python validation ───────────────────────────────────────────────────────
 
 if (isPython) {
-  // 1. Core package installed
+  // 1. Core package installed — microsoft-opentelemetry (GA 1.1+) is the unified package.
+  // Legacy microsoft-agents-a365-* packages are deprecated but still accepted here so
+  // agents instrumented before the rewrite pass validation until they migrate.
   const pyObservabilityPackages = [
     'microsoft-opentelemetry',
     'microsoft-agents-a365-observability-core',
@@ -226,8 +231,7 @@ if (isPython) {
     pyObservabilityPackages.some(pkg => fileContains(f, pkg)));
   if (!hasPyPkg) {
     issues.push(
-      'No Microsoft observability distribution found in requirements.txt or pyproject.toml ' +
-      '(expected microsoft-opentelemetry or a microsoft-agents-a365-observability-* package)'
+      'microsoft-opentelemetry not found in requirements.txt or pyproject.toml'
     );
   }
 

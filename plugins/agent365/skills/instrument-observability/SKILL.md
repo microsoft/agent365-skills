@@ -119,9 +119,8 @@ Reply **yes** to confirm, or describe any corrections.
 If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
 Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
-- **AI Teammate:** `obo` (OBO as signed-in user or agent's own M365 identity)
-- **Agent (Non AI Teammate):** `obo` (Assistive OBO) or `s2s` (Autonomous / Service Principal)
-- **Agentic user flow:** `agentic-user`
+- **AI Teammate:** `agentic-user` (agent's own M365 identity — not the caller's token; auto-set, no question needed)
+- **Agent (Non AI Teammate):** `obo` (Assistive / signed-in user token) or `s2s` (Autonomous / Service Principal)
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 
@@ -168,107 +167,72 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    dotnet add package Microsoft.Agents.A365.Observability.Hosting
    ```
 
-   **For S2S / autonomous agents using the unified distro** (preferred):
+   **Unified distro (preferred — GA as of 2026-05-01, single package replaces all the above + auto-instrumentation):**
    ```bash
-   dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1
-   dotnet add package Azure.Identity
-   dotnet add package Microsoft.Identity.Client
-   # Required: v1.0.0-beta.1 depends on Microsoft.Extensions.Logging v10.0.0
-   dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
+   dotnet add package Microsoft.OpenTelemetry
+   dotnet add package Azure.Identity              # S2S only
+   dotnet add package Microsoft.Identity.Client   # S2S only
    ```
-   > **⚠️ TFM requirement:** If the project targets `net8.0`, upgrade to `net9.0` or later. The `Microsoft.OpenTelemetry` v1.0.0-beta.1 package has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0 which causes a runtime `FileNotFoundException` on `net8.0`. See "Known Issues" section.
+   No `--version` flag needed — install latest stable (1.0.2+). Targets `net8.0` and `netstandard2.0`. The legacy `Microsoft.Extensions.Logging 10.0.0-*` workaround and `net9.0` requirement are obsolete (fixed in 1.0.1).
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
+2. **Optional auto-instrumentation** — the unified distro auto-instruments SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk by default. All toggles are `o.Instrumentation.Enable*Instrumentation = true` and live on the `UseMicrosoftOpenTelemetry` options callback.
 
-   **If the user selects `Extensions.OpenAI` — pre-flight check (do this first, as a named step):**
-   ```bash
-   dotnet list package | grep Azure.AI.OpenAI
-   ```
-   If the installed version is below `2.7.0-beta.2`, upgrade it **before** installing the extension:
-   ```bash
-   dotnet add package Azure.AI.OpenAI --version 2.7.0-beta.2
-   ```
-   Do this proactively — do not wait for a build failure to discover the version conflict.
+   > **Do not install the legacy `Microsoft.Agents.A365.Observability.Extensions.{SemanticKernel,OpenAI,AgentFramework}` packages alongside the unified distro** — they're superseded by the distro's `o.Instrumentation.Enable*` toggles. Mixing the two produces duplicate spans.
 
-   Then install the selected extension(s):
-   ```bash
-   # Semantic Kernel
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.SemanticKernel
-   # OpenAI (requires Azure.AI.OpenAI >= 2.7.0-beta.2 — checked above)
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.OpenAI
-   # Agent Framework
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
-   ```
+   To opt out of a specific instrumentation, set the toggle to `false` in the options callback (e.g. `o.Instrumentation.EnableSemanticKernelInstrumentation = false`).
 
-3. **Verify** the packages appear in the `.csproj` file.
+3. **Verify** the package appears in the `.csproj` file.
 
 ### For Node.js
 
-1. **Bash** — Run package installation (core + hosting):
+1. **Bash** — Install the unified distro (single package as of GA 1.0):
    ```bash
-   npm install @microsoft/agents-a365-observability
-   npm install @microsoft/agents-a365-runtime
-   npm install @microsoft/agents-a365-observability-hosting
+   npm install @microsoft/opentelemetry
    ```
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
+   The legacy packages (`@microsoft/agents-a365-observability`, `-hosting`, `-runtime`, and the
+   `-extensions-openai` / `-extensions-langchain` packages) are **deprecated**. Everything
+   ships from `@microsoft/opentelemetry` now. OpenAI Agents SDK and LangChain are
+   auto-instrumented by default — no extension packages needed.
 
-   **If the user selects `extensions-openai` — pre-flight check (do this first):**
-   The extension requires `@openai/agents ^0.7.0` as a peer dependency — this is the **OpenAI Agents SDK**, NOT the `openai` npm package and NOT `@azure/openai`. Check and install the peer dep first:
+2. **Verify** `@microsoft/opentelemetry` appears in `package.json`. Confirm Node.js version ≥ 20.6.0.
+
+3. **S2S path only:** install MSAL + Azure Identity (for the FMI token chain):
    ```bash
-   npm list @openai/agents
-   # If missing or below 0.7.0:
-   npm install @openai/agents@^0.7.0
+   npm install @azure/msal-node @azure/identity
    ```
-
-   Then install the selected extension(s):
-   ```bash
-   # OpenAI Agents SDK (requires @openai/agents ^0.7.0 — checked above)
-   npm install @microsoft/agents-a365-observability-extensions-openai
-   # LangChain
-   npm install @microsoft/agents-a365-observability-extensions-langchain
-   ```
-
-3. **Verify** the packages appear in `package.json`.
 
 ### For Python
 
-1. **Version pre-flight (critical — do this first):** The stable PyPI release of `microsoft-agents-a365-observability-core` (v0.1.0) has a **completely different and incompatible API** from what this skill instruments. The correct API is in the 0.3.x prerelease. Check the installed version before proceeding:
+1. **Bash** — Install the unified distro (single package as of GA 1.1):
    ```bash
-   pip3 show microsoft-agents-a365-observability-core 2>/dev/null || pip show microsoft-agents-a365-observability-core 2>/dev/null | grep Version
-   ```
-   If missing or below `0.3.0.dev1`, install with `--pre`:
-   ```bash
-   pip3 install --pre microsoft-agents-a365-observability-core 2>/dev/null || pip install --pre microsoft-agents-a365-observability-core
-   pip3 install --pre microsoft-agents-a365-observability-hosting 2>/dev/null || pip install --pre microsoft-agents-a365-observability-hosting
+   pip3 install microsoft-opentelemetry 2>/dev/null || pip install microsoft-opentelemetry
    ```
 
-2. **Bash** — Run package installation (core + hosting):
+   The legacy packages (`microsoft-agents-a365-observability-core`, `-hosting`, `-runtime`,
+   and the four `-extensions-*` packages) are **deprecated**. Everything ships from
+   `microsoft-opentelemetry` now. OpenAI Agents SDK, LangChain, Semantic Kernel, and
+   Agent Framework are auto-instrumented by default — no extension packages needed.
+   No `--pre` flag required — the package is GA.
+
+2. **S2S path only:** install MSAL + Azure Identity + httpx (for the FMI token chain):
    ```bash
-   pip3 install --pre microsoft-agents-a365-observability-core 2>/dev/null || pip install --pre microsoft-agents-a365-observability-core
-   pip3 install --pre microsoft-agents-a365-runtime 2>/dev/null || pip install --pre microsoft-agents-a365-runtime
-   pip3 install --pre microsoft-agents-a365-observability-hosting 2>/dev/null || pip install --pre microsoft-agents-a365-observability-hosting
+   pip3 install msal azure-identity httpx 2>/dev/null || pip install msal azure-identity httpx
    ```
 
-4. **Optional auto-instrumentation extensions** — ask the user which AI framework they use and install accordingly:
+3. **LangChain agents only:** install the LangChain extra for additional instrumentation:
    ```bash
-   # Semantic Kernel
-   pip3 install microsoft-agents-a365-observability-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-semantic-kernel
-   # OpenAI Agents SDK
-   pip3 install microsoft-agents-a365-observability-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-openai
-   # Agent Framework
-   pip3 install microsoft-agents-a365-observability-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-agent-framework
-   # LangChain
-   pip3 install microsoft-agents-a365-observability-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-observability-extensions-langchain
+   pip3 install "microsoft-opentelemetry[langchain]" 2>/dev/null || pip install "microsoft-opentelemetry[langchain]"
    ```
 
-5. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or `pyproject.toml` automatically. Explicitly add the installed packages:
-   - `requirements.txt` project: append each package name with `>=0.3.0.dev1` version constraint
-   - `pyproject.toml` project: add under `[project] dependencies` or run `uv add <package> --prerelease` / `poetry add <package>`
+4. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or
+   `pyproject.toml` automatically. Explicitly add `microsoft-opentelemetry` (and the S2S/
+   LangChain extras if installed) under `[project] dependencies` or via
+   `uv add microsoft-opentelemetry` / `poetry add microsoft-opentelemetry`.
 
-6. **Verify** the packages appear in `requirements.txt` or `pyproject.toml`.
+5. **Verify** the package appears in `requirements.txt` or `pyproject.toml`. Confirm Python 3.10+.
 
-7. **TaskUpdate** — Mark complete.
+6. **TaskUpdate** — Mark complete.
 
 ---
 
@@ -296,10 +260,12 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the current entry point (`index.ts`, `app.ts`, or detected file).
 
 2. **Edit** — Add observability initialization following the reference pattern in `nodejs-observability.md`:
-   - Add imports for `ObservabilityManager` from `@microsoft/agents-a365-observability`
-   - **OBO path**: Call `useMicrosoftOpenTelemetry({ a365: { enabled: true, tokenResolver } })` from `@microsoft/opentelemetry` **before** any LLM/framework imports. The `tokenResolver` reads from `AgenticTokenCacheInstance`.
-   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry()` with the S2S workaround pattern from `nodejs-observability.md` (custom `Agent365Exporter` + `A365SpanProcessor` via `spanProcessors` when `AGENT365_USE_S2S_ENDPOINT=true`). Set `ENABLE_A365_OBSERVABILITY_EXPORTER=false` in `.env`. Also run `npm install @microsoft/opentelemetry @azure/msal-node @azure/identity @opentelemetry/sdk-trace-base`.
-   - Optionally register `adapter.use(new BaggageMiddleware())` (OBO path) to auto-populate baggage on every request
+   - Import `useMicrosoftOpenTelemetry`, `shutdownMicrosoftOpenTelemetry`, `configureA365Hosting`, and `AgenticTokenCacheInstance` — **all from `@microsoft/opentelemetry`** (single package as of GA 1.0; do NOT import from the legacy `-observability`, `-hosting`, or `-runtime` packages).
+   - **OBO / agentic-user path**: Call `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, tokenResolver } })` **before** any LLM/framework imports. Both `enabled: true` AND `enableObservabilityExporter: true` are required in 1.0+ to actually export spans. Wire `tokenResolver` to `AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? ''`.
+   - **S2S path**: First **Write** `observability/token-cache.ts` (in-memory token cache with `cacheToken`/`getCachedToken`/`tokenResolver`) and `observability/observability-token-service.ts` using the scaffold pattern from `nodejs-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`@azure/msal-node` with `fmiPath` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min. Then call `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: a365TokenResolver } })`. `useS2SEndpoint: true` is now a first-class option (1.0+); the old workaround with custom `Agent365Exporter` via `spanProcessors` and `ENABLE_A365_OBSERVABILITY_EXPORTER=false` is no longer needed for new instrumentation. If the old workaround is already present in an existing agent, leave it in place — do not delete code as part of this additive skill; flag it in the final summary as a candidate for cleanup if the user explicitly asks to migrate.
+   - **Both paths**: Call `configureA365Hosting(adapter, { enableBaggage: true })` once at startup to register `BaggageMiddleware`. This replaces manual `adapter.use(new BaggageMiddleware())` and removes the need for `BaggageBuilderUtils.fromTurnContext` in handlers.
+   - **Both paths**: Register `SIGTERM`/`SIGINT` handlers calling `await shutdownMicrosoftOpenTelemetry()` to flush pending spans on shutdown.
+   - **Auto-instrumentation note**: Do NOT call `OpenAIAgentsTraceInstrumentor.enable()` or `LangChainTraceInstrumentor.instrument()` — these are auto-enabled in 1.0+ and manual calls cause duplicate spans. To opt out, set `instrumentationOptions: { openaiAgents: { enabled: false } }`.
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing code — only add new lines, never remove.
@@ -309,10 +275,11 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 1. **Read** the current entry point (`app.py`, `host_agent_server.py`, or detected file).
 
 2. **Edit** — Add observability configuration following the reference pattern in `python-observability.md`:
-   - Add `from microsoft.opentelemetry.a365.core import use_microsoft_opentelemetry` and call `use_microsoft_opentelemetry(enable_a365=True, a365_token_resolver=...)` with `service_name` and `service_namespace`
-   - **OBO path**: Wire `a365_token_resolver` to return the cached agentic token from `token_cache.py`.
-   - **S2S path**: First **Write** `observability/token_cache.py` (in-memory token cache with `cache_token`/`get_cached_token`) and `observability/observability_token_service.py` using the scaffold pattern from `python-observability.md` (S2S section). This module acquires the Observability API token via MSAL FMI 3-hop chain (`msal.ConfidentialClientApplication` with `fmi_path` parameter, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback) and refreshes it every 50 min via an `asyncio` background task. Then call `use_microsoft_opentelemetry(enable_a365=True, a365_token_resolver=...)` from `microsoft.opentelemetry` and schedule `run_token_service()` as an asyncio task. Also install `msal` and `azure-identity` if not already present.
-   - Optionally register `BaggageMiddleware` or use `ObservabilityHostingManager` on the adapter (OBO path) to auto-populate baggage on every request
+   - Import `use_microsoft_opentelemetry` from `microsoft.opentelemetry` (single unified package; do NOT import from the legacy `microsoft_agents_a365.*` namespace).
+   - **OBO / agentic-user path**: Call `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)`. Both `enable_a365=True` AND `a365_enable_observability_exporter=True` are required in 1.0+ to actually export spans. Wire `a365_token_resolver` to `AgenticTokenCache().get_observability_token` from `microsoft.opentelemetry.a365.hosting.token_cache_helpers` (or a custom resolver reading from `token_cache.py`).
+   - **S2S path**: First **Write** `observability/token_cache.py` (in-memory token cache with `cache_token`/`get_cached_token`) and `observability/observability_token_service.py` using the scaffold pattern from `python-observability.md` (S2S section). This module acquires the Observability API token via a 3-hop FMI chain: direct HTTP POST with `fmi_path` for Hops 1+2 (MSAL Python does not properly serialize `fmi_path` — known limitation), then `msal.ConfidentialClientApplication` for Hop 3, targeting scope `api://9b975845-388f-4429-889e-eab1ef63949c/.default`, supports MSI with client-secret fallback, refreshes every 50 min via an `asyncio` background task. Then call `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=...)`. `a365_use_s2s_endpoint=True` is now a first-class kwarg — no workaround needed. Schedule `run_token_service()` as an asyncio task and call `acquire_initial_token()` in your aiohttp lifespan startup. Also install `msal`, `azure-identity`, and `httpx`.
+   - **Both paths**: Call `ObservabilityHostingManager.configure(adapter.middleware_set, ObservabilityHostingOptions(enable_baggage=True))` once at startup to auto-populate baggage from `TurnContext`. **Note:** `enable_baggage` defaults to `False` — must be explicitly set to `True`.
+   - **Auto-instrumentation note**: Do NOT call legacy `*Instrumentor().instrument()` methods for LangChain/OpenAI/SK/AgentFramework — these are auto-enabled in 1.0+ and manual calls cause duplicate spans.
    - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
 3. **Preserve** all existing code — only add new lines, never remove.
@@ -389,10 +356,8 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Add BaggageBuilder context following the reference pattern in `nodejs-observability.md`:
-   - Import `BaggageBuilder` from `@microsoft/opentelemetry`
-   - Import `AgenticTokenCacheInstance`, `BaggageBuilderUtils` from `@microsoft/agents-a365-observability-hosting`
-   - Import `getObservabilityAuthenticationScope` from `@microsoft/agents-a365-runtime`
+2. **Edit** — Refresh the per-turn exporter token following the reference pattern in `nodejs-observability.md`:
+   - Import `AgenticTokenCacheInstance` from `@microsoft/opentelemetry` (single unified package).
    - **OBO paths only** (`obo` / `agentic-user`): Resolve `agentId` and `tenantId` dynamically from TurnContext each turn (never from config), then refresh the exporter token (non-fatal, wrap in try/catch):
      ```
      const agentId  = turnContext.activity?.recipient?.agenticAppId ?? '';
@@ -400,15 +365,14 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
      await AgenticTokenCacheInstance.RefreshObservabilityToken(
        agentId, tenantId, turnContext,
        agentApplication.authorization,   // ← the AgentApplication auth object, NOT an auth-handler name string
-       getObservabilityAuthenticationScope()
      );
      ```
      - `obo` (signed-in user): `agentApplication.authorization` exchanges the token as the **signed-in user** → traces attributed to the user
      - `obo` (agentic identity): `agentApplication.authorization` exchanges the token as the **agentic user** provisioned in Azure AD → traces attributed to the agent
+     - Default observability scope is auto-applied (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) — no need to import `getObservabilityAuthenticationScope` (removed in 1.0).
      - **Recommended pattern:** Extract the agentId/tenantId resolution and token refresh into a `preloadObservabilityToken(turnContext)` helper function to keep the handler clean. See `nodejs-observability.md` for the full helper implementation.
    - **S2S path**: Do **NOT** call `AgenticTokenCacheInstance.RefreshObservabilityToken` — there is no user authorization token. The `tokenResolver` passed to `useMicrosoftOpenTelemetry()` (set up in Phase 3) handles authentication via the FMI 3-hop chain token service.
-   - Use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext).build()` to build baggage automatically from TurnContext. **Note:** `fromTurnContext()` is a static method on `BaggageBuilderUtils` — it does **not** exist directly on `BaggageBuilder`; always use `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), ctx)`.
-   - Wrap the handler body in `await baggageScope.run(async () => { ... })` and call `baggageScope.dispose()` in a `finally` block
+   - **Baggage:** No manual baggage construction in the handler. Phase 3 registered `configureA365Hosting(adapter, { enableBaggage: true })` which auto-populates baggage from `TurnContext` for every request. The old `BaggageBuilderUtils.fromTurnContext(...)` pattern is no longer in the public API (removed in 1.0) — do NOT add it back.
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -418,11 +382,9 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 1. **Read** the detected message handler file.
 
-2. **Edit** — Add BaggageBuilder context following the reference pattern in `python-observability.md`:
-   - Import `BaggageBuilder` from `microsoft.opentelemetry.a365.core`
-   - Import `populate` from `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage`
-   - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5)
-   - Import `get_observability_authentication_scope` from `microsoft.opentelemetry.a365.runtime`
+2. **Edit** — Refresh the per-turn exporter token following the reference pattern in `python-observability.md`:
+   - Default observability scope is auto-applied by `microsoft-opentelemetry` 1.1+ — do **not** import `get_observability_authentication_scope` unless you need to override the default. If overriding, pass via `a365_observability_scope_override` to `use_microsoft_opentelemetry`. The `exchange_token()` call below omits `scopes=` and lets the auth handler resolve the default.
+   - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5) — or use `AgenticTokenCache` from the hosting helpers.
    - **OBO paths only** (`obo` / `agentic-user`): Resolve `agent_id` and `tenant_id` dynamically from context each turn (never from config), then exchange the OBO token (non-fatal, wrap in try/except):
      ```python
      agent_id  = context.activity.recipient.agentic_app_id
@@ -440,11 +402,10 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
          cache_agentic_token(tenant_id, agent_id, exaau_token.token)
      ```
      - `auth_handler_name` must come from config (e.g., `AgentApplication:AgenticAuthHandlerName`) — **never hardcode `"AGENTIC"`**; it is the registered auth handler name in your agent setup.
-     - `obo` (signed-in user): exchange resolves to the **signed-in user's** identity
-     - `obo` (agentic identity): exchange resolves to the **agentic user** provisioned in Azure AD
-   - **S2S path**: Do **NOT** call `_setup_observability_token` — token comes from the background token service wired in Phases 3/5. Baggage setup below still applies.
-   - Use `populate(builder, context)` to auto-populate baggage (parameter is `context`, not `turn_context`), then `with builder.build():`
-   - Wrap existing agent logic inside the baggage scope
+     - `agentic-user` (AI Teammate): the exchange returns a token for the **agent's own Agentic User** identity → traces attribute to the agent
+     - `obo` (non-AI Teammate): the exchange returns whatever the configured auth handler resolves — typically the **signed-in user**, but it can also be the agent's own identity if the handler is configured that way
+   - **S2S path**: Do **NOT** call `_setup_observability_token` — token comes from the background token service wired in Phase 3. The handler should NOT touch tokens.
+   - **Baggage:** No manual baggage construction in the handler. Phase 3 registered `ObservabilityHostingManager.configure(adapter.middleware_set, ObservabilityHostingOptions(enable_baggage=True))` which auto-populates baggage from `TurnContext` for every request. (Optional fallback if you skipped that: build manually with `populate(builder, context)` then `with builder.build():`.)
    - Add inline comment: `# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `# A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -658,14 +619,13 @@ All new lines marked with the language-appropriate comment:
    ENABLE_A365_OBSERVABILITY_EXPORTER=false
    SERVICE_NAME=my-agent
    A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
-   Use_Custom_Resolver=false
 
    # Sponsor / CallerDetails for MAC portal trace visibility
    agent365Observability__sponsorUserId=<<Blueprint ID>>
    agent365Observability__sponsorUserName=<<Blueprint Name>>
    agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
    ```
-   - **S2S path only:** Also add `AGENT365_USE_S2S_ENDPOINT=true` — this tells the distro to use the `/observabilityService/...` endpoint path instead of `/observability/...`.
+   - **S2S path only:** Set `useS2SEndpoint: true` in the `a365` options of `useMicrosoftOpenTelemetry()` (already done in Phase 3). The old `AGENT365_USE_S2S_ENDPOINT` env var is no longer used in 1.0+ — `useS2SEndpoint` is a first-class code option.
 
 4. **If `.env` does not exist**, create it with the variables above.
 
@@ -682,7 +642,8 @@ All new lines marked with the language-appropriate comment:
    ```dotenv
    ENABLE_A365_OBSERVABILITY_EXPORTER=false
    ```
-   - **S2S path only:** Also add `AGENT365_USE_S2S_ENDPOINT=true` — this tells the distro to use the `/observabilityService/...` endpoint path instead of `/observability/...`.
+   The env var is the equivalent of the `a365_enable_observability_exporter` kwarg — when wiring in code (Phase 3), passing the kwarg is preferred. Keep this in `.env` only if you control export via env var.
+   - **S2S path only:** Set `a365_use_s2s_endpoint=True` in code (already done in Phase 3). The old `AGENT365_USE_S2S_ENDPOINT` env var is no longer used in 1.0+ — `a365_use_s2s_endpoint` is a first-class code kwarg.
 
 3. **If `.env` does not exist**, create it with the variable above.
 
@@ -722,9 +683,9 @@ All new lines marked with the language-appropriate comment:
 
 ### For Python
 
-1. **Bash** — Run an import check to verify the packages load without errors:
+1. **Bash** — Run an import check to verify the package loads without errors:
    ```bash
-   python3 -c "from microsoft.opentelemetry.a365.core import use_microsoft_opentelemetry; print('A365 observability imports OK')" 2>/dev/null || python -c "from microsoft.opentelemetry.a365.core import use_microsoft_opentelemetry; print('A365 observability imports OK')"
+   python3 -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from microsoft.opentelemetry.a365.hosting import ObservabilityHostingManager; print('A365 observability imports OK')" 2>/dev/null || python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from microsoft.opentelemetry.a365.hosting import ObservabilityHostingManager; print('A365 observability imports OK')"
    ```
 
 2. **If import fails**, collect error output and present to user with suggested fixes (usually a missing `pip install`).
@@ -863,21 +824,22 @@ The Node.js SDK (`@microsoft/agents-a365-observability@0.2.0-preview.5`) and .NE
 
 The `@microsoft/opentelemetry` distro creates `Agent365Exporter` internally but does NOT pass `useS2SEndpoint: true`. For S2S agents, the exporter defaults to the OBO path (`/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`), but S2S requires `/observabilityService/...`.
 
-**This bug affects BOTH Node.js and .NET SDKs:**
+**Node.js (`@microsoft/opentelemetry` 1.0+ GA — FIXED):**
 
-**Node.js (`@microsoft/opentelemetry` v0.1.0-beta.1):**
-
-1. `A365Configuration` — add `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support
-2. `distro.js` — pass `a365Config.useS2SEndpoint` when constructing `Agent365Exporter`
-
-**For generated agent code:** Set the env var in `.env`:
+`useS2SEndpoint` is now a first-class option in the `a365` options. Generated S2S agent code should pass it directly:
+```typescript
+useMicrosoftOpenTelemetry({
+  a365: {
+    enabled: true,
+    enableObservabilityExporter: true,
+    useS2SEndpoint: true,   // first-class option in 1.0+
+    tokenResolver: a365TokenResolver,
+  },
+});
 ```
-AGENT365_USE_S2S_ENDPOINT=true
-```
+The old `AGENT365_USE_S2S_ENDPOINT` env var workaround and custom `spanProcessors` workarounds are no longer needed.
 
-This is a distro-level fix. The `useMicrosoftOpenTelemetry()` call does NOT need a custom `spanProcessors` array — the built-in exporter reads the env var via `A365Configuration` and passes it to `Agent365Exporter`.
-
-**.NET (`Microsoft.OpenTelemetry` v1.0.0-beta.1):**
+**.NET (`Microsoft.OpenTelemetry` 1.0.x GA):**
 
 The `UseMicrosoftOpenTelemetry()` builder extension does NOT set `UseS2SEndpoint = true` on the `Agent365ExporterOptions` when using the unified distro. Without this, the exporter posts to `/observability/` (OBO path) instead of `/observabilityService/` (S2S path), causing HTTP 401.
 
@@ -917,22 +879,6 @@ AADSTS82008: All agentic applications requesting a token exchange token must inc
 `LangChainTraceInstrumentor.instrument(LangChainCallbacks)` requires `ObservabilityManager` to be fully initialized. Calling it as a standalone statement after `useMicrosoftOpenTelemetry()` throws `"ObservabilityManager is not configured yet"` when `a365.enabled: true`.
 
 **Workaround:** Use `instrumentationOptions: { langchain: {} }` inside the `useMicrosoftOpenTelemetry()` options object. This ensures the distro initializes the manager and the LangChain instrumentor in the correct order.
-
-### .NET `Microsoft.OpenTelemetry` v1.0.0-beta.1 Requires .NET 10 Logging
-
-`Microsoft.OpenTelemetry` v1.0.0-beta.1 has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0. On projects targeting `net8.0` or `net9.0`, this causes a runtime `FileNotFoundException` for `Microsoft.Extensions.Logging, Version=10.0.0.0`.
-
-**Workaround:** Add an explicit package reference to the v10 preview of `Microsoft.Extensions.Logging`:
-```bash
-dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
-```
-
-If the project targets `net8.0`, also upgrade the TFM to `net9.0` for best compatibility:
-```xml
-<TargetFramework>net9.0</TargetFramework>
-```
-
-**Status:** This is expected to be resolved when `Microsoft.OpenTelemetry` ships a stable release or when the project targets `net10.0`.
 
 ### .NET `InferenceCallDetails` Constructor — `providerName` Is Required
 

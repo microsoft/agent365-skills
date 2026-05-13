@@ -19,40 +19,35 @@ into a .NET AgentFramework agent. All samples mirror the official Microsoft Lear
 | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Exporters` | `Agent365ExporterOptions`, `Agent365ExporterType` |
 | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts` | `AgentDetails`, `InvokeAgentScopeDetails`, `ToolCallDetails`, `InferenceCallDetails`, `Request`, `Channel`, `UserDetails`, `CallerDetails`, `Response`, `SpanDetails` |
 | `Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes` | `InvokeAgentScope`, `ExecuteToolScope`, `InferenceScope`, `OutputScope` |
-| `Microsoft.Agents.A365.Observability.Extensions.SemanticKernel` | SK auto-instrumentation (optional) |
-| `Microsoft.Agents.A365.Observability.Extensions.OpenAI` | OpenAI auto-instrumentation (optional) |
-| `Microsoft.Agents.A365.Observability.Extensions.AgentFramework` | AgentFramework auto-instrumentation (optional) |
+| `Microsoft.Agents.A365.Observability.Extensions.SemanticKernel` | **Legacy** — superseded by `o.Instrumentation.EnableSemanticKernelInstrumentation` in the unified distro |
+| `Microsoft.Agents.A365.Observability.Extensions.OpenAI` | **Legacy** — superseded by `o.Instrumentation.EnableOpenAIInstrumentation` in the unified distro |
+| `Microsoft.Agents.A365.Observability.Extensions.AgentFramework` | **Legacy** — superseded by `o.Instrumentation.EnableAgentFrameworkInstrumentation` in the unified distro |
 
-Unified Distro (preferred for S2S / autonomous agents):
+Unified Distro (preferred — single package, GA as of 2026-05-01):
 
 | Package | Purpose |
 |---------|---------|
-| `Microsoft.OpenTelemetry` (v1.0.0-beta.1) | All-in-one: includes A365 observability types (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `IExporterTokenCache`, `ServiceTokenCache`, `AgentDetails`, etc.) plus OTel pipeline configuration |
+| `Microsoft.OpenTelemetry` (1.0.2 GA — latest stable) | All-in-one: includes A365 observability types (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `IExporterTokenCache`, `ServiceTokenCache`, `AgentDetails`, etc.) plus OTel pipeline configuration. Targets `net8.0` and `netstandard2.0`. Auto-instrumentation toggles for SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk are first-class options on `o.Instrumentation` (all default `true`). |
 | `Azure.Identity` | `ManagedIdentityCredential` for MSI-based token acquisition |
 | `Microsoft.Identity.Client` | MSAL `ConfidentialClientApplicationBuilder` with `.WithFmiPath()` for the FMI token chain |
 
 Install commands:
 ```bash
-# Preferred for S2S / autonomous agents (includes all observability types):
-dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1
-dotnet add package Azure.Identity
-dotnet add package Microsoft.Identity.Client
-# Required: v1.0.0-beta.1 depends on Microsoft.Extensions.Logging v10.0.0
-dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
+# Preferred for all agents (unified distro — includes all observability types and auto-instrumentation toggles):
+dotnet add package Microsoft.OpenTelemetry
+dotnet add package Azure.Identity        # S2S only
+dotnet add package Microsoft.Identity.Client  # S2S only
 ```
 
-Install commands (individual packages / OBO path):
+> **Don't also install the legacy `Microsoft.Agents.A365.Observability.Extensions.*` packages** when using the unified distro — the auto-instrumentation toggles (`o.Instrumentation.EnableSemanticKernelInstrumentation` etc.) handle this. Mixing the two can produce duplicate spans.
+
+Install commands (individual packages / OBO path — legacy, kept for existing agents):
 ```bash
 # Required for all agents
 dotnet add package Microsoft.Agents.A365.Observability.Runtime
 
 # Required for OBO agents (authMode: obo or agentic-user)
 dotnet add package Microsoft.Agents.A365.Observability.Hosting
-
-# Optional auto-instrumentation extensions
-dotnet add package Microsoft.Agents.A365.Observability.Extensions.SemanticKernel
-dotnet add package Microsoft.Agents.A365.Observability.Extensions.OpenAI
-dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
 ```
 
 ---
@@ -62,8 +57,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
 Use this pattern for Agent (Non AI Teammate) agents that run without a signed-in user (Autonomous / S2S).
 Requires two scaffold files in `Observability/` — create these before wiring Program.cs.
 
-> **⚠️ Known issues (v1.0.0-beta.1):**
-> - **TFM:** `Microsoft.OpenTelemetry` v1.0.0-beta.1 depends on `Microsoft.Extensions.Logging` v10.0.0. Projects targeting `net8.0` get a runtime `FileNotFoundException`. Fix: add `dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"` and upgrade TFM to `net9.0`.
+> **⚠️ Expected configuration (1.0.x GA):**
 > - **UseS2SEndpoint:** The distro does NOT set `UseS2SEndpoint = true` on the internal `Agent365Exporter`. You MUST set `o.Agent365.Exporter.UseS2SEndpoint = true` in the `UseMicrosoftOpenTelemetry` options callback, or the exporter posts to `/observability/` (OBO path) instead of `/observabilityService/` (S2S path), causing HTTP 401.
 > - **InferenceCallDetails:** The `providerName` parameter is required (not optional). Constructor: `(InferenceOperationType operationName, string model, string providerName, ...)`.
 > - **ExecuteToolScope.RecordResponse:** Takes `string`, not `Response` object.
@@ -318,8 +312,17 @@ builder.UseMicrosoftOpenTelemetry(o =>
         ? ExportTarget.Agent365 | ExportTarget.Console
         : ExportTarget.Agent365;
 
-    // ⚠️ Required for S2S: distro does NOT set this automatically in v1.0.0-beta.1
+    // ⚠️ Required for S2S: distro does NOT set this automatically (still manual opt-in in 1.0.x GA — defaults to false)
     o.Agent365.Exporter.UseS2SEndpoint = true;
+
+    // Auto-instrumentation toggles (all default `true` in 1.0.x — uncomment to opt out)
+    // o.Instrumentation.EnableSemanticKernelInstrumentation = false;
+    // o.Instrumentation.EnableOpenAIInstrumentation = false;
+    // o.Instrumentation.EnableAgentFrameworkInstrumentation = false;
+    // o.Instrumentation.EnableAspNetCoreInstrumentation = false;
+    // o.Instrumentation.EnableHttpClientInstrumentation = false;
+    // o.Instrumentation.EnableSqlClientInstrumentation = false;
+    // o.Instrumentation.EnableAzureSdkInstrumentation = false;
 
     o.Agent365.Exporter.TokenResolver = async (agentId, tenantId) =>
     {
@@ -364,6 +367,30 @@ var app = builder.Build();
 //     var agentId = GetAgentIdFromContext(httpContext);
 //     return (tenantId, agentId);
 // });
+```
+
+---
+
+## Graceful Shutdown
+
+The OTel SDK must stay alive for the lifetime of the app. Disposing the SDK flushes pending telemetry and shuts down all providers. ASP.NET Core handles this automatically when `app.Run()` is used and the host receives `SIGTERM`/`SIGINT`:
+
+```csharp
+// In a standard WebApplication / Generic Host, the registered TracerProvider
+// is disposed via the DI container on shutdown — no extra code needed.
+// The Microsoft.OpenTelemetry distro plugs into IHostApplicationLifetime and
+// flushes pending spans during the host's StopAsync.
+app.Run();
+```
+
+For non-host scenarios (console apps, custom hosts), explicitly dispose the OTel SDK on shutdown:
+
+```csharp
+// Resolve the SDK / TracerProvider from DI and dispose at exit to flush pending spans.
+using var scope = app.Services.CreateScope();
+var sdk = scope.ServiceProvider.GetRequiredService<TracerProvider>();
+// ... run work ...
+sdk.Dispose();  // flushes export queues
 ```
 
 ---
@@ -931,8 +958,8 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | S2S: FMI Hop 1+2 fails | Blueprint credentials wrong or `.WithFmiPath(agentId)` target incorrect | Check `ClientId` (Blueprint app ID) and `ClientSecret` in appsettings; verify `AgentId` matches the Agent Identity app ID |
 | S2S: FMI Hop 3 → 401 on export | Wrong scope or missing role | FMI Hop 3 scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default`; Agent Identity SP needs `OtelWrite` role assigned via Graph API |
 | S2S: MSI fails locally | No Managed Identity available in dev | Set `UseManagedIdentity: false` in appsettings.Development.json, ensure `ClientSecret` is populated |
-| S2S: `UseMicrosoftOpenTelemetry` not found | Unified distro not installed | Run `dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1` |
-| S2S: Runtime `FileNotFoundException` for `Microsoft.Extensions.Logging v10.0.0` | `Microsoft.OpenTelemetry` v1.0.0-beta.1 depends on v10 logging | Run `dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"` and upgrade TFM to `net9.0` |
+| S2S: `UseMicrosoftOpenTelemetry` not found | Unified distro not installed | Run `dotnet add package Microsoft.OpenTelemetry` (GA 1.0.2+) |
+| Duplicate spans for SemanticKernel / OpenAI / AgentFramework | Both unified distro auto-instrumentation toggles and the legacy `Microsoft.Agents.A365.Observability.Extensions.*` packages are wired | Uninstall the `Extensions.*` packages — the distro's `o.Instrumentation.Enable*Instrumentation` toggles supersede them |
 | S2S: HTTP 401 on span export (correct token) | `UseS2SEndpoint` not set — exporter posts to `/observability/` instead of `/observabilityService/` | Set `o.Agent365.Exporter.UseS2SEndpoint = true` in `UseMicrosoftOpenTelemetry` options |
 | S2S: CS7036 on `InferenceCallDetails` — missing `providerName` | `providerName` is required (not optional) | Use: `new InferenceCallDetails(operationName: ..., model: ..., providerName: "Azure OpenAI")` |
 | S2S: CS1503 on `ExecuteToolScope.RecordResponse` | Method takes `string`, not `Response` | Use: `toolScope.RecordResponse(resultString)` |

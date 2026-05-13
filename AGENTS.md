@@ -26,8 +26,8 @@ This plugin instruments and configures A365 agents. It contains six skills:
 
 **Skill dependency chain:**
 ```
-make-ai-teammate  ─────────────────────────────────→  add-workiq-tools
-      │                                            →  instrument-observability
+make-ai-teammate  ─────────────────────────────────→  instrument-observability  (automatic)
+      │                                            →  add-workiq-tools          (optional)
       └→  a365-setup (CLI install + Azure prereqs
             when isAITeammate = true, delegates back to make-ai-teammate)
 
@@ -39,9 +39,9 @@ make-a365-agent  →  instrument-observability  (Observability paths)
 
 test-local  (no prerequisite)
 ```
-`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all --aiteammate` (add `--m365` for M365-registered AI Teammates), reviews/publishes the manifest, and registers in the Teams Developer Portal. It then offers `instrument-observability` (Strongly Recommended) and `add-workiq-tools` (Optional) as follow-on steps.
-`a365-setup` outputs a mandatory intro message, detects stack/language/CEA/`hasBlueprintConfig`, shows a ✅/❌ prerequisite summary and only processes ❌ missing tools (never reinstalls ✅ tools), asks the blueprint question when an existing config is found (reuse vs fresh), then delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
-`make-a365-agent` checks for an existing blueprint config before collecting inputs — if found, asks the developer whether to reuse (skips `a365 setup all`) or create fresh. Runs `a365 setup all` for non-AI Teammate paths (Register, Observability, WorkIQ); add `--m365` for CEA agents and follow with `a365 setup permissions bot`. Supports `--authmode obo|s2s` to control permission type (`both` was removed in CLI 1.1). Admin consent handoff: Entra portal (App registrations > Blueprint app > API permissions > Grant admin consent) or PowerShell from setup output. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
+`make-ai-teammate` creates the hosting layer, agent class, notification handling, full `a365.config.json`, runs `a365 setup all --aiteammate` (add `--m365` for M365-registered AI Teammates; never pass `--authmode` with `--aiteammate` — AI Teammate uses the Agentic User identity, not the caller's token), reviews/publishes the manifest, registers in the Teams Developer Portal, then **automatically** runs `instrument-observability` and **optionally** offers `add-workiq-tools`.
+`a365-setup` outputs a mandatory intro message, detects stack/language/CEA/`hasBlueprintConfig`, always updates the a365 CLI to latest (explicit exception to the ✅-skip rule), checks for an existing Azure CLI session before logging in, shows a ✅/❌ prerequisite summary and only processes ❌ missing tools. Asks the blueprint question (reuse vs fresh) then asks **capabilities first** — if AI Teammate is selected, auth mode is skipped (always `agentic-user` — agent's own M365 identity, not the caller's token); if non-AI Teammate, asks `obo` or `s2s`. Delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
+`make-a365-agent` checks for an existing blueprint config before collecting inputs — if found, asks the developer whether to reuse (skips `a365 setup all`) or create fresh. Runs `a365 setup all --authmode obo|s2s` for non-AI Teammate paths; add `--m365` for CEA agents and follow with `a365 setup permissions bot`. OtelWrite is auto-granted for newly provisioned agents — no GA consent step required. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
 `add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.json` to skip re-detection and verify prerequisites.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.

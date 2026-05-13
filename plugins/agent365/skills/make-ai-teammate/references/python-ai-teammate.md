@@ -7,17 +7,23 @@ Source: [Agent365-Samples/python/agent-framework/sample-agent](https://github.co
 
 ## Required Dependencies (pyproject.toml)
 
+All `microsoft-agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01. `microsoft-agents-hosting-aiohttp` is at 0.9.1.
+
 ```toml
 [project]
 name = "your-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    # AgentFramework SDK
-    "agent-framework-azure-ai",
+    # Framework SDK (install one)
+    "agent-framework-azure-ai",                           # AgentFramework
+    # "openai-agents",                                    # OpenAI Agents SDK
+    # "claude-agent-sdk >= 0.1.0",                        # Claude
+    # "langchain", "langchain-openai", "langgraph",       # LangChain
+    # "semantic-kernel",                                  # Semantic Kernel
 
     # Microsoft Agents SDK — hosting and integration
-    "microsoft-agents-hosting-aiohttp",
+    "microsoft-agents-hosting-aiohttp >= 0.9.1",
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
@@ -28,15 +34,26 @@ dependencies = [
     # Core
     "python-dotenv",
     "aiohttp",
-    "uvicorn[standard]>=0.20.0",
-    "fastapi>=0.100.0",
-    "httpx>=0.24.0",
-    "pydantic>=2.0.0",
-    "typing-extensions>=4.0.0",
+    "uvicorn[standard] >= 0.20.0",
+    "fastapi >= 0.100.0",
+    "httpx >= 0.24.1, < 0.28",
+    "pydantic >= 2.0.0",
+    "typing-extensions >= 4.0.0",
+    "wrapt >= 1.15.0",
 
-    # Microsoft Agent 365 SDK packages
-    "microsoft_agents_a365_runtime >= 0.1.0",
-    "microsoft_agents_a365_notifications >= 0.1.0"
+    # Microsoft Agent 365 SDK packages (GA 1.0.0)
+    "microsoft-agents-a365-runtime >= 1.0.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
+    "microsoft-agents-a365-observability-core >= 1.0.0",
+    "microsoft-agents-a365-observability-hosting >= 1.0.0",
+    "microsoft-agents-a365-tooling >= 1.0.0",
+
+    # MCP tooling adapter (install one matching your framework — parity with .NET IMcpToolRegistrationService)
+    "microsoft-agents-a365-tooling-extensions-agentframework >= 1.0.0",
+    # "microsoft-agents-a365-tooling-extensions-openai >= 1.0.0",
+    # "microsoft-agents-a365-tooling-extensions-claude >= 1.0.0",
+
+    "microsoft-opentelemetry >= 0.1.0a3",
 ]
 
 [tool.uv]
@@ -63,6 +80,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
@@ -125,7 +143,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -144,7 +162,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
@@ -183,10 +201,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from aiohttp import web
-from microsoft_agents_hosting_aiohttp import CloudAdapterAiohttp
+from microsoft_agents_hosting_aiohttp import CloudAdapter
 from microsoft_agents_hosting_core import ActivityTypes
+from microsoft_agents.hosting.core.authorization import MsalConnectionManager
 from microsoft_agents_a365_notifications import (
     agent_notification,
     ChannelId,
@@ -201,7 +221,7 @@ AUTH_HANDLER_NAME = os.getenv("AUTH_HANDLER_NAME", "")
 class GenericAgentHost:
     def __init__(self, agent: AgentInterface):
         self._agent = agent
-        self._adapter: CloudAdapterAiohttp | None = None
+        self._adapter: CloudAdapter | None = None
         self._app: web.Application | None = None
 
     def _setup_handlers(self):
@@ -227,12 +247,10 @@ class GenericAgentHost:
             await context.send_activity("Got it — working on it…")
             await context.send_activity({"type": "typing"})
 
-            auth = None
-            if AUTH_HANDLER_NAME:
-                token_result = await context.get_token(AUTH_HANDLER_NAME)
-                auth = getattr(token_result, "token", None)
-            if not auth:
-                auth = os.getenv("BEARER_TOKEN")
+            # Pass the Authorization instance from the adapter (NOT a raw token string).
+            # The agent class calls authorization.exchange_token(...) per turn for OBO /
+            # agentic-user, or reads BEARER_TOKEN env when USE_AGENTIC_AUTH is false.
+            authorization = self._adapter.authorization
 
             # Typing indicator loop
             typing_active = True
@@ -246,7 +264,7 @@ class GenericAgentHost:
             try:
                 reply = await self._agent.process_user_message(
                     context.activity.text or "",
-                    auth,
+                    authorization,
                     AUTH_HANDLER_NAME or None,
                     context,
                 )
@@ -273,11 +291,12 @@ class GenericAgentHost:
     async def start_server(self):
         await self._agent.initialize()
 
-        self._adapter = CloudAdapterAiohttp(
-            client_id=os.getenv("CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID", ""),
-            client_secret=os.getenv("CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET", ""),
-            tenant_id=os.getenv("CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID", ""),
-        )
+        # MsalConnectionManager reads all CONNECTIONS__* / AGENTAPPLICATION__* env vars
+        # and resolves the right token issuer per service URL. Do NOT pass raw
+        # client_id / client_secret / tenant_id to the adapter — the connection
+        # manager owns that.
+        connection_manager = MsalConnectionManager.from_environment()
+        self._adapter = CloudAdapter(connection_manager=connection_manager)
         self._setup_handlers()
 
         self._app = web.Application()
@@ -322,6 +341,8 @@ def create_and_run_host(agent_class: Type[AgentInterface]):
 
 from abc import ABC, abstractmethod
 
+from microsoft_agents.hosting.core import Authorization
+
 
 class AgentInterface(ABC):
     @abstractmethod
@@ -331,7 +352,7 @@ class AgentInterface(ABC):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str: ...
@@ -344,10 +365,95 @@ class AgentInterface(ABC):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         return None
+```
+
+---
+
+## mcp_tool_registration_service.py — MCP Tool Loader (parity with .NET DI)
+
+For parity with the .NET `IMcpToolRegistrationService` DI hook, Python uses a module-level singleton that wraps the SDK's `McpToolServerConfigurationService`. The agent class instantiates this once and reuses it across turns.
+
+```python
+# mcp_tool_registration_service.py
+# A365 MCP — single instance imported by agent.py.
+# Wraps the SDK's McpToolServerConfigurationService and resolves servers
+# from ToolingManifest.json. The add-workiq-tools skill writes servers to
+# that file; this service reads them at runtime.
+
+import logging
+from microsoft_agents_a365_tooling import McpToolServerConfigurationService
+
+logger = logging.getLogger(__name__)
+
+
+class McpToolRegistrationService:
+    def __init__(self) -> None:
+        self._service = McpToolServerConfigurationService()
+        self._cache: dict[str, list] = {}
+
+    async def discover_and_connect_servers(
+        self, conversation_id: str, authorization, auth_handler_name: str, context
+    ) -> list:
+        """Resolve MCP tools for a conversation; cached after first call per turn."""
+        if conversation_id in self._cache:
+            return self._cache[conversation_id]
+
+        # Notify the user (informative update) while tools load.
+        await context.send_activity({"type": "typing"})
+        tools = await self._service.get_mcp_tools_async(
+            authorization=authorization,
+            auth_handler_id=auth_handler_name,
+            context=context,
+        )
+        self._cache[conversation_id] = tools
+        return tools
+
+    async def cleanup(self) -> None:
+        await self._service.cleanup()
+
+
+# Module-level singleton — import this from agent.py.
+mcp_tool_service = McpToolRegistrationService()
+```
+
+---
+
+## turn_context_utils.py — Caller Identity Helper
+
+Reusable helper to pull caller identity from `TurnContext` consistently across notification and message handlers. Used by all framework variants.
+
+```python
+# turn_context_utils.py
+# A365 — extracts caller identity from TurnContext for prompt building
+# and observability attribution.
+
+from typing import Optional
+
+
+def extract_turn_context_details(
+    context,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Returns (caller_name, caller_id, caller_aad_object_id) from a TurnContext.
+
+    All three are best-effort and may be None for unauthenticated activities
+    (e.g. local AgentsPlayground turns). Strip control characters before
+    interpolating caller_name into prompts.
+    """
+    activity = getattr(context, "activity", None)
+    if activity is None:
+        return (None, None, None)
+
+    from_property = getattr(activity, "from_property", None)
+    caller_name = getattr(from_property, "name", None) if from_property else None
+    caller_id = getattr(from_property, "id", None) if from_property else None
+    caller_aad_object_id = (
+        getattr(from_property, "aad_object_id", None) if from_property else None
+    )
+    return (caller_name, caller_id, caller_aad_object_id)
 ```
 
 ---
@@ -433,6 +539,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from agents import Agent, Runner
 
@@ -471,7 +578,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -496,7 +603,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
@@ -542,6 +649,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from claude_agent_sdk import (
     ClaudeSDKClient,
@@ -579,7 +687,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -610,7 +718,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
@@ -665,6 +773,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner
@@ -699,7 +808,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -742,7 +851,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
@@ -786,6 +895,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -830,7 +940,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -853,7 +963,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
@@ -896,6 +1006,7 @@ import logging
 import os
 import re
 from agent_interface import AgentInterface
+from microsoft_agents.hosting.core import Authorization
 
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.open_ai import (
@@ -942,7 +1053,7 @@ class MyAgent(AgentInterface):
     async def process_user_message(
         self,
         message: str,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
         context,
     ) -> str:
@@ -965,7 +1076,7 @@ class MyAgent(AgentInterface):
         notification_type: str,
         payload,
         context,
-        auth: str | None,
+        auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
         if notification_type == NotificationType.EMAIL_NOTIFICATION:
