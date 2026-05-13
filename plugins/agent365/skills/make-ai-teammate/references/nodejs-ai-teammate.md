@@ -45,11 +45,10 @@ npm install --save-dev \
   @types/node \
   typescript \
   ts-node \
-  nodemon \
-  @microsoft/m365agentsplayground@^0.2.18
+  nodemon
 ```
 
-`@microsoft/m365agentsplayground` is used by the `test-local` skill for `npm run test-tool`.
+For local testing via `test-local`, the `@microsoft/agentsplayground` CLI is installed **globally** (not as a dev dependency) — `test-local` handles this itself: `npm install -g @microsoft/agentsplayground`.
 
 ### Framework-specific packages (install one)
 ```bash

@@ -74,11 +74,17 @@ builder.Services.AddSingleton<IStorage, MemoryStorage>();
 builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
 builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
 
-// ────── Transcript Logging Middleware ─────────────────────────────────────
-// Logs every turn (incoming and outgoing activities) to disk for debugging.
+// ────── Transcript Logging Middleware (DEV ONLY) ──────────────────────────
+// Logs every turn (incoming + outgoing activities, including user content) to
+// disk. Persisting full transcripts can leak PII / secrets — gate on
+// Development environment, or remove entirely for production. For redacted
+// logging in production, write a custom ITranscriptLogger that filters.
 
-builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
-    [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
+        [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
+}
 
 // ────── Agent ─────────────────────────────────────────────────────────────
 
@@ -534,10 +540,16 @@ builder.Services.AddSingleton<IStorage, MemoryStorage>();
 builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
 builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
 
-// ────── Transcript Logging Middleware ─────────────────────────────────────
+// ────── Transcript Logging Middleware (DEV ONLY) ──────────────────────────
+// Persists full conversation transcripts to disk — gate on Development env
+// to avoid leaking PII / secrets in production. For production, use a
+// redacting ITranscriptLogger instead.
 
-builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
-    [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddSingleton<Microsoft.Agents.Builder.IMiddleware[]>(
+        [new TranscriptLoggerMiddleware(new FileTranscriptLogger())]);
+}
 
 // ────── Semantic Kernel ───────────────────────────────────────────────────
 
