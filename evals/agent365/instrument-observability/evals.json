@@ -229,7 +229,7 @@
         "Phase 2: dotnet add package Microsoft.OpenTelemetry (unified distro, replaces individual A365 observability packages) is run",
         "Phase 2: dotnet add package Microsoft.Identity.Client is run",
         "Phase 2: Azure.Identity is required — used for ManagedIdentityCredential in the MSI path of ObservabilityTokenService",
-        "Phase 2: dotnet add package Microsoft.Extensions.Logging --version \"10.0.0-*\" is run — required by Microsoft.OpenTelemetry v1.0.0-beta.1",
+        "Phase 2: Microsoft.OpenTelemetry installed without --version flag (GA 1.0.2+); no Microsoft.Extensions.Logging 10.0.0 workaround needed (fixed in 1.0.1); no net9.0 TFM upgrade required (net8.0 supported)",
         "Phase 3: Observability/ObservabilityServiceExtensions.cs is created with Agent365ObservabilityContext and AddAgent365Observability() extension",
         "Phase 3: Observability/ObservabilityTokenService.cs is created with MSAL ConfidentialClientApplicationBuilder.WithFmiPath() targeting api://9b975845-388f-4429-889e-eab1ef63949c/.default and 50-minute refresh loop",
         "Phase 3: Program.cs calls builder.Services.AddAgent365Observability() — NOT AddAgenticTracingExporter()",

@@ -167,39 +167,21 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
    dotnet add package Microsoft.Agents.A365.Observability.Hosting
    ```
 
-   **For S2S / autonomous agents using the unified distro** (preferred):
+   **Unified distro (preferred — GA as of 2026-05-01, single package replaces all the above + auto-instrumentation):**
    ```bash
-   dotnet add package Microsoft.OpenTelemetry --version 1.0.0-beta.1
-   dotnet add package Azure.Identity
-   dotnet add package Microsoft.Identity.Client
-   # Required: v1.0.0-beta.1 depends on Microsoft.Extensions.Logging v10.0.0
-   dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
+   dotnet add package Microsoft.OpenTelemetry
+   dotnet add package Azure.Identity              # S2S only
+   dotnet add package Microsoft.Identity.Client   # S2S only
    ```
-   > **⚠️ TFM requirement:** If the project targets `net8.0`, upgrade to `net9.0` or later. The `Microsoft.OpenTelemetry` v1.0.0-beta.1 package has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0 which causes a runtime `FileNotFoundException` on `net8.0`. See "Known Issues" section.
+   No `--version` flag needed — install latest stable (1.0.2+). Targets `net8.0` and `netstandard2.0`. The legacy `Microsoft.Extensions.Logging 10.0.0-*` workaround and `net9.0` requirement are obsolete (fixed in 1.0.1).
 
-2. **Optional auto-instrumentation extensions** — ask the user which AI framework they use.
+2. **Optional auto-instrumentation** — the unified distro auto-instruments SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk by default. All toggles are `o.Instrumentation.Enable*Instrumentation = true` and live on the `UseMicrosoftOpenTelemetry` options callback.
 
-   **If the user selects `Extensions.OpenAI` — pre-flight check (do this first, as a named step):**
-   ```bash
-   dotnet list package | grep Azure.AI.OpenAI
-   ```
-   If the installed version is below `2.7.0-beta.2`, upgrade it **before** installing the extension:
-   ```bash
-   dotnet add package Azure.AI.OpenAI --version 2.7.0-beta.2
-   ```
-   Do this proactively — do not wait for a build failure to discover the version conflict.
+   > **Do not install the legacy `Microsoft.Agents.A365.Observability.Extensions.{SemanticKernel,OpenAI,AgentFramework}` packages alongside the unified distro** — they're superseded by the distro's `o.Instrumentation.Enable*` toggles. Mixing the two produces duplicate spans.
 
-   Then install the selected extension(s):
-   ```bash
-   # Semantic Kernel
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.SemanticKernel
-   # OpenAI (requires Azure.AI.OpenAI >= 2.7.0-beta.2 — checked above)
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.OpenAI
-   # Agent Framework
-   dotnet add package Microsoft.Agents.A365.Observability.Extensions.AgentFramework
-   ```
+   To opt out of a specific instrumentation, set the toggle to `false` in the options callback (e.g. `o.Instrumentation.EnableSemanticKernelInstrumentation = false`).
 
-3. **Verify** the packages appear in the `.csproj` file.
+3. **Verify** the package appears in the `.csproj` file.
 
 ### For Node.js
 
@@ -842,21 +824,22 @@ The Node.js SDK (`@microsoft/agents-a365-observability@0.2.0-preview.5`) and .NE
 
 The `@microsoft/opentelemetry` distro creates `Agent365Exporter` internally but does NOT pass `useS2SEndpoint: true`. For S2S agents, the exporter defaults to the OBO path (`/observability/tenants/{tenantId}/otlp/agents/{agentId}/traces`), but S2S requires `/observabilityService/...`.
 
-**This bug affects BOTH Node.js and .NET SDKs:**
+**Node.js (`@microsoft/opentelemetry` 1.0+ GA — FIXED):**
 
-**Node.js (`@microsoft/opentelemetry` v0.1.0-beta.1):**
-
-1. `A365Configuration` — add `useS2SEndpoint` property + `AGENT365_USE_S2S_ENDPOINT` env var support
-2. `distro.js` — pass `a365Config.useS2SEndpoint` when constructing `Agent365Exporter`
-
-**For generated agent code:** Set the env var in `.env`:
+`useS2SEndpoint` is now a first-class option in the `a365` options. Generated S2S agent code should pass it directly:
+```typescript
+useMicrosoftOpenTelemetry({
+  a365: {
+    enabled: true,
+    enableObservabilityExporter: true,
+    useS2SEndpoint: true,   // first-class option in 1.0+
+    tokenResolver: a365TokenResolver,
+  },
+});
 ```
-AGENT365_USE_S2S_ENDPOINT=true
-```
+The old `AGENT365_USE_S2S_ENDPOINT` env var workaround and custom `spanProcessors` workarounds are no longer needed.
 
-This is a distro-level fix. The `useMicrosoftOpenTelemetry()` call does NOT need a custom `spanProcessors` array — the built-in exporter reads the env var via `A365Configuration` and passes it to `Agent365Exporter`.
-
-**.NET (`Microsoft.OpenTelemetry` v1.0.0-beta.1):**
+**.NET (`Microsoft.OpenTelemetry` 1.0.x GA):**
 
 The `UseMicrosoftOpenTelemetry()` builder extension does NOT set `UseS2SEndpoint = true` on the `Agent365ExporterOptions` when using the unified distro. Without this, the exporter posts to `/observability/` (OBO path) instead of `/observabilityService/` (S2S path), causing HTTP 401.
 
@@ -896,22 +879,6 @@ AADSTS82008: All agentic applications requesting a token exchange token must inc
 `LangChainTraceInstrumentor.instrument(LangChainCallbacks)` requires `ObservabilityManager` to be fully initialized. Calling it as a standalone statement after `useMicrosoftOpenTelemetry()` throws `"ObservabilityManager is not configured yet"` when `a365.enabled: true`.
 
 **Workaround:** Use `instrumentationOptions: { langchain: {} }` inside the `useMicrosoftOpenTelemetry()` options object. This ensures the distro initializes the manager and the LangChain instrumentor in the correct order.
-
-### .NET `Microsoft.OpenTelemetry` v1.0.0-beta.1 Requires .NET 10 Logging
-
-`Microsoft.OpenTelemetry` v1.0.0-beta.1 has a hard dependency on `Microsoft.Extensions.Logging` v10.0.0. On projects targeting `net8.0` or `net9.0`, this causes a runtime `FileNotFoundException` for `Microsoft.Extensions.Logging, Version=10.0.0.0`.
-
-**Workaround:** Add an explicit package reference to the v10 preview of `Microsoft.Extensions.Logging`:
-```bash
-dotnet add package Microsoft.Extensions.Logging --version "10.0.0-*"
-```
-
-If the project targets `net8.0`, also upgrade the TFM to `net9.0` for best compatibility:
-```xml
-<TargetFramework>net9.0</TargetFramework>
-```
-
-**Status:** This is expected to be resolved when `Microsoft.OpenTelemetry` ships a stable release or when the project targets `net10.0`.
 
 ### .NET `InferenceCallDetails` Constructor — `providerName` Is Required
 
