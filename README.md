@@ -153,11 +153,11 @@ Handles Steps 1–2 for every path: installs/updates the a365 CLI, validates Azu
 
 ### `make-a365-agent` — Provision Agent (Non AI Teammate) Agents
 
-Provisions an **Agent (Non AI Teammate)** with Agent 365. A Standard Agent has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
+Provisions an **Agent (Non AI Teammate)** with Agent 365. A Agent (Non AI Teammate) has no Agentic User identity (no UPN) — it is task-oriented, system-oriented, or assistive, and appears as a system or service agent rather than a virtual teammate. It authenticates via an Entra App ID or Agent Blueprint + Agent Identity, in one of two execution modes:
 
-> **Taxonomy:** Agent (Non AI Teammate) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Agent (Non AI Teammate), but not all Standard Agents are CEAs. Other Standard Agent types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
+> **Taxonomy:** Agent (Non AI Teammate) is a broad category. **CEA (Custom Engine Agent) is a specific subset** — built on a custom runtime, often with Teams/M365 integration. CEA ⊂ Agent (Non AI Teammate), but not all Agent (Non AI Teammate)s are CEAs. Other Agent (Non AI Teammate) types include Agent Builder agents, SharePoint agents, background automation / import / sync agents, policy / classifier agents, and 3P system agents with no Teams surface.
 >
-> CEA is the primary supported Standard Agent path. CEA is **not** supported as an AI Teammate.
+> CEA is the primary supported Agent (Non AI Teammate) path. CEA is **not** supported as an AI Teammate.
 
 - **Assistive (OBO)** — acts on behalf of the signed-in user via On-Behalf-Of flow
 - **Autonomous (S2S / Service Principal)** — runs independently, no user required
@@ -168,7 +168,7 @@ Normally invoked from `a365-setup` after CLI and Azure prerequisites are confirm
 |-----------|-------------|
 | **Register** | Blueprint + Entra permissions. Agent appears in the Agent 365 catalog. |
 | **Register + Observability** | Same, then invokes `instrument-observability`. |
-| **Observability** (Custom Engine Agent / Standard Agent) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
+| **Observability** (Custom Engine Agent / Agent (Non AI Teammate)) | Blueprint + permissions, then invokes `instrument-observability`. Supports Assistive (OBO) and Autonomous (S2S). |
 | **Observability + WorkIQ** | Same, then also invokes `add-workiq-tools`. |
 
 Always shows a dry-run preview before applying anything. `a365 setup all` is idempotent — safe to re-run. WorkIQ MCP calls use OAuth On-Behalf-Of (OBO) tokens; users consent on first data access.
@@ -186,7 +186,7 @@ Always shows a dry-run preview before applying anything. `a365 setup all` is ide
 ### `add-workiq-tools` — Add WorkIQ MCP servers
 
 > **Prerequisite:** `a365-setup` must be run first.
-> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates and Agent (Non AI Teammate) Assistive (OBO). Not available for Standard Agent Autonomous (S2S).
+> **Auth requirement:** WorkIQ requires a user in the loop — supported for AI Teammates and Agent (Non AI Teammate) Assistive (OBO). Not available for Agent (Non AI Teammate) Autonomous (S2S).
 
 Adds pre-built Microsoft 365 integration tools to your agent. Runs `a365 develop list-available`
 to show the MCP server catalog, adds selected servers via `a365 develop add-mcp-servers`
