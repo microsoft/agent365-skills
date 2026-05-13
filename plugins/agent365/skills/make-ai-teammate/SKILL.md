@@ -713,13 +713,24 @@ a365 setup all --agent-name <name> --aiteammate --dry-run
 Show the full dry-run output and ask:
 > "Here's what `a365 setup all` will create. Does this look correct? Type **yes** to proceed or **no** to abort."
 
-**If yes**, ask: "Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?" Store as `isM365 = true/false`. Then apply:
+**If yes**, decide whether to add `--m365` based on the CEA detection signal `usesTeamsOrCopilot` (from `.a365-workspace-detection.json` / session context):
+
+- **If `usesTeamsOrCopilot = 1`** (CEA detected — Teams/Copilot markers found in repo): set `isM365 = true` automatically. **Do NOT ask the user** — just inform them in one line: *"Detected Teams/Copilot integration in this project — adding `--m365` to register the agent in the M365 admin center."*
+- **If `usesTeamsOrCopilot = 0`** (no CEA markers): ask the user, since this is an explicit deployment decision that can't be inferred from code:
+  ```
+  Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?
+    1. Yes — M365-integrated (add --m365)
+    2. No — standalone AI Teammate (programmatic / API consumers only)
+  ```
+  Store as `isM365 = true/false`.
+
+Then apply:
 
 ```bash
-# Default AI Teammate (no Teams/Copilot catalog integration)
+# Standalone AI Teammate (no Teams/Copilot catalog integration) — isM365 = false
 a365 setup all --agent-name <name> --aiteammate
 
-# M365-registered AI Teammate (Teams / Microsoft Copilot integration)
+# M365-registered AI Teammate (Teams / Microsoft Copilot integration) — isM365 = true
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
