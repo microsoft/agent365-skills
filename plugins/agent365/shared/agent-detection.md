@@ -323,7 +323,7 @@ Agent (Non AI Teammate) with no M365 custom engine configuration. Fresh setup or
 |--------|-----------|
 | No M365 signals | Step 1 greps return nothing |
 | No existing a365 config | `a365.config.json` absent |
-| Standard agent framework | dotnet-agentframework or nodejs-langchain detected |
+| Common agent framework detected | dotnet-agentframework or nodejs-langchain |
 
 **Pre-fill:** `registrationType = 3`, `usesTeamsOrCopilot = 0`. Capabilities menu: all 4 options apply; options can be combined.
 
