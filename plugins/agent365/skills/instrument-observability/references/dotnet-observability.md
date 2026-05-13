@@ -54,7 +54,7 @@ dotnet add package Microsoft.Agents.A365.Observability.Hosting
 
 ## Program.cs — S2S Path (`authMode: s2s`)
 
-Use this pattern for Agent (Non AI Teammate) agents that run without a signed-in user (Autonomous / S2S).
+Use this pattern for Agent (Non AI Teammate) agents that run without a signed-in user (`s2s` — Service Principal).
 Requires two scaffold files in `Observability/` — create these before wiring Program.cs.
 
 > **⚠️ Expected configuration (1.0.x GA):**

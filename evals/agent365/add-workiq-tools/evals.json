@@ -159,7 +159,7 @@
         "Phase 0B: Auth mode question presented — user selects S2S",
         "Phase 0B: Skill exits immediately with ❌ message — WorkIQ is not available for S2S agents",
         "Phase 0B: No option to proceed is offered — hard block, not a warning",
-        "Phase 0B: Message explains WorkIQ requires a delegated OBO token at runtime and instructs user to switch to Assistive (obo) mode",
+        "Phase 0B: Message explains WorkIQ requires a delegated OBO token at runtime and instructs user to switch to `obo` (On-Behalf-Of) mode",
         "Phase 0C and all subsequent phases: NOT reached — session ends after the block message",
         "No a365 develop list-available is run",
         "No code changes are made to the agent"

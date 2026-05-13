@@ -7,7 +7,7 @@ description: >
   instrumentation scopes (InvokeAgentScope, InferenceScope, ExecuteToolScope — required for
   store publishing), and updates configuration files. Asks a two-stage question — agent kind
   (AI Teammate or Agent (Non AI Teammate)) and auth mode — to determine
-  the correct token path: OBO (obo / agentic-user) or Autonomous (s2s)
+  the correct token path: OBO (`obo` / `agentic-user`) or Service Principal (`s2s`)
   (FMI 3-hop token chain with Power Platform scope supported for .NET, Node.js, and Python — each language
   gets a scaffold token-service file that acquires and refreshes the Observability API token via the FMI chain). Non-destructive and idempotent.
 compatibility:
@@ -120,7 +120,7 @@ If `agentType` and `authMode` are already present in the detection cache (from a
 
 Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
 - **AI Teammate:** `agentic-user` (agent's own M365 identity — not the caller's token; auto-set, no question needed)
-- **Agent (Non AI Teammate):** `obo` (Assistive / signed-in user token) or `s2s` (Autonomous / Service Principal)
+- **Agent (Non AI Teammate):** `obo` (On-Behalf-Of — signed-in user token) or `s2s` (Service Principal, no user token)
 
 **Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 
