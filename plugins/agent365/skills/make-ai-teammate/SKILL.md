@@ -59,9 +59,8 @@ hooks:
         7. a365 setup all --aiteammate (with or without --m365) completed without fatal errors.
         8. Blueprint ID was read from a365.generated.config.json after setup all completed.
         9. manifest.json was reviewed (read-only verification — CLI owns the file; not hand-edited).
-        10. a365 publish ran (or sideload fallback was offered if auth failed).
-        11. Teams Developer Portal bot endpoint was confirmed.
-        12. Smoke test was completed (Teams or AgentsPlayground).
+        10. a365 publish ran (or sideload fallback was offered if auth failed) — CLI handles bot endpoint registration; no manual Developer Portal config required.
+        11. Smoke test was completed (Teams or AgentsPlayground).
 
         Also verify for all languages:
         - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
@@ -338,7 +337,7 @@ TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 **.NET tasks (only create if not already present):**
@@ -351,7 +350,7 @@ TaskCreate: "Add ToolingManifest.json"                                          
 TaskCreate: "Validate build (dotnet build)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 **Python tasks (only create if not already present):**
@@ -365,7 +364,7 @@ TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 ---
@@ -691,12 +690,12 @@ Ask the user:
 
 ---
 
-## Phase 9.7 — Register, Publish, Deploy, and Configure in Teams Dev Portal
+## Phase 9.7 — Register, Publish, and Deploy
 
-**Mark task in progress: "Register, publish, deploy, and configure in Teams Dev Portal"**
+**Mark task in progress: "Register, publish, and deploy"**
 
 This phase runs the full AI Teammate registration and publishing pipeline:
-`a365 setup all` → manifest update → `a365 publish` → Teams Dev Portal → Agentic User confirmation → smoke test.
+`a365 setup all` → manifest verification → `a365 publish` → smoke test. The CLI handles bot endpoint registration and Teams Developer Portal configuration automatically — no manual portal steps required.
 
 ---
 
@@ -808,21 +807,16 @@ a365 manifest package   # produces a .zip app package
 
 ---
 
-### Step 9.7.4 — Configure in Teams Developer Portal
+### Step 9.7.4 — (Optional) Verify in Teams Developer Portal
 
-Open **https://dev.teams.microsoft.com** and guide the user:
+`a365 publish` (Step 9.7.3) registers the app and sets the bot messaging endpoint automatically. No manual configuration is required in **https://dev.teams.microsoft.com** — do NOT instruct the user to update the messaging endpoint by hand.
 
-1. **Sign in** with the same M365 account used during setup.
-2. Go to **Apps** → find the app by name or search by App ID (`teamsAppId` from `a365.generated.config.json`).
-3. **Basic information** — confirm `App ID` matches `teamsAppId` in `a365.generated.config.json`.
-4. **App features → Bot**:
-   - Confirm **Bot ID** matches `agentAppId` from `a365.generated.config.json`.
-   - Confirm **Messaging endpoint** is set to the live `/api/messages` URL.
-   - If the endpoint is wrong or missing — update it and click **Save**.
-5. **Permissions** — confirm delegated permissions include `User.Read` (and any WorkIQ scopes if WorkIQ was added).
-6. Click **Publish → Publish to your org** (or **Test and distribute** → **Download** for sideload).
+If the user wants to visually confirm the registration succeeded, they can:
 
-> "Once the bot endpoint is confirmed in Developer Portal, your agent is ready to receive messages in Teams."
+1. Open **https://dev.teams.microsoft.com** → **Apps** → find the app by name or App ID (`teamsAppId` from `a365.generated.config.json`).
+2. Spot-check that `App ID` matches `teamsAppId`, `Bot ID` matches `agentAppId`, and `Messaging endpoint` is the live `/api/messages` URL.
+
+If anything looks wrong, re-run `a365 publish` (idempotent) rather than hand-editing the portal.
 
 ---
 
@@ -856,7 +850,7 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 | `Connection refused` on tunnel | Tunnel not running | `devtunnel host <name> --port 3978` |
 | `404` on `/api/messages` | Agent not started | `npm start` / `dotnet run` / `python host_agent_server.py` |
 
-**Mark task complete: "Register, publish, deploy, and configure in Teams Dev Portal"**
+**Mark task complete: "Register, publish, and deploy"**
 
 ---
 

@@ -790,9 +790,8 @@ node -e "const c=require('./a365.generated.config.json'); console.log(c.agentBlu
 > **This step is handled by the `make-ai-teammate` skill (Step 3 above).** This section is kept as a reference for standalone re-registration scenarios only.
 
 If you need to re-publish or re-register an existing AI Teammate agent without re-running the full `make-ai-teammate` flow, the steps are in `make-ai-teammate` Phase 10:
-- Manifest review (`manifest/manifest.json`)
-- `a365 publish`
-- Teams Developer Portal configuration (read `agentBlueprintId` from `a365.generated.config.json`)
+- Manifest review (read-only — `manifest/manifest.json`)
+- `a365 publish` (handles bot endpoint registration automatically — no manual Teams Developer Portal config needed)
 - Create agent instance via Teams > Apps > Request Instance
 - Admin approval at [admin.cloud.microsoft/#/agents/all/requested](https://admin.cloud.microsoft/#/agents/all/requested)
 
