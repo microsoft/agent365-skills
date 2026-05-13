@@ -754,22 +754,35 @@ node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint
 
 **Glob** for `manifest.json` or `appPackage/manifest.json`.
 
-If found, **read** it and check/update these fields using values from `a365.generated.config.json`:
+If found, **read** it and check each field below. If a field is missing, **add it**; if a field exists with a different value than expected, **update it** using values from `a365.generated.config.json`:
 
-| Field | Value |
-|-------|-------|
-| `$schema` | `https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json` (Teams 1.22+ for AI Teammates) |
-| `manifestVersion` | `"1.22"` |
-| `version` | bump minor (e.g. `1.0.0` → `1.0.1`) |
-| `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) |
-| `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) |
-| `bots[0].supportsFiles` | `false` |
-| `bots[0].isNotificationOnly` | `false` |
-| `copilotAgents.customEngineAgents` | **AI Teammate marker** — `[{ "id": "<agentAppId>", "type": "bot" }]`. This top-level block is what distinguishes an AI Teammate from a regular Teams bot in 1.22+. Required for the agent to appear as an AI Teammate. |
-| `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) |
-| `webApplicationInfo.id` | same as `bots[0].botId` |
+| Field | Value | Action if missing |
+|-------|-------|---|
+| `$schema` | `https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json` (Teams 1.22+ for AI Teammates) | Add |
+| `manifestVersion` | `"1.22"` | Add |
+| `version` | bump minor (e.g. `1.0.0` → `1.0.1`) | Set to `1.0.0` |
+| `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) | Add |
+| `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) | Add `bots` array with one entry |
+| `bots[0].supportsFiles` | `false` | Add |
+| `bots[0].isNotificationOnly` | `false` | Add |
+| `copilotAgents.customEngineAgents` | **AI Teammate marker (REQUIRED in v1.22+)** — `[{ "id": "<agentAppId>", "type": "bot" }]` where `<agentAppId>` matches `bots[0].botId`. This top-level block is what distinguishes an AI Teammate from a regular Teams bot. Without it, the agent will publish as a plain Teams bot. | **Add the entire `copilotAgents` block** if absent |
+| `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) | Add as `[]` and append the domain |
+| `webApplicationInfo.id` | same as `bots[0].botId` | Add |
 
 Do NOT overwrite existing values that are already correct.
+
+Example of the required `copilotAgents` block (top-level — sibling of `bots`, NOT nested inside it):
+
+```json
+"copilotAgents": {
+  "customEngineAgents": [
+    {
+      "id": "<agentAppId — same as bots[0].botId>",
+      "type": "bot"
+    }
+  ]
+}
+```
 
 > **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of direct ID substitution — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
 
