@@ -327,15 +327,22 @@ Tell the user:
 > **What to watch for:**
 >
 > - **Agent responds** — confirms the messaging stack is wired correctly.
-> - **Terminal logs** — if observability is instrumented, look for lines like:
+> - **Terminal logs** — if observability is instrumented, look for these signals in this order:
 >   ```
->   [Microsoft.Agents.A365.Observability] Exporting span: ...
->   [OpenTelemetry] Activity started: ...
+>   Agent365Exporter: Exporting batch of N spans.
+>   [Agent365Exporter] M non-genAI spans filtered out
+>   [Agent365Exporter] Partitioned into K identity groups (X spans skipped)
+>   Agent365ExporterCore: Obtained token for agent <agentId> tenant <tenantId>.
+>   Agent365ExporterCore: Sending chunk 1 of 1 (J spans, B bytes)
+>       to https://agent365.svc.cloud.microsoft/observability/tenants/<tenant>/otlp/agents/<agent>/traces?api-version=1.
+>   Agent365ExporterCore: HTTP 200 exporting spans. 'x-ms-correlation-id': '<guid>'.
 >   ```
->   These confirm traces are flowing. If you see them, observability is working locally.
+>   The `HTTP 200 exporting spans` line is the definitive confirmation that traces reached the A365 backend.
+>   `Partitioned into K identity groups` should show `K >= 1` for at least one batch after a Teams turn — if it's always `0`, the agent/tenant ID is missing from baggage (likely the `Guid.Empty` fallback bug — verify `instrument-observability` was followed correctly).
+>   To see these logs you need `Microsoft.Agents.A365.Observability: Debug` (or lower) in `appsettings.json`'s `Logging:LogLevel`.
 >
 > **To export traces to the A365 service** (not just console):
-> - .NET: set `EnableAgent365Exporter: true` in `appsettings.json`
+> - .NET: set `EnableAgent365Exporter: true` in `appsettings.json` (SDK defaults to `false` when key is absent)
 > - Node.js / Python: set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in `.env`
 >
 > **Stopping the agent:** Press `Ctrl+C` in Terminal 1.
@@ -364,7 +371,10 @@ Agent endpoint:     http://localhost:<port>/api/messages
 AgentsPlayground:   running (emulator mode — no auth required)
 
 Observability check:
-  If instrumented — watch terminal for Microsoft.Agents.A365.Observability log lines.
+  If instrumented — watch terminal for:
+    "Agent365ExporterCore: HTTP 200 exporting spans. 'x-ms-correlation-id': ..."
+    (and "Partitioned into K identity groups" with K >= 1)
+  Requires Microsoft.Agents.A365.Observability: Debug in Logging:LogLevel.
   To export to A365 service:
     .NET:           set EnableAgent365Exporter: true in appsettings.json
     Node.js/Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env

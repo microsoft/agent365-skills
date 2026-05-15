@@ -558,7 +558,7 @@ AskUserQuestion:
 The `authMode` value (`obo`, `s2s`, or `agentic-user`) drives which code path is used:
 - `obo` — signed-in user OBO; auth handler name from config, never hardcoded
 - `agentic-user` — agent's own M365 identity (persistent Azure AD user); same OBO wire-up as `obo` but the identity is the agent, not the signed-in human
-- `s2s` — service principal / autonomous; no per-turn user token; scaffold token-service file handles credential acquisition
+- `s2s` — service principal; no per-turn user token; scaffold token-service file handles credential acquisition. (Note: "autonomous" is a separate axis — an autonomous agent can use either OBO or S2S auth.)
 
 For `obo` and `agentic-user` paths: auth handler name comes from config (`AgentApplication:AgenticAuthHandlerName` in .NET, `agentApplication.authorization` object in Node.js, `auth_handler_id` from config in Python) — never hardcode `"AGENTIC"`. Agent IDs are always resolved dynamically from TurnContext (`agenticAppId` / `agentic_app_id`), never from config.
 
@@ -576,7 +576,7 @@ Add this inline comment wherever the auth handler is wired:
 
 **`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If the Agentic User did not get provisioned (e.g. the CLI reported a partial setup), re-run `a365 setup all --aiteammate` (idempotent) or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
 
-**`s2s`** — service principal / autonomous. Authenticates with the agent blueprint's own credentials (service principal). No signed-in user token.
+**`s2s`** — service principal auth. Authenticates with the agent blueprint's own credentials. No signed-in user token. An agent that "runs autonomously" can use either OBO or S2S — auth mode is independent of whether the agent is autonomous.
 
 ---
 
@@ -589,7 +589,7 @@ Add this inline comment wherever the auth handler is wired:
 - **In `add-workiq-tools`**: if `authMode = s2s` is detected (from cache or from the auth mode question), **exit immediately before any further questions or actions**:
 
 ```
-❌  WorkIQ tools are not available for S2S (autonomous) agents.
+❌  WorkIQ tools are not available for S2S agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 

@@ -117,7 +117,7 @@ Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`
 **If `authMode = s2s`, stop immediately and exit:**
 
 ```
-❌  WorkIQ tools are not available for S2S (autonomous) agents.
+❌  WorkIQ tools are not available for S2S agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 
