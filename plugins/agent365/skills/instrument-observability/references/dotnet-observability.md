@@ -31,23 +31,36 @@ Unified Distro (preferred — single package, GA as of 2026-05-01):
 | `Azure.Identity` | `ManagedIdentityCredential` for MSI-based token acquisition |
 | `Microsoft.Identity.Client` | MSAL `ConfidentialClientApplicationBuilder` with `.WithFmiPath()` for the FMI token chain |
 
-Install commands:
+Install commands (preferred for **all** paths — OBO / agentic-user / S2S / AI Teammate):
 ```bash
-# Preferred for all agents (unified distro — includes all observability types and auto-instrumentation toggles):
+# Single unified distro — includes all observability types (BaggageBuilder, InvokeAgentScope,
+# IExporterTokenCache<AgenticTokenStruct>, AgentDetails, CallerDetails, etc.) and
+# auto-instrumentation toggles for SemanticKernel / OpenAI / AgentFramework / AspNetCore /
+# HttpClient / SqlClient / AzureSdk.
 dotnet add package Microsoft.OpenTelemetry
-dotnet add package Azure.Identity        # S2S only
-dotnet add package Microsoft.Identity.Client  # S2S only
+
+# S2S path only (FMI token chain for ObservabilityTokenService):
+dotnet add package Azure.Identity
+dotnet add package Microsoft.Identity.Client
 ```
 
-> **Don't also install the legacy `Microsoft.Agents.A365.Observability.Extensions.*` packages** when using the unified distro — the auto-instrumentation toggles (`o.Instrumentation.EnableSemanticKernelInstrumentation` etc.) handle this. Mixing the two can produce duplicate spans.
+> **Do NOT also add `Microsoft.Agents.A365.Observability.Runtime` or
+> `Microsoft.Agents.A365.Observability.Hosting` as direct `<PackageReference>` entries
+> alongside `Microsoft.OpenTelemetry`.** The distro re-exports their types internally;
+> adding them directly creates **CS0433** duplicate-type errors for `AgentDetails`,
+> `CallerDetails`, `IExporterTokenCache<T>`, etc. The distro pulls them in transitively —
+> that's all you need.
 
-Install commands (individual packages / OBO path — legacy, kept for existing agents):
+> **Don't install the legacy `Microsoft.Agents.A365.Observability.Extensions.*` packages**
+> either — the distro's auto-instrumentation toggles (`o.Instrumentation.Enable*`) replace
+> them. Mixing the two produces duplicate spans.
+
+Legacy two-package install (pre-distro, kept only for existing agents migrating off the
+individual packages — pick one style per project):
 ```bash
-# Required for all agents
+# Legacy — do NOT combine with Microsoft.OpenTelemetry
 dotnet add package Microsoft.Agents.A365.Observability.Runtime
-
-# Required for OBO agents (authMode: obo or agentic-user)
-dotnet add package Microsoft.Agents.A365.Observability.Hosting
+dotnet add package Microsoft.Agents.A365.Observability.Hosting   # OBO/agentic-user only
 ```
 
 ---
@@ -342,32 +355,118 @@ tokenCache = app.Services.GetService<IExporterTokenCache<string>>();
 
 ---
 
-## Program.cs — Hosting Path (AI Teammate, auto token caching)
+## Program.cs — Hosting Path (AI Teammate / OBO, Microsoft.OpenTelemetry distro)
 
-Use this pattern when the agent uses the AI Teammate hosting framework.
+**Applies to:** AI Teammate agents and Standard .NET agents using OBO or agentic-user auth.
+This is the **preferred** Program.cs wiring — a single distro package (`Microsoft.OpenTelemetry`)
+handles everything. Do NOT also install `Microsoft.Agents.A365.Observability.Runtime` or
+`Microsoft.Agents.A365.Observability.Hosting` as direct `<PackageReference>` entries — the
+distro re-exports those types internally, and adding them directly causes **CS0433** duplicate-type
+errors for `AgentDetails`, `CallerDetails`, `IExporterTokenCache<T>`, etc. Let them flow
+transitively through `Microsoft.OpenTelemetry`.
 
 ```csharp
-using Microsoft.Agents.A365.Observability.Runtime;
-using Microsoft.Agents.A365.Observability.Hosting;
+using Microsoft.OpenTelemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Registers IExporterTokenCache<AgenticTokenStruct> in DI — handles token caching automatically.
-builder.Services.AddAgenticTracingExporter();
+// Microsoft OpenTelemetry distro — configures OTel pipeline + A365 exporter in one call.
+// For the OBO / agentic-user path the distro AUTO-REGISTERS
+// IExporterTokenCache<AgenticTokenStruct> in DI, so MyAgent can inject it without any
+// explicit AddAgenticTracingExporter() / AddA365Tracing() calls.
+builder.UseMicrosoftOpenTelemetry(o =>
+{
+    o.Exporters = builder.Environment.IsDevelopment()
+        ? ExportTarget.Agent365 | ExportTarget.Console
+        : ExportTarget.Agent365;
 
-// Registers the OTel TracerProvider with the A365 exporter.
-builder.AddA365Tracing();
+    // Agent365-only export suppresses infrastructure instrumentation by default.
+    // Re-enable explicitly so HTTP calls (Azure OpenAI, auth, Teams) appear in traces.
+    o.Instrumentation.EnableAspNetCoreInstrumentation = true;
+    o.Instrumentation.EnableHttpClientInstrumentation = true;
+    o.Instrumentation.EnableAzureSdkInstrumentation = true;
+
+    // Auto-instrumentation toggles (all default `true` in 1.0.x — uncomment to opt out)
+    // o.Instrumentation.EnableSemanticKernelInstrumentation = false;
+    // o.Instrumentation.EnableOpenAIInstrumentation = false;
+    // o.Instrumentation.EnableAgentFrameworkInstrumentation = false;
+    // o.Instrumentation.EnableSqlClientInstrumentation = false;
+
+    // For OBO / agentic-user, leave UseS2SEndpoint at its default (false) — the exporter
+    // will POST to `/observability/` which the OBO token cache authenticates. Only flip
+    // this to true on the S2S Path.
+});
+
+// Required: IChatClient registration with `.UseOpenTelemetry(...)` — this is what makes
+// the AI SDK emit `gen_ai.inference` / `gen_ai.tool` spans for every LLM call. Without it,
+// no LLM spans exist for the InvokeAgentScope below to anchor as children.
+//
+// .UseFunctionInvocation()         → adds tool-call interception so ExecuteToolBySDK spans appear
+// .UseOpenTelemetry(...)           → emits gen_ai.inference and gen_ai.tool spans
+// EnableSensitiveData = true       → includes prompts/completions in span attributes (PII!)
+//                                     Set to false in production or when handling regulated data.
+builder.Services.AddSingleton<IChatClient>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var endpoint   = cfg["AIServices:AzureOpenAI:Endpoint"] ?? throw new InvalidOperationException("Endpoint missing");
+    var apiKey     = cfg["AIServices:AzureOpenAI:ApiKey"]   ?? throw new InvalidOperationException("ApiKey missing");
+    var deployment = cfg["AIServices:AzureOpenAI:DeploymentName"] ?? throw new InvalidOperationException("DeploymentName missing");
+
+    return new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey))
+        .GetChatClient(deployment)
+        .AsIChatClient()
+        .AsBuilder()
+        .UseFunctionInvocation()
+        .UseOpenTelemetry(sourceName: null, (cfg) => cfg.EnableSensitiveData = true)
+        .Build();
+});
 
 var app = builder.Build();
 
-// Optional: register HTTP-level baggage middleware (before the Bot Framework pipeline)
-// app.UseObservabilityRequestContext((httpContext) =>
-// {
-//     var tenantId = GetTenantIdFromContext(httpContext);
-//     var agentId = GetAgentIdFromContext(httpContext);
-//     return (tenantId, agentId);
-// });
+// Token caching is automatic — MyAgent calls `_agentTokenCache.RegisterObservability(...)`
+// per turn (see "Agent Class — Message Handler (OBO Path)" section below).
 ```
+
+> **Two `UseOpenTelemetry()` calls are required** to get a complete trace:
+> 1. **On the `IChatClient`** (shown above) — emits `gen_ai.inference` and `gen_ai.tool` spans for each LLM call
+> 2. **On the `ChatClientAgent`** (shown in "Set `ChatClientAgent.Id` to match" further down) — emits agent invocation spans
+>
+> Skipping the `IChatClient` call means no LLM spans appear in MAC, even though the agent
+> wrapper itself emits spans. The `InvokeAgentScope` parent becomes a hollow span with no
+> `InferenceCall` children.
+
+### Required appsettings.json keys (OBO / AI Teammate)
+
+`EnableAgent365Exporter` must be `true` — the SDK defaults it to `false` when absent, so
+without it the exporter is wired but inert:
+
+```json
+{
+  "EnableAgent365Exporter": true,
+  "Agent365Observability": {
+    "AgentId": "{{BOT_ID}}",
+    "AgentName": "My Agent",
+    "AgentDescription": "My agent description",
+    "TenantId": "{{BOT_TENANT_ID}}",
+    "AgentBlueprintId": "{{BLUEPRINT_ID}}",
+    "ClientId": "{{BLUEPRINT_ID}}",
+    "ClientSecret": "<<PLACEHOLDER>>"
+  }
+}
+```
+
+### Legacy two-package wiring (kept for reference, do not use with the distro)
+
+The pre-distro wiring used two separate calls:
+
+```csharp
+// Legacy — use only if NOT using Microsoft.OpenTelemetry distro
+builder.Services.AddAgenticTracingExporter();   // from Microsoft.Agents.A365.Observability.Hosting
+builder.AddA365Tracing();                        // from Microsoft.Agents.A365.Observability.Runtime
+```
+
+These are subsumed by `UseMicrosoftOpenTelemetry()` and the distro package — mixing the
+two causes CS0433 duplicate-type errors. Pick one wiring style per project.
 
 ---
 
@@ -424,71 +523,282 @@ app.UseObservabilityRequestContext((httpContext) =>
 
 ## Agent Class — Message Handler (OBO Path, `authMode: obo` or `agentic-user`)
 
+**Applies to:** any .NET agent that uses OBO or agentic-user authentication — including
+both **AI Teammate** agents (`aiTeammate: true`, agentic identity from Teams) and **Standard
+.NET agents** (non-AI-Teammate, OBO auth via `MsalUserAuthorization`). The single message
+handler pattern below covers both Teams agentic turns AND Playground / WebChat OBO turns,
+branching on `turnContext.IsAgenticRequest()`. For non-AI-Teammate S2S agents, use the S2S
+Path section further down instead — autonomous agents can run on either OBO or S2S, so
+the S2S Path applies specifically to the S2S auth mode, not to "autonomous" as a whole.
+
+The message handler needs five things:
+
+1. **Robust agent id resolution** — `Activity.GetAgenticInstanceId()` for agentic requests, `Utility.ResolveAgentIdentity(turnContext, oboToken)` for OBO requests.
+2. **Baggage propagation** (`BaggageBuilder`) so the distro's `ActivityProcessor` copies tenant/agent id onto every child `gen_ai` span. Without this, the exporter logs `"spans skipped due to missing tenant or agent ID"`.
+3. **Per-turn token registration** (`IExporterTokenCache<AgenticTokenStruct>.RegisterObservability`) so the exporter can OBO-exchange a token to POST traces.
+4. **An `InvokeAgentScope` wrapping the LLM call** with `CallerDetails`. This emits the **`InvokeAgent`** event the MAC portal needs as the parent record for the trace UI — without it, Advanced Hunting shows only orphan `InferenceCall` / `ExecuteToolBySDK` rows and the agent-turn view never renders.
+5. **A graceful skip when no real (agent, tenant) tuple is available**. Falling back to `Guid.Empty` creates a synthetic identity the exporter cannot authenticate, polluting traces with orphan groups and producing `"No token obtained. Skipping export for this identity."` warnings.
+
+> **All `Microsoft.Agents.A365.Observability.*` types referenced below flow transitively
+> through the `Microsoft.OpenTelemetry` distro package.** Do NOT add direct
+> `<PackageReference>` entries for `Microsoft.Agents.A365.Observability.Hosting` or
+> `.Runtime` — see the install-commands callout earlier in this doc.
+
 ```csharp
 using Microsoft.Agents.Builder;
 using Microsoft.Agents.Builder.App.UserAuth;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+// The four observability namespaces below are re-exported by Microsoft.OpenTelemetry;
+// no separate package install required.
 using Microsoft.Agents.A365.Observability.Hosting.Caching;
 using Microsoft.Agents.A365.Observability.Runtime.Common;
+using Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts;
+using Microsoft.Agents.A365.Observability.Runtime.Tracing.Scopes;
+using Microsoft.Agents.A365.Runtime.Utils;     // Utility.ResolveAgentIdentity
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+// Alias to avoid clash with Bot Framework's Activity-flavored Request types
+using ObsRequest = Microsoft.Agents.A365.Observability.Runtime.Tracing.Contracts.Request;
 
 public class MyAgent : AgentApplication
 {
-    private readonly IExporterTokenCache<AgenticTokenStruct> _agentTokenCache;
+    private readonly IExporterTokenCache<AgenticTokenStruct>? _agentTokenCache;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<MyAgent> _logger;
+    private readonly string? AgenticAuthHandlerName;
+    private readonly string? OboAuthHandlerName;
 
     public MyAgent(
         AgentApplicationOptions options,
         IExporterTokenCache<AgenticTokenStruct> agentTokenCache,
+        IConfiguration configuration,
         ILogger<MyAgent> logger) : base(options)
     {
-        _agentTokenCache = agentTokenCache ?? throw new ArgumentNullException(nameof(agentTokenCache));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _agentTokenCache = agentTokenCache;
+        _configuration = configuration;
+        _logger = logger;
+        AgenticAuthHandlerName = configuration["AgentApplication:AgenticAuthHandlerName"];
+        OboAuthHandlerName     = configuration["AgentApplication:OboAuthHandlerName"];
     }
 
-    protected async Task MessageActivityAsync(
+    protected async Task OnMessageAsync(
         ITurnContext turnContext,
         ITurnState turnState,
         CancellationToken cancellationToken)
     {
-        // Option A: Manual BaggageBuilder (use if BaggageTurnMiddleware is NOT registered)
-        // Build() returns IDisposable — use `using var` to scope the baggage context.
-        using var baggageScope = new BaggageBuilder()
-            .TenantId(turnContext.Activity.Recipient.TenantId)
-            .AgentId(turnContext.Activity.Recipient.AgenticAppId)
-            .Build();
+        // 1. Select auth handler for this turn (agentic vs OBO)
+        var authHandlerName = turnContext.IsAgenticRequest()
+            ? AgenticAuthHandlerName
+            : OboAuthHandlerName;
 
-        // Option B: FromTurnContext helper (preferred — auto-populates from activity)
-        // Requires: using Microsoft.Agents.A365.Observability.Hosting.Extensions;
-        // using var baggageScope = new BaggageBuilder()
-        //     .FromTurnContext(turnContext)
-        //     .Build();
+        // 2. Resolve agent id — for agentic turns from Activity, for OBO turns from the user token
+        string? resolvedAgentId = null;
+        if (turnContext.Activity.IsAgenticRequest())
+        {
+            resolvedAgentId = turnContext.Activity.GetAgenticInstanceId();
+        }
+        else if (!string.IsNullOrEmpty(authHandlerName))
+        {
+            try
+            {
+                var oboToken = await UserAuthorization.GetTurnTokenAsync(
+                    turnContext, authHandlerName, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(oboToken))
+                {
+                    resolvedAgentId = Utility.ResolveAgentIdentity(turnContext, oboToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not resolve agent id from OBO token; A365 observability skipped for this turn.");
+            }
+        }
 
-        // Register the agentic token so the exporter can authenticate exports.
+        var resolvedTenantId = turnContext.Activity.Conversation?.TenantId
+                            ?? turnContext.Activity.Recipient?.TenantId;
+
+        var hasObservabilityIdentity = !string.IsNullOrEmpty(resolvedAgentId)
+                                    && !string.IsNullOrEmpty(resolvedTenantId);
+
+        // 3. Set baggage and register the token ONLY when we have a real identity.
+        // Build() returns IDisposable; `using` accepts null and skips disposal.
+        using IDisposable? baggageScope = hasObservabilityIdentity
+            ? new BaggageBuilder()
+                .TenantId(resolvedTenantId!)
+                .AgentId(resolvedAgentId!)
+                .Build()
+            : null;
+
+        if (hasObservabilityIdentity)
+        {
+            try
+            {
+                _agentTokenCache?.RegisterObservability(
+                    resolvedAgentId!,
+                    resolvedTenantId!,
+                    new AgenticTokenStruct(
+                        userAuthorization: UserAuthorization,
+                        turnContext: turnContext,
+                        authHandlerName: authHandlerName ?? string.Empty),
+                    EnvironmentUtils.GetObservabilityAuthenticationScope());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to register observability token.");
+            }
+        }
+
+        // 4. Open an InvokeAgentScope around the LLM call so an "InvokeAgent" event is emitted.
+        // Required for MAC Advanced Hunting to render the agent turn UI and anchor children.
+        InvokeAgentScope? invokeScope = null;
+        if (hasObservabilityIdentity)
+        {
+            var obsConfig = _configuration.GetSection("Agent365Observability");
+            var agentDetails = new AgentDetails(
+                agentId:          resolvedAgentId!,
+                agentName:        obsConfig["AgentName"]
+                                  ?? _configuration["agentBlueprintDisplayName"]
+                                  ?? "Agent Blueprint",
+                agentDescription: obsConfig["AgentDescription"] ?? string.Empty,
+                agentBlueprintId: obsConfig["AgentBlueprintId"] ?? string.Empty,
+                tenantId:         resolvedTenantId!);
+
+            var from = turnContext.Activity?.From;
+            var callerDetails = new CallerDetails(
+                userDetails: new UserDetails(
+                    userId:    from?.AadObjectId ?? from?.Id ?? "unknown",
+                    userName:  from?.Name ?? "unknown",
+                    userEmail: string.Empty));
+
+            var userText = turnContext.Activity?.Text ?? string.Empty;
+            var scopeRequest = new ObsRequest(
+                content:        userText,
+                sessionId:      turnContext.Activity?.Conversation?.Id ?? "unknown",
+                channel:        new Channel(turnContext.Activity?.ChannelId ?? "msteams"),
+                conversationId: turnContext.Activity?.Conversation?.Id ?? "unknown");
+
+            // Endpoint is metadata for the trace; build it from the Blueprint ID (a GUID — always
+            // URI-safe) under the RFC 2606 reserved `.invalid` TLD. Avoids UriFormatException risk
+            // from slugifying free-form display names that may contain hostname-invalid characters.
+            var blueprintForUri = obsConfig["AgentBlueprintId"];
+            var endpointUri = !string.IsNullOrEmpty(blueprintForUri)
+                ? new Uri($"https://{blueprintForUri}.agent.invalid/")
+                : new Uri("https://agent.invalid/");
+
+            invokeScope = InvokeAgentScope.Start(
+                request:       scopeRequest,
+                scopeDetails:  new InvokeAgentScopeDetails(endpoint: endpointUri),
+                agentDetails:  agentDetails,
+                callerDetails: callerDetails);
+
+            invokeScope.RecordInputMessages(new[] { userText });
+        }
+
         try
         {
-            _agentTokenCache.RegisterObservability(
-                turnContext.Activity.Recipient.AgenticAppId,
-                turnContext.Activity.Recipient.TenantId,
-                new AgenticTokenStruct(
-                    userAuthorization: UserAuthorization,
-                    turnContext: turnContext,
-                    authHandlerName: "AGENTIC"
-                ),
-                EnvironmentUtils.GetObservabilityAuthenticationScope()
-            );
+            // ... your existing message handling: GetClientAgent, RunStreamingAsync, etc.
+            // Pass `resolvedAgentId` to your ChatClientAgent factory so its auto-instrumentation
+            // tags gen_ai spans with the SAME agent.id as the baggage + invokeScope above
+            // (see "Set ChatClientAgent.Id to match" below).
+            //
+            // var responseBuilder = new StringBuilder();
+            // await foreach (var response in chatAgent.RunStreamingAsync(...)) {
+            //     responseBuilder.Append(response.Text);
+            // }
+            // invokeScope?.RecordOutputMessages(new[] { responseBuilder.ToString() });
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogWarning(ex, "Error registering for observability.");
+            invokeScope?.Dispose();
         }
-
-        // ... existing agent message handling logic ...
     }
 }
 ```
+
+### Set `ChatClientAgent.Id` to match the resolved agent id
+
+When you construct your `ChatClientAgent` for the turn, set `Id = resolvedAgentId` on `ChatClientAgentOptions`. This makes the AI SDK's auto-instrumentation tag `gen_ai` spans with the same `agent.id` baggage propagated above. Otherwise the SDK auto-generates a **fresh N-format GUID per turn**, producing orphan identity groups in the exporter that:
+
+- Get logged as `"Obtained token for agent <random32hex> tenant ..."` followed by `"No token obtained. Skipping export for this identity."`
+- Pollute the trace stream with spans the exporter cannot authenticate
+
+```csharp
+var chatClientOptions = new ChatClientAgentOptions
+{
+    Name        = obsConfig["AgentName"] ?? "Agent",
+    ChatOptions = toolOptions,
+    ChatHistoryProvider = new InMemoryChatHistoryProvider(...),
+};
+if (!string.IsNullOrEmpty(resolvedAgentId))
+{
+    chatClientOptions.Id = resolvedAgentId;
+}
+var chatAgent = new ChatClientAgent(chatClient, chatClientOptions)
+    .AsBuilder()
+    .UseOpenTelemetry(sourceName: null, (cfg) => cfg.EnableSensitiveData = true)
+    .Build();
+```
+
+### Required `appsettings.json` keys for the OBO/AI Teammate path
+
+`EnableAgent365Exporter` **must be `true`** — the SDK's `Microsoft.Agents.A365.Observability.Runtime.Builder` defaults it to `false` when absent, so without it the exporter is wired but inert.
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.Agents": "Warning",
+      "Microsoft.Hosting.Lifetime": "Information",
+      "OpenTelemetry": "Debug",
+      "Microsoft.OpenTelemetry": "Debug",
+      "Microsoft.Agents.A365.Observability": "Debug",
+      "Microsoft.Agents.A365.Runtime": "Debug"
+    }
+  },
+  "Agent365Observability": {
+    "AgentId": "{{BOT_ID}}",
+    "AgentName": "My Agent",
+    "AgentDescription": "My agent description",
+    "TenantId": "{{BOT_TENANT_ID}}",
+    "AgentBlueprintId": "{{BLUEPRINT_ID}}",
+    "ClientId": "{{BLUEPRINT_ID}}",
+    "ClientSecret": "<<PLACEHOLDER>>"
+  },
+  "EnableAgent365Exporter": true
+}
+```
+
+The `Microsoft.Agents.A365.Observability: Debug` log level is the key signal — it surfaces exporter activity (`Sending chunk ... to .../observability/tenants/.../traces`, `HTTP 200 exporting spans`, `Partitioned into N identity groups`, etc.). Drop it to `Warning` in production.
+
+### Verifying end-to-end
+
+After sending a turn, the agent log should show:
+
+```
+Agent365Exporter: Exporting batch of N spans.
+[Agent365Exporter] M non-genAI spans filtered out
+[Agent365Exporter] Partitioned into K identity groups (X spans skipped)
+Agent365ExporterCore: Obtained token for agent <agentId> tenant <tenantId>.
+Agent365ExporterCore: Sending chunk 1 of 1 (J spans, B bytes)
+    to https://agent365.svc.cloud.microsoft/observability/tenants/<tenant>/otlp/agents/<agent>/traces?api-version=1.
+Agent365ExporterCore: HTTP 200 exporting spans. 'x-ms-correlation-id': '<guid>'.
+```
+
+`HTTP 200 exporting spans` confirms the export reached the backend. In **MAC Advanced Hunting** (1–5 min ingestion lag):
+
+```kql
+CloudAppEvents
+| where Timestamp > ago(15m)
+| where ActionType == "InvokeAgent"
+| where RawEventData contains "<your-agent-instance-id>"
+| order by Timestamp desc
+```
+
+`InvokeAgent` rows confirm the parent event arrived; the Agent Detail view in MAC then renders the turn with `InferenceCall` / `ExecuteToolBySDK` children nested under it. Use the **agent instance id** (`Activity.GetAgenticInstanceId()`), NOT the blueprint id, for the `contains` filter — that's what `BaggageBuilder.AgentId(...)` puts on the spans.
 
 ---
 
@@ -508,7 +818,7 @@ public class MyAgent : AgentApplication
 {
     // CallerDetails is read from Agent365Observability:Sponsor config — injected via
     // Agent365ObservabilityContext singleton (see ObservabilityServiceExtensions).
-    // For autonomous agents, use the Blueprint sponsor's identity.
+    // For S2S agents (no signed-in user), use the Blueprint sponsor's identity.
     private readonly Agent365ObservabilityContext _obs;
 
     public MyAgent(AgentApplicationOptions options, Agent365ObservabilityContext obs)
@@ -800,7 +1110,7 @@ using var scope = OutputScope.Start(
 
 > **S2S auth note:** `UseManagedIdentity` defaults to `true`. In production (Azure), the service uses Managed Identity and the `ClientSecret` is only needed as a local-dev fallback. Set to `false` in `appsettings.Development.json` if you always want client-secret auth locally.
 >
-> **Sponsor note:** For S2S / autonomous agents, the `Sponsor` section provides the `CallerDetails` required for MAC portal trace visibility. Use the Blueprint app ID as `UserId`, the Blueprint display name as `UserName`, and the agent sponsor's email as `UserEmail`.
+> **Sponsor note:** For S2S agents, the `Sponsor` section provides the `CallerDetails` required for MAC portal trace visibility. Use the Blueprint app ID as `UserId`, the Blueprint display name as `UserName`, and the agent sponsor's email as `UserEmail`.
 
 > **Critical:** The `Logging.LogLevel` section is **required** for observability events to be
 > captured in console output and forwarded to Microsoft Defender. Without this, the SDK is
@@ -929,7 +1239,7 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 
 **What `a365 setup` does NOT add:**
 - `Logging.LogLevel` configuration (required for Defender visibility)
-- `Agent365Observability:Sponsor` values for `CallerDetails` (required for S2S / autonomous agent trace visibility in MAC portal)
+- `Agent365Observability:Sponsor` values for `CallerDetails` (required for S2S agent trace visibility in MAC portal)
 
 **When instrumenting observability:**
 1. Preserve existing `EnableAgent365Exporter`, `AgentBlueprintId`, `TenantId` values

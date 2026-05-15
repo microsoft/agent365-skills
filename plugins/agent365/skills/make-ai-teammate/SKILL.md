@@ -58,11 +58,9 @@ hooks:
         Phase 9.7 (Register, Publish, Teams Dev Portal):
         7. a365 setup all --aiteammate (with or without --m365) completed without fatal errors.
         8. Blueprint ID was read from a365.generated.config.json after setup all completed.
-        9. manifest.json was reviewed and updated (or user confirmed Teams Toolkit manages it).
-        10. a365 publish ran (or sideload fallback was offered if auth failed).
-        11. Teams Developer Portal bot endpoint was confirmed.
-        12. Agentic User UPN was confirmed from a365.generated.config.json or setup output.
-        13. Smoke test was completed (Teams or AgentsPlayground).
+        9. manifest.json was reviewed (read-only verification — CLI owns the file; not hand-edited).
+        10. a365 publish ran (or sideload fallback was offered if auth failed) — CLI handles bot endpoint registration; no manual Developer Portal config required.
+        11. Smoke test was completed (Teams or AgentsPlayground).
 
         Also verify for all languages:
         - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
@@ -339,7 +337,7 @@ TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 **.NET tasks (only create if not already present):**
@@ -352,7 +350,7 @@ TaskCreate: "Add ToolingManifest.json"                                          
 TaskCreate: "Validate build (dotnet build)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 **Python tasks (only create if not already present):**
@@ -366,7 +364,7 @@ TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
-TaskCreate: "Register, publish, deploy, and configure in Teams Dev Portal"
+TaskCreate: "Register, publish, and deploy"
 ```
 
 ---
@@ -692,12 +690,12 @@ Ask the user:
 
 ---
 
-## Phase 9.7 — Register, Publish, Deploy, and Configure in Teams Dev Portal
+## Phase 9.7 — Register, Publish, and Deploy
 
-**Mark task in progress: "Register, publish, deploy, and configure in Teams Dev Portal"**
+**Mark task in progress: "Register, publish, and deploy"**
 
 This phase runs the full AI Teammate registration and publishing pipeline:
-`a365 setup all` → manifest update → `a365 publish` → Teams Dev Portal → Agentic User confirmation → smoke test.
+`a365 setup all` → manifest verification → `a365 publish` → smoke test. The CLI handles bot endpoint registration and Teams Developer Portal configuration automatically — no manual portal steps required.
 
 ---
 
@@ -713,13 +711,24 @@ a365 setup all --agent-name <name> --aiteammate --dry-run
 Show the full dry-run output and ask:
 > "Here's what `a365 setup all` will create. Does this look correct? Type **yes** to proceed or **no** to abort."
 
-**If yes**, ask: "Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?" Store as `isM365 = true/false`. Then apply:
+**If yes**, decide whether to add `--m365` based on the CEA detection signal `usesTeamsOrCopilot` (from `.a365-workspace-detection.json` / session context):
+
+- **If `usesTeamsOrCopilot = 1`** (CEA detected — Teams/Copilot markers found in repo): set `isM365 = true` automatically. **Do NOT ask the user** — just inform them in one line: *"Detected Teams/Copilot integration in this project — adding `--m365` to register the agent in the M365 admin center."*
+- **If `usesTeamsOrCopilot = 0`** (no CEA markers): ask the user, since this is an explicit deployment decision that can't be inferred from code:
+  ```
+  Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?
+    1. Yes — M365-integrated (add --m365)
+    2. No — standalone AI Teammate (programmatic / API consumers only)
+  ```
+  Store as `isM365 = true/false`.
+
+Then apply:
 
 ```bash
-# Default AI Teammate (no Teams/Copilot catalog integration)
+# Standalone AI Teammate (no Teams/Copilot catalog integration) — isM365 = false
 a365 setup all --agent-name <name> --aiteammate
 
-# M365-registered AI Teammate (Teams / Microsoft Copilot integration)
+# M365-registered AI Teammate (Teams / Microsoft Copilot integration) — isM365 = true
 a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
@@ -739,31 +748,35 @@ node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint
 
 ---
 
-### Step 9.7.2 — Update `manifest.json`
+### Step 9.7.2 — Verify `manifest.json` (do NOT hand-edit)
 
 **Glob** for `manifest.json` or `appPackage/manifest.json`.
 
-If found, **read** it and check/update these fields using values from `a365.generated.config.json`:
+**The CLI owns this file.** `a365 setup all --aiteammate` (Step 9.7.1) creates or updates the manifest with the correct `$schema` (Teams v1.22+), `manifestVersion`, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents`, and `validDomains` based on `a365.generated.config.json`. `a365 publish` (Step 9.7.3) re-substitutes IDs at package time. **Do NOT hand-write or modify these fields in this step** — let the CLI generate them.
 
-| Field | Value |
-|-------|-------|
-| `$schema` | `https://developer.microsoft.com/json-schemas/teams/v1.22/MicrosoftTeams.schema.json` (Teams 1.22+ for AI Teammates) |
-| `manifestVersion` | `"1.22"` |
-| `version` | bump minor (e.g. `1.0.0` → `1.0.1`) |
-| `id` | Teams App ID (`teamsAppId` from `a365.generated.config.json`) |
-| `bots[0].botId` | Agentic App ID (`agentAppId` from `a365.generated.config.json`) |
-| `bots[0].supportsFiles` | `false` |
-| `bots[0].isNotificationOnly` | `false` |
-| `copilotAgents.customEngineAgents` | **AI Teammate marker** — `[{ "id": "<agentAppId>", "type": "bot" }]`. This top-level block is what distinguishes an AI Teammate from a regular Teams bot in 1.22+. Required for the agent to appear as an AI Teammate. |
-| `validDomains` | add the messaging endpoint domain (e.g. `myagent.azurewebsites.net`) |
-| `webApplicationInfo.id` | same as `bots[0].botId` |
+This step is a **read-only verification**. Read the manifest and confirm to the user:
 
-Do NOT overwrite existing values that are already correct.
+- ✅ File exists at `manifest.json` or `appPackage/manifest.json`
+- ✅ `$schema` references a Teams v1.22+ schema
+- ✅ `bots[0].botId` is populated (or contains a Teams Toolkit token like `${{TEAMS_APP_ID}}`)
+- ✅ `copilotAgents.customEngineAgents` block is present (the AI Teammate marker — distinguishes an AI Teammate from a regular Teams bot)
 
-> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of direct ID substitution — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
+If anything looks missing or wrong, re-run `a365 setup all --aiteammate` (idempotent) — the CLI will regenerate the missing fields. Do NOT patch them by hand.
+
+For reference, the AI Teammate marker block looks like this (top-level — sibling of `bots`, not nested inside it):
+
+```json
+"copilotAgents": {
+  "customEngineAgents": [
+    { "id": "<agentAppId — same as bots[0].botId>", "type": "bot" }
+  ]
+}
+```
+
+> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of literal IDs — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
 
 If `manifest.json` does **not** exist:
-> "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. To create one, run `a365 manifest init --agent-name <name>` then return here."
+> "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. Otherwise, re-run `a365 setup all --aiteammate` — the CLI will generate it."
 
 Stop until the user confirms whether to continue.
 
@@ -776,14 +789,14 @@ a365 publish
 ```
 
 In CLI 1.1+, this command:
-1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (so step 9.7.2 manual edits are usually redundant — the CLI handles ID substitution).
+1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (the CLI handles ID substitution end-to-end; Step 9.7.2 is read-only verification).
 2. Packages the manifest + icons into `manifest.zip` (or `appPackage.zip` for Teams Toolkit projects).
 3. Attempts upload to the Teams App Catalog; if direct upload is not possible (e.g. user lacks Teams Administrator role), prints upload instructions for **Microsoft 365 Admin Center → Agents → All agents → Upload custom agent** using the produced `manifest.zip`.
 
 | Output | Action |
 |--------|--------|
 | `"Published successfully"` / `"Upload complete"` | Proceed to next step |
-| `"Manifest validation failed"` | Fix `manifest.json` (common: missing `bots[0].botId`, wrong `validDomains`) then retry |
+| `"Manifest validation failed"` (any schema error) | Re-run `a365 setup all --aiteammate` (idempotent) so the CLI regenerates the manifest fields, then retry `a365 publish`. If the error persists, show the CLI output verbatim to the user and report to the A365 CLI team — do NOT hand-edit `manifest.json`. |
 | `"Authorization denied"` | Account needs **Teams Administrator** role. Offer sideload fallback below |
 
 **Sideload fallback** (if publish authorization fails — installs for current user only):
@@ -794,45 +807,20 @@ a365 manifest package   # produces a .zip app package
 
 ---
 
-### Step 9.7.4 — Configure in Teams Developer Portal
+### Step 9.7.4 — (Optional) Verify in Teams Developer Portal
 
-Open **https://dev.teams.microsoft.com** and guide the user:
+`a365 publish` (Step 9.7.3) registers the app and sets the bot messaging endpoint automatically. No manual configuration is required in **https://dev.teams.microsoft.com** — do NOT instruct the user to update the messaging endpoint by hand.
 
-1. **Sign in** with the same M365 account used during setup.
-2. Go to **Apps** → find the app by name or search by App ID (`teamsAppId` from `a365.generated.config.json`).
-3. **Basic information** — confirm `App ID` matches `teamsAppId` in `a365.generated.config.json`.
-4. **App features → Bot**:
-   - Confirm **Bot ID** matches `agentAppId` from `a365.generated.config.json`.
-   - Confirm **Messaging endpoint** is set to the live `/api/messages` URL.
-   - If the endpoint is wrong or missing — update it and click **Save**.
-5. **Permissions** — confirm delegated permissions include `User.Read` (and any WorkIQ scopes if WorkIQ was added).
-6. Click **Publish → Publish to your org** (or **Test and distribute** → **Download** for sideload).
+If the user wants to visually confirm the registration succeeded, they can:
 
-> "Once the bot endpoint is confirmed in Developer Portal, your agent is ready to receive messages in Teams."
+1. Open **https://dev.teams.microsoft.com** → **Apps** → find the app by name or App ID (`teamsAppId` from `a365.generated.config.json`).
+2. Spot-check that `App ID` matches `teamsAppId`, `Bot ID` matches `agentAppId`, and `Messaging endpoint` is the live `/api/messages` URL.
+
+If anything looks wrong, re-run `a365 publish` (idempotent) rather than hand-editing the portal.
 
 ---
 
-### Step 9.7.5 — Confirm Agentic User
-
-The **Agentic User** (the agent's M365 identity with a UPN) is provisioned automatically by `a365 setup all --aiteammate`. Confirm it was created:
-
-1. Read `a365.generated.config.json` — look for `agentUpn` (e.g. `my-agent@contoso.onmicrosoft.com`).
-2. If `agentUpn` is present, show the user:
-
-```
-✅ Agentic User provisioned!
-  UPN:          <agentUpn>
-  Blueprint ID: <agentBlueprintId>
-  App ID:       <agentAppId>
-```
-
-3. If `agentUpn` is absent from the generated config, the Agentic User was not yet provisioned. Agentic User creation uses blueprint app-only credentials — no GA consent is required. Instruct the user to re-run `a365 setup all --aiteammate`, or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
-
-> To remove an existing Agentic User if needed: `a365 cleanup instance`
-
----
-
-### Step 9.7.6 — Smoke Test
+### Step 9.7.5 — Smoke Test
 
 Guide the user through a quick end-to-end test:
 
@@ -862,7 +850,7 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 | `Connection refused` on tunnel | Tunnel not running | `devtunnel host <name> --port 3978` |
 | `404` on `/api/messages` | Agent not started | `npm start` / `dotnet run` / `python host_agent_server.py` |
 
-**Mark task complete: "Register, publish, deploy, and configure in Teams Dev Portal"**
+**Mark task complete: "Register, publish, and deploy"**
 
 ---
 
@@ -880,7 +868,6 @@ Your agent now has:
   • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
   • Blueprint registered  (a365 setup all --aiteammate)
   • Published to Teams    (a365 publish)
-  • Agent instance        (Agentic User UPN: <agentUpn>)
   [• Observability:        OpenTelemetry + A365 tracing exporter wired]  (if added)
   [• WorkIQ tools:         M365 data access via MCP]                     (if added)
 

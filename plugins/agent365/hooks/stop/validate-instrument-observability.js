@@ -97,27 +97,33 @@ if (isDotnet) {
   }
 
   // 2. Program.cs wired
-  // OBO path (obo / agentic-user): AddA365Tracing + AddAgenticTracingExporter
-  // S2S path: UseMicrosoftOpenTelemetry + AddAgent365Observability (preferred) OR AddA365Tracing + AddAgent365Observability (legacy)
+  // Preferred (Microsoft.OpenTelemetry distro): UseMicrosoftOpenTelemetry covers both OBO and S2S
+  //   - OBO/agentic-user: distro auto-registers IExporterTokenCache<AgenticTokenStruct>; no extra DI calls
+  //   - S2S: UseMicrosoftOpenTelemetry + AddAgent365Observability for the scaffold token service
+  // Legacy (pre-distro, kept for older agents): AddA365Tracing + AddAgenticTracingExporter (OBO)
+  //   or AddA365Tracing + AddAgent365Observability (S2S)
   const programFiles = findFiles(cwd, ['Program.cs']);
-  const hasOBOWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgenticTracingExporter');
-  const hasS2SWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgent365Observability') ||
-                      anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry', 'AddAgent365Observability');
-  const hasProgramWired = hasOBOWired || hasS2SWired;
+  const hasDistroWired = anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry');
+  const hasLegacyOBOWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgenticTracingExporter');
+  const hasLegacyS2SWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgent365Observability') ||
+                            anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry', 'AddAgent365Observability');
+  const hasProgramWired = hasDistroWired || hasLegacyOBOWired || hasLegacyS2SWired;
   if (!hasProgramWired) {
-    issues.push('Program.cs does not call AddA365Tracing(config => { config.WithAgentFramework(); }) with AddAgenticTracingExporter(clusterCategory: "production") (OBO path) or AddAgent365Observability() with UseMicrosoftOpenTelemetry() (S2S path)');
+    issues.push('Program.cs does not wire A365 observability: expected builder.UseMicrosoftOpenTelemetry(o => ...) (preferred — Microsoft.OpenTelemetry distro) or the legacy AddA365Tracing(...) + AddAgenticTracingExporter(...) (OBO) / AddAgent365Observability() (S2S) calls');
   }
 
-  // 2a. OBO: WithAgentFramework() must be configured in AddA365Tracing
-  if (hasOBOWired && authMode !== 's2s') {
+  // 2a. Legacy OBO only: WithAgentFramework() must be configured in AddA365Tracing.
+  // The distro auto-instruments AgentFramework via o.Instrumentation.EnableAgentFrameworkInstrumentation
+  // (default true), so this check does NOT apply when UseMicrosoftOpenTelemetry is used.
+  if (hasLegacyOBOWired && !hasDistroWired && authMode !== 's2s') {
     const hasWithAgentFramework = anyFileContains(programFiles, 'WithAgentFramework');
     if (!hasWithAgentFramework) {
-      issues.push('Program.cs calls AddA365Tracing() but WithAgentFramework() is missing — use AddA365Tracing(config => { config.WithAgentFramework(); }) for correct OBO tracing');
+      issues.push('Program.cs calls AddA365Tracing() but WithAgentFramework() is missing — use AddA365Tracing(config => { config.WithAgentFramework(); }) for correct OBO tracing (legacy path; prefer migrating to UseMicrosoftOpenTelemetry from the Microsoft.OpenTelemetry distro)');
     }
-    // 2b. clusterCategory: "production" must be present in AddAgenticTracingExporter
+    // 2b. clusterCategory: "production" must be present in AddAgenticTracingExporter (legacy only)
     const hasClusterCategory = anyFileContains(programFiles, 'clusterCategory');
     if (!hasClusterCategory) {
-      issues.push('AddAgenticTracingExporter() is missing the required clusterCategory: "production" argument — use AddAgenticTracingExporter(clusterCategory: "production")');
+      issues.push('AddAgenticTracingExporter() is missing the required clusterCategory: "production" argument — use AddAgenticTracingExporter(clusterCategory: "production") (legacy path; prefer migrating to UseMicrosoftOpenTelemetry)');
     }
   }
 

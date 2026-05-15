@@ -64,13 +64,27 @@ Run these checks in parallel (Glob + Grep).
 
 **Strong standalone signals — any one → CEA:**
 ```
+Grep: "copilotAgents"+"customEngineAgents" in manifest.json
+     (any path)                                         → CEA (definitive — Teams v1.22+ AI Teammate marker)
 teamsapp.yml or teamsapp.local.yml                      → CEA (Teams Toolkit project)
-appPackage/manifest.json or manifest/manifest.json      → CEA (Teams app package)
-a365.config.json or a365.generated.config.json          → CEA (already A365-registered)
 @microsoft/teams-ai in package.json                     → CEA (Teams AI SDK, Node.js-specific)
 Microsoft.Teams.AI in .csproj                           → CEA (.NET Teams AI SDK)
 teams-ai in requirements.txt or pyproject.toml          → CEA (Python Teams AI SDK)
 ```
+
+> **Why `copilotAgents.customEngineAgents` is the definitive marker:** Teams v1.22+
+> requires this top-level manifest block to identify a custom-engine agent (vs a plain
+> channel bot). Example:
+> ```json
+> "copilotAgents": {
+>   "customEngineAgents": [
+>     { "type": "bot", "id": "<bot-id-matching-bots[0].botId>" }
+>   ]
+> }
+> ```
+> Plain `appPackage/manifest.json` file presence is NOT sufficient — channel bots also
+> ship a Teams manifest. Always grep for the `copilotAgents` / `customEngineAgents`
+> content, not just file existence.
 
 **Paired signals — CEA only when a structural file signal above is also present:**
 ```
@@ -114,8 +128,7 @@ Grep: "teams.?channel" (regex)   in ToolingManifest.json, manifest.json
 
 ```
 Glob: teamsapp.yml or teamsapp.local.yml                    → Teams Toolkit CEA (allowed)
-Glob: appPackage/manifest.json or manifest/manifest.json    → Teams app package (allowed)
-Glob: a365.config.json or a365.generated.config.json        → already A365-registered (allowed)
+Grep: "copilotAgents"+"customEngineAgents" in manifest.json → CEA (definitive — Teams v1.22+ AI Teammate marker; allowed)
 Grep: @microsoft/teams-ai in package.json                   → Teams AI SDK — Node.js CEA (allowed)
 Grep: Microsoft.Teams.AI in .csproj                         → Teams AI SDK — .NET CEA (allowed)
 Grep: teams-ai in requirements.txt/pyproject.toml           → Teams AI SDK — Python CEA (allowed)
@@ -146,7 +159,6 @@ Glob: **/ToolingManifest.json
 Grep: "isDigitalWorker" in ToolingManifest.json
 Grep: "digital_worker"  in ToolingManifest.json
 Grep: "digitalWorker"   in *.json
-Grep: "agentUpn"        in a365.generated.config.json   ← definitive: Agentic User already provisioned
 ```
 
 **If AI Teammate detected:**
@@ -416,7 +428,7 @@ The cache is written in stages as values become known — always preserve fields
 ```
 
 - `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
-  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, `ToolingManifest.json` exists, or `agentUpn` present in `a365.generated.config.json`
+  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists
   - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
 - `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
@@ -546,7 +558,7 @@ AskUserQuestion:
 The `authMode` value (`obo`, `s2s`, or `agentic-user`) drives which code path is used:
 - `obo` — signed-in user OBO; auth handler name from config, never hardcoded
 - `agentic-user` — agent's own M365 identity (persistent Azure AD user); same OBO wire-up as `obo` but the identity is the agent, not the signed-in human
-- `s2s` — service principal / autonomous; no per-turn user token; scaffold token-service file handles credential acquisition
+- `s2s` — service principal; no per-turn user token; scaffold token-service file handles credential acquisition. (Note: "autonomous" is a separate axis — an autonomous agent can use either OBO or S2S auth.)
 
 For `obo` and `agentic-user` paths: auth handler name comes from config (`AgentApplication:AgenticAuthHandlerName` in .NET, `agentApplication.authorization` object in Node.js, `auth_handler_id` from config in Python) — never hardcode `"AGENTIC"`. Agent IDs are always resolved dynamically from TurnContext (`agenticAppId` / `agentic_app_id`), never from config.
 
@@ -562,9 +574,9 @@ Add this inline comment wherever the auth handler is wired:
 
 **`obo`** — signed-in user OBO; no additional Azure AD setup required. Uses the signed-in user's existing token.
 
-**`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If `agentUpn` is absent from `a365.generated.config.json` after setup, run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
+**`agentic-user`** — agent's own persistent M365 identity. The Agentic User (an Azure AD user with a mailbox, OneDrive, and `agent@tenant` UPN) is provisioned automatically by `a365 setup all --aiteammate` via blueprint app-only credentials — no Global Administrator and no manual Azure AD setup required. If the Agentic User did not get provisioned (e.g. the CLI reported a partial setup), re-run `a365 setup all --aiteammate` (idempotent) or run `a365 create-instance` to create the agent identity, Agentic User, and assign licenses in one step.
 
-**`s2s`** — service principal / autonomous. Authenticates with the agent blueprint's own credentials (service principal). No signed-in user token.
+**`s2s`** — service principal auth. Authenticates with the agent blueprint's own credentials. No signed-in user token. An agent that "runs autonomously" can use either OBO or S2S — auth mode is independent of whether the agent is autonomous.
 
 ---
 
@@ -577,7 +589,7 @@ Add this inline comment wherever the auth handler is wired:
 - **In `add-workiq-tools`**: if `authMode = s2s` is detected (from cache or from the auth mode question), **exit immediately before any further questions or actions**:
 
 ```
-❌  WorkIQ tools are not available for S2S (autonomous) agents.
+❌  WorkIQ tools are not available for S2S agents.
     WorkIQ requires a delegated user token (OBO) at runtime — S2S client credentials
     cannot be used for WorkIQ API calls.
 

@@ -101,9 +101,8 @@ Run all three detection steps **in parallel** (single tool call with multiple Gl
 Check the following signals **in parallel** (Glob + Grep).
 
 *Strong standalone signals — any one → CEA:*
+- Grep `"copilotAgents"` AND `"customEngineAgents"` in `manifest.json` / `appPackage/manifest.json` / `manifest/manifest.json` (definitive — Teams v1.22+ AI Teammate marker; see `shared/agent-detection.md` for the example block)
 - `teamsapp.yml` or `teamsapp.local.yml` exists (Teams Toolkit project)
-- `appPackage/manifest.json` or `manifest/manifest.json` exists (Teams app package)
-- `a365.config.json` or `a365.generated.config.json` exists (already A365-registered)
 - `@microsoft/teams-ai` in package.json (Teams AI SDK — Node.js specific)
 - `Microsoft.Teams.AI` in .csproj (.NET Teams AI SDK)
 - `teams-ai` in requirements.txt or pyproject.toml (Python Teams AI SDK)
@@ -139,7 +138,6 @@ Run all checks **in parallel** (Glob + Grep):
 - `@microsoft/agents-a365-notifications` in `package.json`
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
-- `agentUpn` present in `a365.generated.config.json` (definitive: Agentic User already provisioned)
 
 *Observability signals (from `instrument-observability`) — any one counts:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
@@ -792,9 +790,8 @@ node -e "const c=require('./a365.generated.config.json'); console.log(c.agentBlu
 > **This step is handled by the `make-ai-teammate` skill (Step 3 above).** This section is kept as a reference for standalone re-registration scenarios only.
 
 If you need to re-publish or re-register an existing AI Teammate agent without re-running the full `make-ai-teammate` flow, the steps are in `make-ai-teammate` Phase 10:
-- Manifest review (`manifest/manifest.json`)
-- `a365 publish`
-- Teams Developer Portal configuration (read `agentBlueprintId` from `a365.generated.config.json`)
+- Manifest review (read-only — `manifest/manifest.json`)
+- `a365 publish` (handles bot endpoint registration automatically — no manual Teams Developer Portal config needed)
 - Create agent instance via Teams > Apps > Request Instance
 - Admin approval at [admin.cloud.microsoft/#/agents/all/requested](https://admin.cloud.microsoft/#/agents/all/requested)
 
