@@ -632,20 +632,32 @@ Found an existing Azure CLI session:
   Tenant ID:    <tenantId>
   Subscription: <name>  (may be empty if no Azure subscription)
 
-Would you like to:
-  1. Use this tenant  (recommended if this is your A365 tenant)
-  2. Switch to a different tenant  (provide a tenant ID or domain)
-  3. Log in fresh  (clears the current session)
+How would you like to proceed?
+
+  1. Use existing session as-is  (recommended — no new login, fastest)
+     I'll use the cached token. Pick this if you've used `a365` or `az`
+     successfully in the last hour.
+
+  2. Same tenant — new login  (different user, different subscription,
+     or refresh expired credentials)
+     Stay on tenant <tenantId> but log in again. Pick this to switch
+     to a different user account in the same tenant, pick a different
+     subscription, or refresh an expired token.
+
+  3. Connect to a new tenant  (cross-tenant work)
+     I'll ask for the new tenant ID or domain. Pick this if your A365
+     workspace is in a tenant other than the one you're currently
+     signed into.
 ```
 
-- **Option 1 — use existing:** confirm `az account show` returns the correct account and proceed.
-- **Option 2 — switch tenant:** ask "What is your tenant ID or domain?" then run:
+- **Option 1 — use existing:** confirm `az account show` returns the correct account and proceed. No new CLI command runs.
+- **Option 2 — same tenant, new login:** run with the **existing** tenant ID so Azure CLI keeps the user on the same tenant but starts a fresh interactive login (different user, different subscription, or just refresh):
   ```bash
-  az login --allow-no-subscriptions --tenant <tenantId>
+  az login --allow-no-subscriptions --tenant <existingTenantId>
   ```
-- **Option 3 — fresh login:** run:
+- **Option 3 — connect to new tenant:** ask "What is the new tenant ID or domain?" then run with the **new** tenant ID:
   ```bash
-  az login --allow-no-subscriptions
+  az login --allow-no-subscriptions --tenant <newTenantId>
   ```
 
 **If no session exists (NO_SESSION)**, ask: "Would you like to log in to a specific tenant or to your default tenant?" then run the appropriate command:
