@@ -30,7 +30,7 @@ hooks:
         are validated by validate-make-ai-teammate.js. This prompt covers only
         the deploy-pipeline checks the JS validator can't see.
 
-        Read .a365-workspace-detection.json for runTarget, has_setup, has_obs,
+        Read .a365-workspace-detection.local.json for runTarget, has_setup, has_obs,
         has_workiq. Treat a skip-gated step as satisfied when its flag was
         already true at session entry.
 
@@ -91,7 +91,7 @@ hooks:
 
 ## Phase 0A — Load Detection Cache
 
-**Read** `.a365-workspace-detection.json`.
+**Read** `.a365-workspace-detection.local.json`.
 
 If the file is missing or `detectedAt` is older than 60 minutes:
 > "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
@@ -292,7 +292,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 **Skill-state signals** (language-agnostic):
 
 - **`has_workiq`** — `ToolingManifest.json` exists AND its top-level `mcpServers` array (or `servers` in legacy v1 schema) is non-empty. Parse the file; if the array contains at least one entry, `has_workiq = true`.
-- **`has_setup`** — read from `.a365-workspace-detection.json` field `hasBlueprintConfig` (set by `a365-setup`). Equivalently: `a365.generated.config.json` exists with a non-empty `agentBlueprintId`.
+- **`has_setup`** — read from `.a365-workspace-detection.local.json` field `hasBlueprintConfig` (set by `a365-setup`). Equivalently: `a365.generated.config.json` exists with a non-empty `agentBlueprintId`.
 
 These three flags (`has_obs`, `has_workiq`, `has_setup`) drive the 8-row state matrix in Phase 0C.
 

@@ -26,7 +26,7 @@ const {
 const cwd = process.cwd();
 const issues = [];
 
-const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.json')) || {};
+const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.local.json')) || {};
 const authMode = (workspaceDetection.authMode || '').toLowerCase();
 
 // ── Detect project type ─────────────────────────────────────────────────────

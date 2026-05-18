@@ -37,7 +37,7 @@ Minimum Node.js: **20.6.0** (required for ESM `--import` flow). TypeScript: **5.
 
 ## Auth Mode Mapping
 
-The agent's `authMode` (read from `.a365-workspace-detection.json`) determines which path to wire. The code shape is **identical** for `obo` and `agentic-user` — only the identity the token exchange returns differs. `s2s` uses a completely separate token-service scaffold.
+The agent's `authMode` (read from `.a365-workspace-detection.local.json`) determines which path to wire. The code shape is **identical** for `obo` and `agentic-user` — only the identity the token exchange returns differs. `s2s` uses a completely separate token-service scaffold.
 
 | `authMode` | Used by | Token mechanism | Identity in traces | Wiring | Per-turn token refresh |
 |---|---|---|---|---|---|

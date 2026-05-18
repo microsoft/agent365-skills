@@ -37,7 +37,7 @@ Each `evals.json` file contains:
 
 ## Prerequisites
 
-All skills except `test-local` require `.a365-workspace-detection.json` to be present in the
+All skills except `test-local` require `.a365-workspace-detection.local.json` to be present in the
 project directory. This file is written by `a365-setup` and contains `agentStack`,
 `programmingLanguage`, and `detectedAt`. Skills read from this cache instead of running their
 own detection.
@@ -53,7 +53,7 @@ To manually test a skill against an eval:
 1. **Prepare a test environment** — use a real agent project for the target language:
    - `make-ai-teammate`: A plain Node.js/Python/dotnet LLM agent with no M365 integration
    - `a365-setup`: Any agent project with a365 CLI and Azure CLI installed
-   - `add-workiq-tools`: An agent already transformed by `make-ai-teammate` (has `.a365-workspace-detection.json`)
+   - `add-workiq-tools`: An agent already transformed by `make-ai-teammate` (has `.a365-workspace-detection.local.json`)
    - `instrument-observability`: An agent already transformed by `make-ai-teammate`
    - `test-local`: Any agent with a build script or `dotnet run` / `uv run`
 
@@ -169,7 +169,7 @@ When adding a new eval test case:
 2. **Start from clean state**: Reset test environments between evals to avoid contamination
 3. **Test error paths**: Don't just test the happy path — verify error handling and recovery
 4. **Verify idempotency**: Every skill should be safe to run multiple times without breaking
-5. **Check prerequisite state**: Skills except `test-local` require `.a365-workspace-detection.json` — ensure it exists before testing
+5. **Check prerequisite state**: Skills except `test-local` require `.a365-workspace-detection.local.json` — ensure it exists before testing
 6. **Document deviations**: If actual behavior differs from expectations, update the eval or fix the skill
 
 ---

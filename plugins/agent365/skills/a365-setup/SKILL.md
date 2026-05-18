@@ -30,7 +30,7 @@ hooks:
         2. a365 CLI is installed and confirmed with a365 -h.
         3. a365 setup requirements was run and any reported issues were resolved.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
+        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.local.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
@@ -77,7 +77,7 @@ Detecting your agent now…
 
 ### Phase 1A: Silent Detection
 
-**First: Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 1B.
+**First: Check for detection cache.** Read `.a365-workspace-detection.local.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it and skip the detection steps below — go straight to Phase 1B.
 
 Run all three detection steps **in parallel** (single tool call with multiple Glob/Grep):
 
@@ -256,7 +256,7 @@ After the capabilities question is answered (and the detection/confirmation abov
 
 1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected) **OR** `(has_aiteammate_structure && has_obs)` (existing AI Teammate structure detected — already configured). Else `isAITeammate = false`.
 
-2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
+2. **Write `.a365-workspace-detection.local.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
    - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `"agentic-user"` for AI Teammate).

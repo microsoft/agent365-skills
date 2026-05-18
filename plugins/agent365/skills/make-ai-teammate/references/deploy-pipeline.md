@@ -52,7 +52,7 @@ a365 setup all --agent-name <name> --aiteammate --dry-run
 Show the full dry-run output and ask:
 > "Here's what `a365 setup all` will create. Does this look correct? Type **yes** to proceed or **no** to abort."
 
-**If yes**, decide whether to add `--m365` based on the CEA detection signal `usesTeamsOrCopilot` (from `.a365-workspace-detection.json` / session context):
+**If yes**, decide whether to add `--m365` based on the CEA detection signal `usesTeamsOrCopilot` (from `.a365-workspace-detection.local.json` / session context):
 
 - **If `usesTeamsOrCopilot = 1`** (CEA detected — Teams/Copilot markers found in repo): set `isM365 = true` automatically. **Do NOT ask the user** — just inform them in one line: *"Detected Teams/Copilot integration in this project — adding `--m365` to register the agent in the M365 admin center."*
 - **If `usesTeamsOrCopilot = 0`** (no CEA markers): ask the user, since this is an explicit deployment decision that can't be inferred from code:
@@ -93,7 +93,7 @@ node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint
 
 The blueprint is registered. Decide where the user wants to run the agent — this controls whether Phases 9.7.3 – 9.7.6 (manifest verify, publish, Dev Portal, instance request) execute and what URL the Teams Developer Portal Notification URL will point to.
 
-**Remember-with-confirm:** read `.a365-workspace-detection.json` for `runTarget` and `runTargetHosting`. If present, show *"Last time you chose `{runTarget}`{ — `runTargetHosting`}. Use the same again? (yes / switch)"* and store the confirmed value. Otherwise, ask:
+**Remember-with-confirm:** read `.a365-workspace-detection.local.json` for `runTarget` and `runTargetHosting`. If present, show *"Last time you chose `{runTarget}`{ — `runTargetHosting`}. Use the same again? (yes / switch)"* and store the confirmed value. Otherwise, ask:
 
 ```
 Where do you want to run this agent?
@@ -107,7 +107,7 @@ Where do you want to run this agent?
      Dev Portal config, MAC upload, and instance request.
 ```
 
-Store as `runTarget` ∈ `{"prod", "local"}` and write back to `.a365-workspace-detection.json` (merge).
+Store as `runTarget` ∈ `{"prod", "local"}` and write back to `.a365-workspace-detection.local.json` (merge).
 
 ### Step 9.7.2a — Local target
 
@@ -139,7 +139,7 @@ How is your agent hosted?
      (e.g. https://my-agent.azurewebsites.net/api/messages).
 ```
 
-Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-workspace-detection.json`.
+Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-workspace-detection.local.json`.
 
 - **`runTargetHosting = "devtunnel"`:** if no `https://...devtunnels.ms` URL is present in `a365.generated.config.json`, walk the user through the canonical Dev Tunnel setup ([reference](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels)):
 

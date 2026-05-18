@@ -75,37 +75,37 @@ if (fileExists(gitignorePath)) {
   }
 }
 
-// ── Check 4: .a365-workspace-detection.json has authMode ────────────────────
+// ── Check 4: .a365-workspace-detection.local.json has authMode ────────────────────
 // authMode must be collected in Phase 1B and written to the cache so downstream
 // skills (instrument-observability, add-workiq-tools) can skip re-asking.
-const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
+const detectionPath = path.join(cwd, '.a365-workspace-detection.local.json');
 if (fileExists(detectionPath)) {
   try {
     const detection = JSON.parse(fs.readFileSync(detectionPath, 'utf8'));
     const VALID_AUTH_MODES = new Set(['obo', 's2s', 'agentic-user']);
     if (!detection.authMode || detection.authMode === '') {
-      issues.push('.a365-workspace-detection.json exists but authMode is empty — collect authMode from the user (obo/s2s/agentic-user) and write it to the detection cache');
+      issues.push('.a365-workspace-detection.local.json exists but authMode is empty — collect authMode from the user (obo/s2s/agentic-user) and write it to the detection cache');
     } else if (!VALID_AUTH_MODES.has((detection.authMode || '').toLowerCase())) {
-      issues.push(`.a365-workspace-detection.json has unsupported authMode "${detection.authMode}" — expected obo, s2s, or agentic-user (old values like "both", "user-delegated", "S2S" are no longer valid)`);
+      issues.push(`.a365-workspace-detection.local.json has unsupported authMode "${detection.authMode}" — expected obo, s2s, or agentic-user (old values like "both", "user-delegated", "S2S" are no longer valid)`);
     }
     // If an existing blueprint was detected, reuseBlueprint must have been explicitly set
     // (true = reuse, false = fresh) — the skill must ask, never assume.
     if ((detection.hasBlueprintConfig === 1 || detection.hasBlueprintConfig === true) &&
         (detection.reuseBlueprint === undefined || detection.reuseBlueprint === null)) {
-      issues.push('.a365-workspace-detection.json has hasBlueprintConfig=1 but reuseBlueprint is not set — the skill must ask the developer whether to reuse the existing blueprint or create fresh before delegating');
+      issues.push('.a365-workspace-detection.local.json has hasBlueprintConfig=1 but reuseBlueprint is not set — the skill must ask the developer whether to reuse the existing blueprint or create fresh before delegating');
     }
     // New 8-row state-matrix flags (introduced alongside make-ai-teammate Phase 0C):
     // has_aiteammate_structure, has_obs, has_workiq are all primary stored flags.
     // hasAITeammateChanges is DERIVED inline (has_aiteammate_structure && has_obs) — not stored.
     // Warn if the legacy field is still being written (it indicates an out-of-date a365-setup).
     if (detection.hasAITeammateChanges !== undefined) {
-      console.warn('[validate-a365-setup] Warning: .a365-workspace-detection.json contains the legacy "hasAITeammateChanges" field — this is now derived inline. Remove it from the cache writer in a365-setup Phase 1C.');
+      console.warn('[validate-a365-setup] Warning: .a365-workspace-detection.local.json contains the legacy "hasAITeammateChanges" field — this is now derived inline. Remove it from the cache writer in a365-setup Phase 1C.');
     }
     // runTarget validation: optional at first run; if present, must be "prod" or "local".
     if (detection.runTarget !== undefined && detection.runTarget !== '' && detection.runTarget !== null) {
       const VALID_RUN_TARGETS = new Set(['prod', 'local']);
       if (!VALID_RUN_TARGETS.has(String(detection.runTarget).toLowerCase())) {
-        issues.push(`.a365-workspace-detection.json has unsupported runTarget "${detection.runTarget}" — expected "prod" or "local" (set in make-ai-teammate Phase 9.7.2)`);
+        issues.push(`.a365-workspace-detection.local.json has unsupported runTarget "${detection.runTarget}" — expected "prod" or "local" (set in make-ai-teammate Phase 9.7.2)`);
       }
     }
     // runTargetHosting validation: optional; only meaningful when runTarget = "prod".
@@ -113,7 +113,7 @@ if (fileExists(detectionPath)) {
     if (detection.runTargetHosting !== undefined && detection.runTargetHosting !== '' && detection.runTargetHosting !== null) {
       const VALID_HOSTING = new Set(['devtunnel', 'cloud']);
       if (!VALID_HOSTING.has(String(detection.runTargetHosting).toLowerCase())) {
-        issues.push(`.a365-workspace-detection.json has unsupported runTargetHosting "${detection.runTargetHosting}" — expected "devtunnel" or "cloud" (set in make-ai-teammate Phase 9.7.2b)`);
+        issues.push(`.a365-workspace-detection.local.json has unsupported runTargetHosting "${detection.runTargetHosting}" — expected "devtunnel" or "cloud" (set in make-ai-teammate Phase 9.7.2b)`);
       }
       // runTargetHosting only meaningful with runTarget = "prod". Warn if mismatched.
       if (detection.runTarget && String(detection.runTarget).toLowerCase() === 'local') {
@@ -121,7 +121,7 @@ if (fileExists(detectionPath)) {
       }
     }
   } catch {
-    issues.push('.a365-workspace-detection.json exists but cannot be parsed — file may be malformed');
+    issues.push('.a365-workspace-detection.local.json exists but cannot be parsed — file may be malformed');
   }
 }
 

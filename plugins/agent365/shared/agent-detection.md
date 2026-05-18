@@ -402,7 +402,7 @@ To avoid re-running globs and greps when multiple skills run in the same session
 
 ### Reading the cache (check before running globs/greps)
 
-Before any detection, check for `.a365-workspace-detection.json` in the working directory:
+Before any detection, check for `.a365-workspace-detection.local.json` in the working directory:
 
 - If the file exists and `detectedAt` is within the last **60 minutes**, load `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and `authMode` from it — skip all detection globs and greps.
 - If the file is missing or older than 60 minutes, run full detection as normal.
@@ -452,7 +452,7 @@ Merge `agentType` and `authMode` into the existing file — update only those tw
 **Stage 3 — `make-ai-teammate` Phase 9.7.2** (after Run Target decision):
 Merge `runTarget`, `runTargetHosting` (if `runTarget = "prod"`), and `chosenEndpoint` (the reconciled messaging endpoint URL) into the existing file. Future runs of the skill will offer "Last time you chose `<runTarget>` — `<runTargetHosting>`. Use the same again?" (remember-with-confirm).
 
-Use the **Write** tool to write the merged object back to `.a365-workspace-detection.json` in the current working directory.
+Use the **Write** tool to write the merged object back to `.a365-workspace-detection.local.json` in the current working directory.
 
 ---
 

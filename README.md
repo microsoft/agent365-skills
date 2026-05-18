@@ -1,7 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
@@ -95,7 +95,27 @@ a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 test-local  ← standalone; run at any point to test your agent locally
 ```
 
-`a365-setup` writes `.a365-workspace-detection.json`. All downstream skills read this file to skip re-detection.
+`a365-setup` writes `.a365-workspace-detection.local.json`. All downstream skills read this file to skip re-detection.
+
+#### Why `.local.json`? (token + LLM-turn optimization)
+
+The detection cache is **deliberately local-only** — `.local.` in the filename follows the Node/VS Code convention for files that must not be committed, and `.gitignore` excludes it. The file holds the result of detection work that costs real LLM turns to redo:
+
+- **Agent stack + programming language** (Node.js LangChain, .NET AgentFramework, Python OpenAI, etc.)
+- **CEA marker** (`usesTeamsOrCopilot`) — Teams/Copilot markers found in repo
+- **Blueprint state** (`hasBlueprintConfig`) — whether `a365.config.json` / `a365.generated.config.json` already exist
+- **Three skill-state flags** (`has_aiteammate_structure`, `has_obs`, `has_workiq`) — drive the 8-row matrix in `make-ai-teammate` Phase 0C and capability auto-filtering in `a365-setup`
+- **Agent kind + auth mode** (`agentType`, `authMode`) — `ai-teammate` / `system-agent` and `obo` / `s2s` / `agentic-user`
+- **Blueprint reuse choice** (`reuseBlueprint`, `existingBlueprintId`)
+
+Without the cache, every downstream skill would re-walk the project tree, re-grep `package.json` / `.csproj` / `pyproject.toml`, re-read `a365.generated.config.json`, and re-ask the user the same agent-kind + auth-mode questions. That's tens of tool calls and 2–3 user round-trips per skill — wasted tokens and wasted turns.
+
+**Why it must stay local:**
+- It encodes machine-specific state (which tools the user has installed, which Azure login they're on, whether they ran `a365 setup all` on this clone).
+- It encodes per-developer choices (reuse vs fresh blueprint, observability vs WorkIQ selections) that aren't team-wide.
+- Committing it would force every contributor to inherit one developer's state and would create constant merge churn.
+
+The file is safe to delete — the next `a365-setup` run rebuilds it. Skills also re-derive any flag whose underlying signal has changed (e.g., if `has_workiq` was `false` but `ToolingManifest.json` now lists MCP servers, the skill trusts the file and updates the cache).
 
 **Already registered? Run skills directly:**
 
@@ -337,7 +357,7 @@ Check which Agent 365 capabilities have already been applied to this agent and t
 
 - **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP servers, observability instrumentation, and local testing with AgentsPlayground
 - **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
-- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (`obo` / `s2s` / `agentic-user`); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.json` across skills
+- **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (`obo` / `s2s` / `agentic-user`); drives the correct observability and WorkIQ token path; cached in `.a365-workspace-detection.local.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs
 - **Non-destructive and idempotent** — skills wrap existing code without deleting anything; re-running skips what is already configured
 - **WorkIQ MCP servers** — pre-built M365 integrations for Mail, Calendar, Teams, SharePoint, OneDrive, Word, User profiles, Copilot, and Dataverse/Dynamics 365

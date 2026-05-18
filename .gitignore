@@ -1,6 +1,9 @@
 # A365 generated config — contains sensitive IDs, never commit
 a365.generated.config.json
 
+# A365 workspace detection cache — local-only, regenerated per machine
+.a365-workspace-detection.local.json
+
 # Bug bash working notes — local only
 BUGBASH.md
 

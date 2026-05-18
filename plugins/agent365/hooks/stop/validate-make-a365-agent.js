@@ -37,7 +37,7 @@ if (!a365Version) {
 // ── Check 1.5: Read detection cache for reuseBlueprint flag ──────────────────
 // When reuseBlueprint=true, the skill intentionally skips a365 setup all.
 // In that case, a365.config.json (the existing input config) satisfies the check.
-const detectionPath = path.join(cwd, '.a365-workspace-detection.json');
+const detectionPath = path.join(cwd, '.a365-workspace-detection.local.json');
 let reuseBlueprint = false;
 let existingBlueprintId = '';
 if (fileExists(detectionPath)) {

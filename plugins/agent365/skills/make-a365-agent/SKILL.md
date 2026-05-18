@@ -69,7 +69,7 @@ the session already has `capabilities`, `agentStack`, `programmingLanguage`, and
 
 **If invoked directly (no session context):**
 
-1. **Read** `.a365-workspace-detection.json` if it exists and `detectedAt` is within 60 minutes.
+1. **Read** `.a365-workspace-detection.local.json` if it exists and `detectedAt` is within 60 minutes.
    Load `agentStack`, `programmingLanguage`, and `usesTeamsOrCopilot` from it.
 
 2. **If no fresh cache**, ask the user in a single message:
@@ -130,8 +130,8 @@ What would you like to do?
 ```
 
 Wait for the answer:
-- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. **Write** both values back to `.a365-workspace-detection.json` (merge, preserve all other fields) so the stop-hook validator and follow-on skills can read them. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
-- If **2 (fresh)**: set `reuseBlueprint = false`. **Write** `reuseBlueprint: false` to `.a365-workspace-detection.json`. Continue with Phase 1 inputs and Phase 2 as normal.
+- If **1 (reuse)**: if `agentBlueprintId` is empty, ask "Please provide your blueprint ID." Store as `existingBlueprintId`. Set `reuseBlueprint = true`. **Write** both values back to `.a365-workspace-detection.local.json` (merge, preserve all other fields) so the stop-hook validator and follow-on skills can read them. Skip Phase 2 (setup all) entirely — proceed directly to Phase 3.
+- If **2 (fresh)**: set `reuseBlueprint = false`. **Write** `reuseBlueprint: false` to `.a365-workspace-detection.local.json`. Continue with Phase 1 inputs and Phase 2 as normal.
 
 If no existing config is found: set `reuseBlueprint = false` and continue.
 
@@ -214,7 +214,7 @@ Set `messagingEndpoint = "${tunnelUrl}/api/messages"`.
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --dry-run
 ```
 
-> **`--authmode` flag:** If the user's auth mode is known from `.a365-workspace-detection.json`, append `--authmode obo` or `--authmode s2s` to all `setup all` commands. This controls how the agent identity SP receives permissions (OBO = principal-scoped delegated grants, S2S = application app-role assignments requiring GA).
+> **`--authmode` flag:** If the user's auth mode is known from `.a365-workspace-detection.local.json`, append `--authmode obo` or `--authmode s2s` to all `setup all` commands. This controls how the agent identity SP receives permissions (OBO = principal-scoped delegated grants, S2S = application app-role assignments requiring GA).
 
 Show the full dry-run output to the user, then ask:
 
@@ -231,7 +231,7 @@ Choose the right flags based on the detected agent type:
 # Agent (Non AI Teammate) — default
 cd "<project_dir>" && a365 setup all --agent-name <agent_name>
 
-# With explicit auth mode (append based on .a365-workspace-detection.json authMode)
+# With explicit auth mode (append based on .a365-workspace-detection.local.json authMode)
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode obo
 cd "<project_dir>" && a365 setup all --agent-name <agent_name> --authmode s2s
 
