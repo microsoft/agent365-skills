@@ -187,14 +187,23 @@ Pull `<agentBlueprintId>`, `<agentBlueprintClientSecret>`, `<tenantId>` from `a3
    - **`resourceConsents` non-empty** — empty means consent hasn't been recorded; same GA handoff applies.
    - `agentBlueprintId`, `agentBlueprintClientSecret`, `tenantId`, `messagingEndpoint` all populated and non-empty.
 
-2. **Environment variables are set at the cloud platform, not just locally.** Local `.env` files do NOT propagate to the cloud — they must be configured in the platform's config:
+2. **Prod-only env-var checklist — these MUST be set (in addition to the common table above) and they differ from local-dev defaults.** Verify them in the cloud platform's effective config, not just the local `.env` (use the inspection command in step 3 below):
+
+   | Concern | Python `.env` | Node.js `.env` | .NET `appsettings.json` |
+   |---|---|---|---|
+   | Active auth handler — must point at agentic in prod | `AUTH_HANDLER_NAME=AGENTIC` (under `# A365 Authentication`). The Python code reads this env var to pick a handler at runtime; empty leaves the agent with no handler and every Teams message fails token exchange. | Not env-driven — `MyAgent.authHandlerName = 'agentic'` is set in code. Verify the constant matches the registered auth handler in `agentic_type=agentic`. | Not env-driven — `AgentApplication:AgenticAuthHandlerName=agentic` lives in `appsettings.json`. Verify the value is `agentic`. |
+   | A365 observability exporter — must be true in prod (false would mean console-only / no traces in Agent 365 portal or Defender) | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (or `a365.enableObservabilityExporter: true` in code) | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in app-service env vars (or `Logging.OpenTelemetry` config wiring) |
+
+   If any value is wrong or missing, fix it before continuing to Step 9.7.3.
+
+3. **Environment variables are set at the cloud platform, not just locally.** Local `.env` files do NOT propagate to the cloud — they must be configured in the platform's config:
    - **Azure App Service:** Azure portal → Web App → Settings → Environment Variables, or `az webapp config appsettings set --name <app> --resource-group <rg> --settings KEY=VALUE`. Use [Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) for sensitive secrets. Verify with `az webapp config appsettings list --name <app> --resource-group <rg>`. Full deployment guide: [Deploy agent to Azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure).
    - **AWS Elastic Beanstalk:** `eb setenv KEY=VALUE`. Verify in EB console under Configuration → Software → Environment properties. Full deployment guide: [Deploy agent to AWS](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws).
    - **Google Cloud Run:** `gcloud run services update <service> --region <region> --set-env-vars KEY=VALUE,KEY2=VALUE2`. Verify with `gcloud run services describe <service> --region <region>`. Full deployment guide: [Deploy agent to GCP](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp).
 
-3. **HTTPS is required.** Bot Framework rejects non-HTTPS messaging endpoints. Azure App Service serves HTTPS by default; AWS Elastic Beanstalk requires an SSL/TLS certificate; Google Cloud Run is HTTPS by default.
+4. **HTTPS is required.** Bot Framework rejects non-HTTPS messaging endpoints. Azure App Service serves HTTPS by default; AWS Elastic Beanstalk requires an SSL/TLS certificate; Google Cloud Run is HTTPS by default.
 
-4. **Messaging endpoint is reachable:** quick smoke test with `curl <chosenEndpoint>` — anything but a 404 is acceptable (a GET on `/api/messages` typically returns method-not-allowed, which is fine; the POST handler is what Teams uses). Verify the web app is in `"Running"` state:
+5. **Messaging endpoint is reachable:** quick smoke test with `curl <chosenEndpoint>` — anything but a 404 is acceptable (a GET on `/api/messages` typically returns method-not-allowed, which is fine; the POST handler is what Teams uses). Verify the web app is in `"Running"` state:
    - Azure: `az webapp show --name <app> --resource-group <rg> --query state` → expect `"Running"`.
    - AWS: `eb health --refresh` → expect green.
    - GCP: `gcloud run services describe <service> --region <region>` → expect `"Ready"` condition.
