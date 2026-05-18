@@ -37,10 +37,52 @@ This phase runs the full AI Teammate registration and publishing pipeline:
 
 ## Step 9.7.1 — Register the Blueprint (`a365 setup all`)
 
-**Skip-gate (from Phase 0C `has_setup`):**
+### Step 9.7.1a — Re-check blueprint state from disk and ask the user
 
-- **If `has_setup = true`** (rows 5, 6, 7, 8): tell the user verbatim *"Blueprint already registered (Blueprint ID: `{existingBlueprintId}`). Skipping `a365 setup all --aiteammate`. To re-provision from scratch, run `a365 cleanup --agent-name <name>` first."* Read `agentBlueprintId` and `messagingEndpoint` from `a365.generated.config.json` for use by downstream steps. Then jump to Step 9.7.2 (Run Target).
-- **If `has_setup = false`** (rows 1, 2, 3, 4): continue with the setup-all flow below.
+**Do NOT trust `has_setup` from the cache alone** — `a365.generated.config.json` may have been created or deleted since the cache was last refreshed. Re-check now:
+
+```bash
+ls a365.generated.config.json 2>/dev/null && \
+  node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint:', c.agentBlueprintId || '(empty)')"
+```
+
+**If `a365.generated.config.json` exists with a non-empty `agentBlueprintId`** — ask the user explicitly before any CLI command (including the dry-run). Do NOT silently reuse or re-run:
+
+```
+I found an existing Agent 365 blueprint registered for this project.
+  Blueprint ID: {existingBlueprintId}
+  Agent name:   {existing agent name from config, if available}
+
+What would you like to do?
+
+  1. Reuse the existing blueprint  (fastest — recommended)
+     Skip `a365 setup all` entirely. Use this blueprint ID directly for the
+     rest of the publish / Dev Portal / instance flow. Picks up the existing
+     Agentic User, service principal, permissions, and messaging endpoint
+     unchanged.
+
+  2. Re-run `a365 setup all` to refresh
+     The CLI is idempotent — it will reuse the same blueprint ID but
+     refresh service principal permissions, FIC, managed identity, and
+     project settings. Safe; nothing is destroyed. Use this after a CLI
+     upgrade or when permissions look out of date.
+
+  3. Create a fresh blueprint
+     Destroys the existing Agentic User and blueprint registration with
+     `a365 cleanup --agent-name <name>`, then runs `a365 setup all`
+     from scratch. ⚠️ This invalidates any Teams instance that has been
+     approved — instance request must be redone after fresh provisioning.
+```
+
+Branch on the answer:
+
+- **1 (Reuse):** Skip the rest of Step 9.7.1 entirely. Read `agentBlueprintId` and `messagingEndpoint` from `a365.generated.config.json` and jump to Step 9.7.2. Update the detection cache field `has_setup = true` if it wasn't already.
+- **2 (Re-run):** Continue with the setup-all flow below (Step 9.7.1b). The CLI will detect the existing blueprint and reuse the ID.
+- **3 (Fresh):** Run `a365 cleanup --agent-name <name>` first with an explicit *"Type yes to confirm destructive cleanup"* gate. Only after cleanup succeeds, continue with the setup-all flow below.
+
+**Otherwise** (no `a365.generated.config.json` on disk, or `agentBlueprintId` empty) → no existing blueprint, continue with the setup-all flow below.
+
+### Step 9.7.1b — Run setup-all (when reached from 9.7.1a paths 2, 3, or "no blueprint")
 
 Ask the user for the **agent name** (reuse from session context if available, otherwise ask). Then show a dry-run first:
 
