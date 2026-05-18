@@ -1,6 +1,5 @@
 ---
 name: instrument-observability
-version: 1.6.0
 description: >
   Instruments Microsoft Agent 365 observability into existing .NET AgentFramework, Node.js, or
   Python agents. Adds OTel-based tracing, context propagation, A365 exporter, manual
@@ -28,22 +27,30 @@ hooks:
       timeout: 30000
     - type: prompt
       prompt: |
-        Before ending, verify ALL of the following:
-        1. Agent type was correctly detected (.NET AgentFramework, Node.js, or Python).
-        2. agentType (ai-teammate/AI Teammate or system-agent/Agent (Non AI Teammate)) and authMode (obo, s2s, or agentic-user) were determined and authMode is recorded in an inline comment in the message handler.
-        3. A365 observability packages were installed (check package.json, .csproj, or pyproject.toml/requirements.txt).
-        4. Observability was configured in the entry point (Program.cs, index.js/ts, or app.py).
-        5. For OBO path: BaggageBuilder context added to the message handler (or BaggageMiddleware registered); per-turn token refresh (RegisterObservability/.RefreshObservabilityToken/cache_agentic_token) implemented. For S2S path — all languages: no per-turn token refresh call; token comes from the scaffold token-service file started at startup. .NET additionally: baggage set via new BaggageBuilder().FromTurnContext(turnContext).Build() (FromTurnContext is a BaggageBuilder extension ONLY — NOT on InvokeAgentScope); InvokeAgentScope.Start() called separately with InvokeAgentScopeDetails(endpoint: ...) — NOT chained; scaffold files Observability/ObservabilityServiceExtensions.cs and Observability/ObservabilityTokenService.cs exist. Node.js S2S: observability/observability-token-service.ts exists; startTokenService() called before useMicrosoftOpenTelemetry(). Python S2S: observability/observability_token_service.py exists; run_token_service() task created before use_microsoft_opentelemetry().
-        6. Agentic token resolver with caching is implemented.
-        7. Configuration files (appsettings.json or .env) include observability variables.
-        8. Build/compile succeeds (dotnet build, npm run build, or python import check).
-        9. All instrumented code is marked with: // A365 Observability — best-effort instrumentation
-        If any item failed or was skipped, return {"ok": false, "reason": "<specific item>"}.
-        If all items completed successfully, return {"ok": true}.
+        Packages, entry-point wiring, baggage, token resolver, config files,
+        and build are validated by validate-instrument-observability.js.
+        This prompt covers only the items the JS validator can't inspect.
+
+        Verify:
+        1. agentType (ai-teammate / system-agent) and authMode (obo / s2s /
+           agentic-user) were determined and authMode is recorded in an inline
+           comment in the message handler.
+        2. Instrumented code is annotated with the marker comment so a future
+           reader can spot it: `// A365 Observability — best-effort
+           instrumentation` (or `#` for Python).
+        3. For .NET S2S only: baggage is set via
+           `new BaggageBuilder().FromTurnContext(turnContext).Build()` (not
+           chained onto InvokeAgentScope); InvokeAgentScope.Start() is a
+           separate using-scope with InvokeAgentScopeDetails(endpoint: ...).
+        4. For Node.js S2S only: startTokenService() runs before
+           useMicrosoftOpenTelemetry().
+        5. For Python S2S only: run_token_service() is scheduled as an asyncio
+           task before use_microsoft_opentelemetry().
+
+        Return {"ok": false, "reason": "<item>"} if any required item is
+        missing, otherwise {"ok": true}.
       timeout: 30000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Instrument A365 Observability
 
@@ -159,84 +166,37 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 **TaskCreate** — "Install A365 observability packages"
 
-### For .NET AgentFramework
+All languages converge on a single unified distro that re-exports the legacy
+A365 observability + hosting types and auto-instruments common LLM SDKs:
 
-1. **Bash** — Install the unified distro (single package, GA — required for all paths: OBO / agentic-user / S2S / AI Teammate):
-   ```bash
-   dotnet add package Microsoft.OpenTelemetry
-   # S2S path only (FMI 3-hop token chain):
-   dotnet add package Azure.Identity
-   dotnet add package Microsoft.Identity.Client
-   ```
-   No `--version` flag needed — install latest stable (1.0.2+). Targets `net8.0` and `netstandard2.0`. The legacy `Microsoft.Extensions.Logging 10.0.0-*` workaround and `net9.0` requirement are obsolete (fixed in 1.0.1).
+| Language | Install command | S2S extra (FMI token chain) |
+|----------|-----------------|------------------------------|
+| .NET     | `dotnet add package Microsoft.OpenTelemetry` | `dotnet add package Azure.Identity Microsoft.Identity.Client` |
+| Node.js  | `npm install @microsoft/opentelemetry`       | `npm install @azure/msal-node @azure/identity` |
+| Python   | `pip install microsoft-opentelemetry`        | `pip install msal azure-identity httpx` |
 
-   > **Do NOT also add `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` as direct `<PackageReference>` entries.** The distro re-exports their types internally — adding them directly produces **CS0433** duplicate-type errors for `AgentDetails`, `CallerDetails`, `IExporterTokenCache<T>`, etc. Let them flow transitively through `Microsoft.OpenTelemetry`.
+**Do not** install legacy `*.Observability.Runtime` / `-hosting` / `-extensions-*`
+packages alongside the unified distro — the distro re-exports their types and
+mixing the two produces CS0433 duplicate-type errors (.NET) or duplicate spans
+(Node.js / Python). After install, verify the package appears in the manifest
+(`*.csproj` / `package.json` / `requirements.txt` or `pyproject.toml`).
+`pip install` does not update the dependency manifest — prefer
+`uv add microsoft-opentelemetry` (or `poetry add ...`) for Python.
 
-   Legacy two-package install (pre-distro, kept only as reference for existing agents migrating off the individual packages — pick one style per project, do NOT combine):
-   ```bash
-   # Legacy — do NOT combine with Microsoft.OpenTelemetry
-   dotnet add package Microsoft.Agents.A365.Observability.Runtime
-   dotnet add package Microsoft.Agents.A365.Observability.Hosting    # OBO/agentic-user only
-   ```
+**Python — Google ADK gotcha:** if `pyproject.toml` lists `google-adk`,
+`uv sync` will backtrack for minutes resolving the OTel graph. Pin OTel via
+`[tool.uv] override-dependencies` — see python-observability.md → "Google ADK
+projects — pin the OTel stack" for the exact block. Other Python stacks
+(AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel) don't need this.
 
-2. **Optional auto-instrumentation** — the unified distro auto-instruments SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk by default. All toggles are `o.Instrumentation.Enable*Instrumentation = true` and live on the `UseMicrosoftOpenTelemetry` options callback.
+Full per-language package tables, version constraints, and the LangChain extras
+flag live in the references — see the "Required packages" section of:
 
-   > **Do not install the legacy `Microsoft.Agents.A365.Observability.Extensions.{SemanticKernel,OpenAI,AgentFramework}` packages alongside the unified distro** — they're superseded by the distro's `o.Instrumentation.Enable*` toggles. Mixing the two produces duplicate spans.
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md`
 
-   To opt out of a specific instrumentation, set the toggle to `false` in the options callback (e.g. `o.Instrumentation.EnableSemanticKernelInstrumentation = false`).
-
-3. **Verify** the package appears in the `.csproj` file. Confirm there are NO `<PackageReference>` entries for `Microsoft.Agents.A365.Observability.Hosting` or `.Runtime` — those types must flow transitively through `Microsoft.OpenTelemetry`.
-
-### For Node.js
-
-1. **Bash** — Install the unified distro (single package as of GA 1.0):
-   ```bash
-   npm install @microsoft/opentelemetry
-   ```
-
-   The legacy packages (`@microsoft/agents-a365-observability`, `-hosting`, `-runtime`, and the
-   `-extensions-openai` / `-extensions-langchain` packages) are **deprecated**. Everything
-   ships from `@microsoft/opentelemetry` now. OpenAI Agents SDK and LangChain are
-   auto-instrumented by default — no extension packages needed.
-
-2. **Verify** `@microsoft/opentelemetry` appears in `package.json`. Confirm Node.js version ≥ 20.6.0.
-
-3. **S2S path only:** install MSAL + Azure Identity (for the FMI token chain):
-   ```bash
-   npm install @azure/msal-node @azure/identity
-   ```
-
-### For Python
-
-1. **Bash** — Install the unified distro (single package as of GA 1.1):
-   ```bash
-   pip3 install microsoft-opentelemetry 2>/dev/null || pip install microsoft-opentelemetry
-   ```
-
-   The legacy packages (`microsoft-agents-a365-observability-core`, `-hosting`, `-runtime`,
-   and the four `-extensions-*` packages) are **deprecated**. Everything ships from
-   `microsoft-opentelemetry` now. OpenAI Agents SDK, LangChain, Semantic Kernel, and
-   Agent Framework are auto-instrumented by default — no extension packages needed.
-   No `--pre` flag required — the package is GA.
-
-2. **S2S path only:** install MSAL + Azure Identity + httpx (for the FMI token chain):
-   ```bash
-   pip3 install msal azure-identity httpx 2>/dev/null || pip install msal azure-identity httpx
-   ```
-
-3. **LangChain agents only:** install the LangChain extra for additional instrumentation:
-   ```bash
-   pip3 install "microsoft-opentelemetry[langchain]" 2>/dev/null || pip install "microsoft-opentelemetry[langchain]"
-   ```
-
-4. **Update the dependency manifest** — `pip install` does not modify `requirements.txt` or
-   `pyproject.toml` automatically. Explicitly add `microsoft-opentelemetry` (and the S2S/
-   LangChain extras if installed) under `[project] dependencies` or via
-   `uv add microsoft-opentelemetry` / `poetry add microsoft-opentelemetry`.
-
-5. **Verify** the package appears in `requirements.txt` or `pyproject.toml`. Confirm Python 3.10+.
-
-6. **TaskUpdate** — Mark complete.
+**TaskUpdate** — Mark complete.
 
 ---
 
@@ -597,118 +557,50 @@ All new lines marked with the language-appropriate comment:
 
 **TaskCreate** — "Update configuration files with observability settings"
 
-### For .NET AgentFramework
+**Read** the language-appropriate reference for the complete config block:
 
-1. **Read** `appsettings.json` fully — **before writing anything** — and identify:
-   - Whether a `Logging` section already exists anywhere in the file
-   - Whether `Logging.LogLevel` already exists
-   - The existing `EnableAgent365Exporter`, `AgentBlueprintId`, and `TenantId` values
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md` → "appsettings.json"
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md` → ".env"
+- `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md` → ".env"
 
-   > **Merge safety rule (enforce without exception):** A JSON file may only have one `Logging` section. If `Logging` or `Logging.LogLevel` already exists, **merge** the new log level keys into that block. Never append a second `Logging` section — this produces silently invalid config where only the last block wins.
+Apply these invariants across all three languages:
 
-2. **Check for existing `a365 setup` configuration:**
-   - `EnableAgent365Exporter` — always set to `true` in `appsettings.json` (the Development override sets it to `false`; `a365 setup` may have written `false` here, which this skill corrects)
-   - If `Agent365Observability` section exists → **preserve** all existing values (AgentBlueprintId, TenantId, AgentName, AgentDescription, Sponsor)
-   - If missing → add with defaults
+1. **Preserve existing values.** If `Agent365Observability` (.NET) or
+   `ENABLE_A365_OBSERVABILITY_EXPORTER` (Node.js / Python) already exists, do not
+   overwrite. Add only missing keys.
 
-3. **Edit** — Add or update observability configuration following the reference pattern:
+2. **.NET — exactly one `Logging` section.** Read `appsettings.json` fully
+   before writing. If `Logging` or `Logging.LogLevel` exists, **merge** the new
+   log-level keys (`Microsoft.Agents.A365.Observability: Debug`,
+   `OpenTelemetry: Debug`) into that block. A second `Logging` block produces
+   silently invalid config where only the last one wins.
 
-   **`appsettings.json`** (exporter enabled by default in all environments except Development):
-   ```json
-   {
-     "EnableAgent365Exporter": true,   // ← enabled by default; Development override turns it off
-     "Agent365Observability": {
-       "AgentBlueprintId": "...",      // ← populated by a365 setup (or placeholder if not run)
-       "TenantId": "...",
-       "AgentName": "",
-       "AgentDescription": "",
-       "Sponsor": {
-         "UserId": "<<Blueprint ID>>",
-         "UserName": "<<Blueprint Name>>",
-         "UserEmail": "<<Blueprint Sponsor Email>>"
-       },
-       // S2S path only — add:
-       // "ClientId": "<agent-blueprint-client-id>",
-       // "ClientSecret": "<agent-blueprint-client-secret>",  // MSI tried first in prod; secret is local-dev fallback
-       // "UseManagedIdentity": false  // ← set false for local dev (MSI only works on Azure infra)
-     },
-     "Logging": {
-       "LogLevel": {
-         "Default": "Information",
-         "Microsoft.Agents.A365.Observability": "Debug",
-         "OpenTelemetry": "Debug"
-       }
-     }
-   }
-   ```
+3. **.NET — `EnableAgent365Exporter: true` at the root.** `a365 setup` may write
+   `false`; this skill corrects it. Add an `appsettings.Development.json` with
+   `"EnableAgent365Exporter": false` so local dev traces go to console only.
 
-   > **S2S note:** `EnableAgent365Exporter` must be `true` for S2S span export to work. `a365 setup` may write `false` — this skill corrects it. Also set `UseManagedIdentity: false` for local dev since MSI is only available on Azure infrastructure (App Service, AKS, VM). On local machines, MSI fails with `CredentialUnavailableError: Network unreachable`.
-   >
-   > **Sponsor note:** For S2S agents, the `Sponsor` section provides `CallerDetails` for MAC portal trace visibility. Use the Blueprint app ID as `UserId`, the Blueprint display name as `UserName`, and the agent sponsor's email as `UserEmail`.
+4. **Sponsor / CallerDetails — required for MAC portal trace visibility.**
+   - .NET: `Agent365Observability.Sponsor` (UserId, UserName, UserEmail) in `appsettings.json`.
+   - Node.js: `agent365Observability__sponsorUserId / __sponsorUserName / __sponsorUserEmail` in `.env`.
+   - Python: same keys exposed via the resolver — see python-observability.md.
 
-   **`appsettings.Development.json`** (create if absent — disables exporter for local dev so traces go to console only):
-   ```json
-   {
-     "EnableAgent365Exporter": false
-   }
-   ```
+5. **S2S-only additions:**
+   - .NET: add `ClientId`, `ClientSecret`, and `UseManagedIdentity: false` (for
+     local dev — MSI fails off-Azure with `CredentialUnavailableError`) under
+     `Agent365Observability`.
+   - Node.js / Python: `useS2SEndpoint: true` (Node) / `a365_use_s2s_endpoint=True`
+     (Python) is set in code in Phase 3 — no env var equivalent in 1.0+. The
+     legacy `AGENT365_USE_S2S_ENDPOINT` env var is ignored.
 
-4. **Critical:** The `Logging.LogLevel` section is **required** for observability events to appear in console output and Microsoft Defender. Without this, the SDK is instrumented but logs are suppressed. The `a365 setup` command does **not** add logging configuration.
+6. **Inform the user** when:
+   - `AgentBlueprintId` / `TenantId` are empty → "run `a365 setup` to populate".
+   - Exporter is `false` (Node.js / Python local dev) → "instrumented but
+     disabled; set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` to start exporting".
 
-5. **If `appsettings.json` does not exist**, create it with the complete structure above.
+If the project also uses `.env.example` (Node.js / Python), update it with
+placeholder values to match `.env`.
 
-6. **If `Logging` or `Logging.LogLevel` already exists**, merge the new entries into that existing block. Do **not** create a second `Logging` section — only one is allowed in a JSON config file.
-
-7. **Inform user:**
-   - "Observability exporter is enabled by default (`EnableAgent365Exporter: true` in `appsettings.json`). For local development, `appsettings.Development.json` overrides this to `false` so traces go to console only."
-   - If `AgentBlueprintId` or `TenantId` are empty: "Run `a365 setup` to populate AgentBlueprintId and TenantId, or fill them manually from your Entra app registration."
-   - If S2S path: "Add `ClientId` and `ClientSecret` under `Agent365Observability` in `appsettings.json` — `ObservabilityTokenService` requires both. In production, MSI is tried first and the secret is a local-dev fallback; `ClientSecret` must still be present in config."
-
-### For Node.js
-
-1. **Read** `.env` (or `.env.local`, `.env.development`).
-
-2. **Check for existing `a365 setup` configuration:**
-   - If `ENABLE_A365_OBSERVABILITY_EXPORTER` exists → **preserve** it (do not change)
-   - If missing → add with default value `false`
-
-3. **Edit** — Add or update observability environment variables following the reference pattern in `nodejs-observability.md`:
-   ```dotenv
-   ENABLE_A365_OBSERVABILITY_EXPORTER=false
-   SERVICE_NAME=my-agent
-   A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
-
-   # Sponsor / CallerDetails for MAC portal trace visibility
-   agent365Observability__sponsorUserId=<<Blueprint ID>>
-   agent365Observability__sponsorUserName=<<Blueprint Name>>
-   agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
-   ```
-   - **S2S path only:** Set `useS2SEndpoint: true` in the `a365` options of `useMicrosoftOpenTelemetry()` (already done in Phase 3). The old `AGENT365_USE_S2S_ENDPOINT` env var is no longer used in 1.0+ — `useS2SEndpoint` is a first-class code option.
-
-4. **If `.env` does not exist**, create it with the variables above.
-
-5. **If the project uses `.env.example`**, also update it with placeholder values.
-
-6. **Inform user:**
-   - If `ENABLE_A365_OBSERVABILITY_EXPORTER` is `false`: "Observability is instrumented but disabled. Set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env to start exporting traces."
-
-### For Python
-
-1. **Read** `.env` (or `.env.local`).
-
-2. **Edit** — Add or update observability environment variables:
-   ```dotenv
-   ENABLE_A365_OBSERVABILITY_EXPORTER=false
-   ```
-   The env var is the equivalent of the `a365_enable_observability_exporter` kwarg — when wiring in code (Phase 3), passing the kwarg is preferred. Keep this in `.env` only if you control export via env var.
-   - **S2S path only:** Set `a365_use_s2s_endpoint=True` in code (already done in Phase 3). The old `AGENT365_USE_S2S_ENDPOINT` env var is no longer used in 1.0+ — `a365_use_s2s_endpoint` is a first-class code kwarg.
-
-3. **If `.env` does not exist**, create it with the variable above.
-
-4. **Inform user:**
-   - If `ENABLE_A365_OBSERVABILITY_EXPORTER` is `false`: "Observability is instrumented but disabled. Set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env to start exporting traces."
-
-7. **TaskUpdate** — Mark complete.
+**TaskUpdate** — Mark complete.
 
 ---
 

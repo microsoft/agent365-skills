@@ -10,5 +10,14 @@
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
   "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "blueprint", "s2s", "msal", "ai-teammate"],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js",
+        "timeout": 5000
+      }
+    ]
+  }
 }

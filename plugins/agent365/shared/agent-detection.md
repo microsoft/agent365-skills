@@ -163,7 +163,7 @@ Grep: "digitalWorker"   in *.json
 
 **If AI Teammate detected:**
 - Observability instrumentation: continue, but flag in summary
-- Setup/publish: `a365 setup all` + `a365 publish` → manual admin upload to MAC (no API yet)
+- Setup/publish: `a365 setup all` + `a365 publish` → manual zip upload to Microsoft 365 Admin Center + manual Teams Developer Portal config (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`). Both manual steps are required. See [Create agent instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
 
 Write markers: `.a365obs-digital-worker`, `.a365setup-digital-worker`
 
@@ -417,25 +417,40 @@ The cache is written in stages as values become known — always preserve fields
   "agentStack": "<Agent Framework | LangChain | OpenAI | Semantic Kernel | Claude | Google ADK>",
   "programmingLanguage": "<DotNet | NodeJS | Python>",
   "usesTeamsOrCopilot": 0,
-  "hasAITeammateChanges": 0,
+  "has_aiteammate_structure": 0,
+  "has_obs": 0,
+  "has_workiq": 0,
   "hasBlueprintConfig": 0,
   "existingBlueprintId": "<blueprintId string or empty string if none>",
   "reuseBlueprint": false,
   "agentType": "<ai-teammate | system-agent>",
   "authMode": "",
+  "runTarget": "",
+  "runTargetHosting": "",
+  "chosenEndpoint": "",
   "detectedAt": "<ISO 8601 timestamp>"
 }
 ```
 
-- `hasAITeammateChanges`: `1` if signals from **both** of the following categories are present; `0` otherwise:
-  - *AI Teammate structure* (any one): `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists
-  - *Observability* (any one): `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, or `A365 Observability` comment in source
-- `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise.
+- `has_aiteammate_structure`: `1` if any AI Teammate structure signal matches; `0` otherwise:
+  - `AgentApplication` in source files, `CloudAdapter`/`CloudAdapterAiohttp`, `@microsoft/agents-a365-notifications` in `package.json`, `Microsoft.Agents.A365.Notifications` in `.csproj`, or `ToolingManifest.json` exists.
+- `has_obs`: `1` if any observability signal matches; `0` otherwise:
+  - `Microsoft.Agents.A365.Observability.*`/`Microsoft.OpenTelemetry` in `.csproj`, `@microsoft/agents-a365-observability`/`@microsoft/opentelemetry` in `package.json`, `microsoft-agents-a365-observability-core`/`microsoft-opentelemetry` in `requirements.txt`/`pyproject.toml`, `UseMicrosoftOpenTelemetry`/`useMicrosoftOpenTelemetry`/`use_microsoft_opentelemetry` in source, or `A365 Observability` comment in source.
+- `has_workiq`: `1` if `ToolingManifest.json` exists AND its top-level `mcpServers` (or legacy `servers`) array is non-empty; `0` otherwise.
+- `hasBlueprintConfig`: `1` if `a365.config.json` or `a365.generated.config.json` was found in the project root; `0` otherwise. This is the same signal as `has_setup` (used in the 8-row state matrix in `make-ai-teammate` Phase 0C).
 - `existingBlueprintId`: the `agentBlueprintId` extracted from the existing config, or empty string if not yet set.
 - `reuseBlueprint`: `true` if the developer chose to reuse the existing blueprint (skip `a365 setup all`); `false` if creating fresh or no existing config.
+- `runTarget`: `"prod"` or `"local"` (or empty if not yet asked) — set by `make-ai-teammate` Phase 9.7.2 (Choose Run Target). Persisted so subsequent runs offer remember-with-confirm.
+- `runTargetHosting`: `"devtunnel"` or `"cloud"` (or empty if `runTarget = "local"` or not yet asked) — set by `make-ai-teammate` Phase 9.7.2b (Production hosting sub-question). Only relevant when `runTarget = "prod"`. Persisted so subsequent runs offer remember-with-confirm.
+- `chosenEndpoint`: the full HTTPS messaging endpoint URL chosen during Step 9.7.2b (e.g. `https://<id>-3978.<region>.devtunnels.ms/api/messages` or `https://<your-app>.azurewebsites.net/api/messages`). Empty for `runTarget = "local"`. After Step 9.7.2c reconciliation, this value equals `messagingEndpoint` in `a365.generated.config.json`.
+
+> **`hasAITeammateChanges` (DERIVED, NOT STORED).** The legacy `hasAITeammateChanges` field is no longer written to the cache. Compute it inline wherever needed as `has_aiteammate_structure && has_obs`.
 
 **Stage 2 — `instrument-observability` Phase 0.5 or `add-workiq-tools` Phase 0B** (after `agentType` and `authMode` questions):
 Merge `agentType` and `authMode` into the existing file — update only those two fields, keep the rest unchanged.
+
+**Stage 3 — `make-ai-teammate` Phase 9.7.2** (after Run Target decision):
+Merge `runTarget`, `runTargetHosting` (if `runTarget = "prod"`), and `chosenEndpoint` (the reconciled messaging endpoint URL) into the existing file. Future runs of the skill will offer "Last time you chose `<runTarget>` — `<runTargetHosting>`. Use the same again?" (remember-with-confirm).
 
 Use the **Write** tool to write the merged object back to `.a365-workspace-detection.json` in the current working directory.
 

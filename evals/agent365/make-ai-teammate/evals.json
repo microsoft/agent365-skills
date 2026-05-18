@@ -136,7 +136,7 @@
         "Phase 0A: language detected as DotNet from .csproj",
         "Phase 0A: agentStack detected as AgentFramework",
         "Phase 0B: Detection summary shown to user",
-        "Phase 1: dotnet add package runs for Microsoft.Agents.A365.Notifications (--prerelease); does NOT add Tooling.Extensions.AgentFramework (added by add-workiq-tools skill)",
+        "Phase 1: dotnet add package runs for Microsoft.Agents.A365.Notifications; does NOT add Tooling.Extensions.AgentFramework (added by add-workiq-tools skill)",
         "Phase 4: Program.cs has app.MapPost('/api/messages', ...) using adapter.ProcessAsync()",
         "Phase 4: Program.cs has app.MapGet('/api/health', ...) with no auth",
         "Phase 4: Program.cs does NOT contain IMcpToolRegistrationService (added by add-workiq-tools skill)",
@@ -215,6 +215,138 @@
         "Phase 7: ToolingManifest.json is created",
         "Phase 8: Missing env vars are appended to .env",
         "Phase 9: uv sync succeeds"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Row 2 (has_obs=T, has_workiq=F, has_setup=F) — observability already wired, skill skips Phase 9.5; offers WorkIQ; runs setup all --aiteammate.",
+      "language": "nodejs",
+      "expected_output": "Phase 0B detects has_obs=true (useMicrosoftOpenTelemetry present). Phase 0C resolves Row 2 and prints the plan: Observability=skip, WorkIQ=ask, Setup=run. Phase 9.5 prints \"Observability already wired — skipping\" and does NOT invoke instrument-observability. Phase 9.6 offers WorkIQ. Phase 9.7.1 runs a365 setup all --aiteammate. Phase 9.7.2 asks Run Target.",
+      "files": [],
+      "expectations": [
+        "Phase 0B: has_obs=true detected via useMicrosoftOpenTelemetry signal",
+        "Phase 0C: Resolved state announced as Row 2",
+        "Phase 9.5: instrument-observability NOT invoked; skip message shown verbatim",
+        "Phase 9.6: WorkIQ offer shown to user",
+        "Phase 9.7.1: a365 setup all --aiteammate runs (has_setup was false)",
+        "Phase 9.7.2: Run Target question asked"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Row 5 (has_obs=F, has_workiq=F, has_setup=T) — blueprint exists but no instrumentation; skill runs obs, asks workiq, skips a365 setup all.",
+      "language": "python",
+      "expected_output": "Phase 0B detects has_setup=true (a365.generated.config.json with agentBlueprintId). Phase 0C resolves Row 5: Observability=run, WorkIQ=ask, Setup=skip. Phase 9.5 invokes instrument-observability. Phase 9.6 offers WorkIQ. Phase 9.7.1 prints \"Blueprint already registered\" and does NOT run a365 setup all. Phase 9.7.2 asks Run Target.",
+      "files": [],
+      "expectations": [
+        "Phase 0B: has_setup=true detected via existing a365.generated.config.json",
+        "Phase 0C: Resolved state announced as Row 5; no re-register noted",
+        "Phase 9.5: instrument-observability invoked",
+        "Phase 9.6: WorkIQ offer shown",
+        "Phase 9.7.1: a365 setup all --aiteammate NOT run; skip message shown",
+        "Phase 9.7.2: Run Target question asked"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Row 6 (has_obs=T, has_workiq=F, has_setup=T) — observability and blueprint done; only WorkIQ remains (if wanted).",
+      "language": "dotnet",
+      "expected_output": "Phase 0C resolves Row 6: Observability=skip, WorkIQ=ask, Setup=skip. Phase 9.5 skipped. Phase 9.6 offers WorkIQ. Phase 9.7.1 skipped. Phase 9.7.2 asks Run Target. Final summary lists what was done vs skipped.",
+      "files": [],
+      "expectations": [
+        "Phase 0C: Resolved state announced as Row 6 (WorkIQ only)",
+        "Phase 9.5: skipped — has_obs=true",
+        "Phase 9.6: WorkIQ offer shown",
+        "Phase 9.7.1: skipped — has_setup=true",
+        "Phase 9.7.2: Run Target question asked"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Row 8 (T/T/T) — everything wired; sub-question Re-publish or Verify only.",
+      "language": "nodejs",
+      "expected_output": "Phase 0C resolves Row 8 and asks the sub-question: Re-publish or Verify only. If Verify: prints final summary and exits without running any phase. If Re-publish: skips Phases 1-9.6, jumps to Phase 9.7.2 (Run Target) and the publish/Dev Portal/instance flow for prod.",
+      "files": [],
+      "expectations": [
+        "Phase 0C: Row 8 resolved; sub-question with 2 options shown to user",
+        "If Verify only: no CLI commands run; final summary shows the all-wired state",
+        "If Re-publish: jumps to Phase 9.7.2 (Run Target); Phases 1-9.6 skipped"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Run Target = prod, hosting = dev tunnel — Phase 9.7.2 + 9.7.2b dev tunnel sub-question + 9.7.2c reconciliation; full publish + Dev Portal + instance flow.",
+      "language": "nodejs",
+      "expected_output": "Phase 9.7.2 asks Run Target. User picks 1 (Production). runTarget=prod persisted. Phase 9.7.2b asks the hosting sub-question; user picks 1 (Dev tunnel). Skill guides devtunnel user login → create → host; user pastes the https://...devtunnels.ms URL. chosenEndpoint = <tunnel URL>/api/messages. Phase 9.7.2c reconciles: if messagingEndpoint differs, runs a365 setup blueprint --update-endpoint <chosenEndpoint>. Phase 9.7.3 (manifest verify), 9.7.4 (a365 publish), 9.7.5 (Dev Portal Notification URL = chosenEndpoint), 9.7.6 (instance request), 9.7.7 (smoke test in Teams) all execute.",
+      "files": [],
+      "expectations": [
+        "Phase 9.7.2: Run Target question asked with 2 options (Prod / Local)",
+        "User picks Production",
+        "runTarget=prod written to .a365-workspace-detection.json",
+        "Phase 9.7.2b: hosting sub-question asked (devtunnel / cloud)",
+        "User picks Dev tunnel; skill walks through devtunnel user login → create → host",
+        "chosenEndpoint stored with /api/messages appended to the tunnel URL",
+        "runTargetHosting=devtunnel written to .a365-workspace-detection.json",
+        "Phase 9.7.2c: chosenEndpoint reconciled with messagingEndpoint (update-endpoint if different)",
+        "Phase 9.7.3: manifest.json verified (read-only)",
+        "Phase 9.7.4: a365 publish runs and produces manifest.zip",
+        "Phase 9.7.5: Dev Portal URL shown; Notification URL = chosenEndpoint (= reconciled messagingEndpoint)",
+        "Phase 9.7.6: Instance request guidance + admin approval link shown",
+        "Phase 9.7.7: Smoke test offers Option A (Teams) and Option B (Playground)"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Run Target = local — agent runs at http://localhost:3978/api/messages; AgentsPlayground only; skip publish/Dev Portal/MAC upload/instance.",
+      "language": "python",
+      "expected_output": "Phase 9.7.2 asks Run Target. User picks 2 (Local). runTarget=local persisted. Phase 9.7.2b sub-question NOT asked (only applies to Prod). Tell user verbatim that agent runs at http://localhost:3978/api/messages and Teams reachability is skipped. Phases 9.7.3-9.7.6 are explicitly skipped. Phase 9.7.7 offers only Option B (AgentsPlayground).",
+      "files": [],
+      "expectations": [
+        "Phase 9.7.2: Run Target question asked",
+        "User picks Local",
+        "runTarget=local written to .a365-workspace-detection.json",
+        "Phase 9.7.2b: hosting sub-question NOT asked (only Prod triggers it)",
+        "Skill tells user verbatim agent runs at http://localhost:3978/api/messages",
+        "Phase 9.7.3-9.7.6 NOT run; skip message shown verbatim",
+        "Phase 9.7.7: ONLY Option B (AgentsPlayground) shown — Option A is suppressed",
+        "Final summary notes Run mode: Local with the localhost URL, and explains how to switch to Prod later"
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Run Target + hosting remember-with-confirm — second invocation reads previous runTarget AND runTargetHosting from cache.",
+      "language": "nodejs",
+      "expected_output": "On re-run, Phase 9.7.2 reads runTarget=prod and runTargetHosting=cloud from .a365-workspace-detection.json and offers \"Last time you chose prod — cloud. Use the same again? (yes/switch)\". User confirms yes → keeps both. Or switches → asks the full Run Target 2-option question, and (if Prod again) the hosting sub-question.",
+      "files": [],
+      "expectations": [
+        "Phase 9.7.2: previous runTarget AND runTargetHosting read from .a365-workspace-detection.json",
+        "Skill shows remember-with-confirm prompt with the previous values (both runTarget and runTargetHosting)",
+        "If user confirms yes: same runTarget and runTargetHosting reused; chosenEndpoint reused too",
+        "If user picks switch: full Run Target 2-option question asked; if Prod again, hosting sub-question follows; new values persisted"
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "Make this agent an AI Teammate",
+      "description": "Run Target = prod, hosting = cloud (Azure/AWS/GCP) — user provides an HTTPS messaging endpoint; reconcile via update-endpoint if different.",
+      "language": "dotnet",
+      "expected_output": "Phase 9.7.2 → user picks Production. Phase 9.7.2b → user picks Cloud endpoint. Skill asks for the full HTTPS messaging endpoint URL (must end in /api/messages). User enters https://my-agent.azurewebsites.net/api/messages. chosenEndpoint stored. Phase 9.7.2c: if messagingEndpoint differs, runs a365 setup blueprint --update-endpoint <chosenEndpoint>. Continues with publish + Dev Portal config (Notification URL = chosenEndpoint) + instance request + smoke test.",
+      "files": [],
+      "expectations": [
+        "Phase 9.7.2b: user picks Cloud endpoint",
+        "Skill asks for the full HTTPS messaging endpoint URL",
+        "Skill validates URL is HTTPS and ends in /api/messages",
+        "chosenEndpoint persisted to .a365-workspace-detection.json",
+        "runTargetHosting=cloud persisted to .a365-workspace-detection.json",
+        "Phase 9.7.2c: a365 setup blueprint --update-endpoint runs if chosenEndpoint differs from existing messagingEndpoint",
+        "Phase 9.7.5: Dev Portal Notification URL = chosenEndpoint (= reconciled messagingEndpoint)"
       ]
     }
   ]

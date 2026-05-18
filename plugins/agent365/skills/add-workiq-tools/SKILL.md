@@ -1,6 +1,5 @@
 ---
 name: add-workiq-tools
-version: 1.6.0
 description: >
   Adds WorkIQ MCP tool servers to an existing .NET AgentFramework, Node.js, or Python agent
   using the A365 CLI. Runs a365 develop list-available to show the catalog, adds selected servers
@@ -37,8 +36,6 @@ hooks:
         If all items completed successfully, return {"ok": true}.
       timeout: 30000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Add WorkIQ Tools (A365 CLI + SDK)
 
@@ -171,7 +168,7 @@ a365 --version; a365 develop list-configured 2>/dev/null || echo "a365 CLI not f
 
 If `a365` is missing:
 ```bash
-dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli
 a365 --version; a365 develop list-configured
 ```
 
@@ -672,7 +669,7 @@ Developer                                  Global Administrator
 
 | Situation | Action |
 |-----------|--------|
-| `a365` CLI not installed | Install with `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease` |
+| `a365` CLI not installed | Install with `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli` |
 | `a365 develop list-available` fails | Check a365 CLI authentication; run `a365 auth login` |
 | Need to manage MCP servers in Dataverse | Use `a365 develop-mcp` (not `a365 develop`) — separate command for Dataverse-hosted MCP server management |
 | Server name not found in catalog | Show user the `list-available` output and ask to re-select |

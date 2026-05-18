@@ -1,0 +1,27 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Run the stop-hook validator unit tests on every supported Node version.
+  # package.json declares engines.node: ">=18"; we pin the matrix to 18 (LTS
+  # floor), 20 (current LTS), and 22 (next LTS) so a Node-version-specific
+  # regression in the validators or the shared lib/project-scan helper is
+  # caught before it hits a user's machine.
+  npm-test:
+    name: npm test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No package-lock.json (the project has zero runtime dependencies) so
+      # `npm ci` is not applicable — `npm test` is self-contained.
+      - run: npm test

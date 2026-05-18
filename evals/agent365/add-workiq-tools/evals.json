@@ -109,7 +109,7 @@
       "files": [],
       "expectations": [
         "Phase 1: a365 --version fails — CLI is not installed",
-        "Phase 1: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease is run",
+        "Phase 1: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli is run",
         "Phase 1: a365 --version is re-run to confirm install succeeded",
         "Skill does NOT abort — continues with list-available after CLI is installed",
         "Normal flow resumes from Phase 2 onward"

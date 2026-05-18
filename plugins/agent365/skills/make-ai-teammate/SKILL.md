@@ -1,6 +1,5 @@
 ---
 name: make-ai-teammate
-version: 1.6.0
 description: >
   Transforms a non-M365 agent into a Microsoft Agent 365 AI Teammate. Supports all major
   frameworks across .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents
@@ -27,56 +26,44 @@ hooks:
       timeout: 30000
     - type: prompt
       prompt: |
-        Before ending, verify based on the detected language:
+        Code-generation artifacts (hosting layer, agent class, packages, build)
+        are validated by validate-make-ai-teammate.js. This prompt covers only
+        the deploy-pipeline checks the JS validator can't see.
 
-        Node.js:
-        1. src/index.ts has Express + CloudAdapter + /api/health + /api/messages pattern.
-        2. src/agent.ts has AgentApplication subclass with message, notification, InstallationUpdate handlers.
-        3. src/client.ts has getClient() factory wrapping the user's LLM code.
-        4. ToolingManifest.json exists with Calendar and Mail MCP servers pre-populated.
-        5. .env / .env.example has all required A365 variables.
-        6. tsconfig.json has module: "node16" and moduleResolution: "node16".
-        7. All required @microsoft/agents-* packages are in package.json.
-        8. Build succeeds (npm run build or tsc --noEmit).
+        Read .a365-workspace-detection.json for runTarget, has_setup, has_obs,
+        has_workiq. Treat a skip-gated step as satisfied when its flag was
+        already true at session entry.
 
-        .NET:
-        1. Program.cs has AddAgent<T>, /api/messages, /api/health.
-        2. Agent class (MyAgent.cs or equivalent) extends AgentApplication with message, InstallationUpdate handlers.
-        3. .csproj has Microsoft.Agents.A365.Notifications.
-        4. ToolingManifest.json exists.
-        5. appsettings.json has AgentApplication, TokenValidation, Connections sections.
-        6. Build succeeds (dotnet build).
+        Verify ALL that apply:
+        1. Phase 9.7.1 — a365 setup all --aiteammate ran, OR has_setup was true.
+           a365.generated.config.json has a non-empty agentBlueprintId.
+        2. Phase 9.7.2 — runTarget is recorded ("prod" or "local"). For prod,
+           runTargetHosting ("devtunnel" or "cloud") and chosenEndpoint are
+           recorded, and messagingEndpoint was reconciled to chosenEndpoint
+           via a365 setup blueprint --update-endpoint when they differed.
+        3. Phase 9.7.2d — required env vars present in .env / appsettings.json.
+           For prod: completed=true AND resourceConsents non-empty (else GA
+           handoff message shown), cloud-platform env vars set, platform state
+           Running/Ready.
+        4. Phase 9.5 — instrument-observability ran OR has_obs was true.
+        5. Phase 9.6 — add-workiq-tools was offered (or has_workiq true).
+        6. For runTarget = "prod": manifest.json reviewed (CLI owns it),
+           a365 publish ran, user was told to upload manifest.zip via M365
+           Admin Center, Teams Developer Portal was configured (Agent Type =
+           API Based, Notification URL = messagingEndpoint), instance was
+           requested with the admin-approval URL surfaced.
+        7. For runTarget = "local": steps 10a–10d explicitly skipped; this is
+           a valid completion state.
+        8. Smoke test was completed.
 
-        Python:
-        1. host_agent_server.py has CloudAdapter (or legacy CloudAdapterAiohttp), /api/messages, /api/health, on_notification.
-        2. agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity.
-        3. agent_interface.py exists with AgentInterface ABC.
-        4. pyproject.toml has all microsoft_agents_a365_* dependencies.
-        5. ToolingManifest.json exists.
-        6. .env / .env.template has all required A365 variables.
+        Row 8 (has_obs && has_workiq && has_setup): if user chose "Verify only"
+        in Phase 0C, all Phase 9.x checks collapse to verified. If they chose
+        "Re-publish", checks 2, 6, 8 still apply.
 
-        Phase 9.7 (Register, Publish, Teams Dev Portal):
-        7. a365 setup all --aiteammate (with or without --m365) completed without fatal errors.
-        8. Blueprint ID was read from a365.generated.config.json after setup all completed.
-        9. manifest.json was reviewed (read-only verification — CLI owns the file; not hand-edited).
-        10. a365 publish ran (or sideload fallback was offered if auth failed) — CLI handles bot endpoint registration; no manual Developer Portal config required.
-        11. Smoke test was completed (Teams or AgentsPlayground).
-
-        Also verify for all languages:
-        - instrument-observability ran (Phase 9.5 — part of AI Teammate package, not optional).
-        - add-workiq-tools was offered (Phase 9.6) and either invoked or explicitly skipped by user.
-
-        Treat optional items (Phase 9.6 add-workiq-tools) as complete if the user
-        was offered the step and either invoked or explicitly skipped it — an
-        explicit skip is a valid completion state, not a failure.
-
-        If any item failed or was incomplete (and was not an explicit skip of an
-        optional step), return {"ok": false, "reason": "<specific item>"}.
-        Otherwise return {"ok": true}.
+        If any required item is incomplete and was not a valid skip, return
+        {"ok": false, "reason": "<specific item>"}. Otherwise {"ok": true}.
       timeout: 45000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Make AI Teammate
 
@@ -286,18 +273,28 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `CloudAdapter` in `src/**/*.ts` → `hasHosting`
 - `onAgentNotification` in `src/**/*.ts` → `hasNotifications`
 - `ToolingManifest.json` exists → `hasManifest`
+- `useMicrosoftOpenTelemetry` in `src/**/*.ts` → `has_obs`
 
 *DotNet:*
 - `AgentApplication` in `**/*.cs` → `hasAgentApp`
 - `adapter.ProcessAsync` or `IAgentHttpAdapter` in `**/*.cs` → `hasHosting`
 - `OnConversationUpdate` or `InstallationUpdate` in `**/*.cs` → `hasNotifications`
 - `ToolingManifest.json` exists → `hasManifest`
+- `UseMicrosoftOpenTelemetry` in `**/*.cs` → `has_obs`
 
 *Python:*
 - `AgentInterface` in `**/*.py` → `hasAgentApp`
 - `CloudAdapter` or legacy `CloudAdapterAiohttp` in `**/*.py` → `hasHosting`
 - `on_agent_notification` in `**/*.py` → `hasNotifications`
 - `ToolingManifest.json` exists → `hasManifest`
+- `use_microsoft_opentelemetry` in `**/*.py` → `has_obs`
+
+**Skill-state signals** (language-agnostic):
+
+- **`has_workiq`** — `ToolingManifest.json` exists AND its top-level `mcpServers` array (or `servers` in legacy v1 schema) is non-empty. Parse the file; if the array contains at least one entry, `has_workiq = true`.
+- **`has_setup`** — read from `.a365-workspace-detection.json` field `hasBlueprintConfig` (set by `a365-setup`). Equivalently: `a365.generated.config.json` exists with a non-empty `agentBlueprintId`.
+
+These three flags (`has_obs`, `has_workiq`, `has_setup`) drive the 8-row state matrix in Phase 0C.
 
 ---
 
@@ -308,10 +305,16 @@ Present all detections in one message:
 ```
 Language: {language}  |  Framework: {agentStack}  |  Existing code: {existingFiles.join(', ')}
 
-Already present:
-  • Hosting layer:   {hasHosting ? "✅" : "❌"}
-  • Agent class:     {hasAgentApp ? "✅" : "❌"}
-  • Notifications:   {hasNotifications ? "✅" : "❌"}
+AI Teammate scaffolding:
+  • Hosting layer:    {hasHosting ? "✅" : "❌"}
+  • Agent class:      {hasAgentApp ? "✅" : "❌"}
+  • Notifications:    {hasNotifications ? "✅" : "❌"}
+  • ToolingManifest:  {hasManifest ? "✅" : "❌"}
+
+Agent 365 capabilities:
+  • Observability:    {has_obs ? "✅ already wired" : "❌ will be added"}
+  • WorkIQ tools:     {has_workiq ? "✅ already wired" : "❌ will be offered"}
+  • Blueprint setup:  {has_setup ? "✅ registered (Blueprint ID: " + existingBlueprintId + ")" : "❌ will run a365 setup all"}
 
 Reply **yes** to confirm, or describe corrections.
 ```
@@ -366,6 +369,59 @@ TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
 TaskCreate: "Register, publish, and deploy"
 ```
+
+---
+
+## Phase 0C — Resolve State and Route
+
+The 8-row state matrix below decides what runs vs skips vs short-circuits based on `(has_obs, has_workiq, has_setup)`. Compute the row, print the resolved plan to the user, and route accordingly.
+
+| # | Obs | WorkIQ | Setup | What runs | Note |
+|---|-----|--------|-------|-----------|------|
+| 1 | F | F | F | obs → workiq? → setup | Full flow |
+| 2 | T | F | F | ~~obs~~ → workiq? → setup | Skip obs, rest normal |
+| 3 | F | T | F | obs → ~~workiq~~ → setup | Skip workiq, rest normal |
+| 4 | T | T | F | ~~obs~~ → ~~workiq~~ → setup | Register only |
+| 5 | F | F | T | obs → workiq? → ~~setup~~ | No re-register |
+| 6 | T | F | T | ~~obs~~ → workiq? → ~~setup~~ | WorkIQ only (if wanted) |
+| 7 | F | T | T | obs → ~~workiq~~ → ~~setup~~ | Observability only, no re-register |
+| 8 | T | T | T | ~~obs~~ → ~~workiq~~ → ~~setup~~ | Confirmation only — sub-question below |
+
+**Print the resolved state to the user**, verbatim, before any work runs:
+
+```
+Resolved state (row {N}): has_obs={T/F}, has_workiq={T/F}, has_setup={T/F}
+
+Plan:
+  • Observability:   {run | skip — already wired}
+  • WorkIQ:          {ask user | skip — already wired | skip — guard (row 4/8)}
+  • Setup (register): {run a365 setup all --aiteammate | skip — blueprint exists}
+  • Run Target:      asked at Phase 9.7.2 (Prod vs Local). For Prod, a hosting
+                     sub-question (Phase 9.7.2b) follows: dev tunnel or cloud
+                     endpoint (Azure / AWS / Google Cloud). For Local, agent
+                     runs at http://localhost:3978/api/messages and only
+                     AgentsPlayground is launched — no Teams reachability.
+```
+
+**Row 8 sub-question — only if row 8 (T/T/T):**
+
+```
+Everything is already wired and registered:
+  • Blueprint ID:  {existingBlueprintId}
+  • Observability: present
+  • WorkIQ:        present
+
+What would you like to do?
+
+  1. Re-publish — repackage manifest (a365 publish), re-upload zip, refresh Dev Portal
+     config. Useful after code changes.
+  2. Verify only — print the resolved state and exit. No CLI commands run.
+```
+
+- If **1 (Re-publish)**: skip Phases 1–9.6, jump to Phase 9.7.2 (Run Target). For Prod, run publish + Dev Portal + instance flow. For Local, jump to smoke test only.
+- If **2 (Verify)**: print the final summary (Phase 10) and exit.
+
+**Routing for rows 1–7:** continue with Phase 1 (Install Packages). The skip-gates in Phases 9.5 / 9.6 / 9.7.1 enforce the row-specific behavior.
 
 ---
 
@@ -669,7 +725,10 @@ Do NOT revert changes on build failure — fix forward.
 
 **Mark task in progress: "Add Observability"**
 
-Observability is part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it now — do not ask whether to add it.
+**Skip-gate (from Phase 0C `has_obs`):**
+
+- **If `has_obs = true`** (rows 2, 4, 6, 8): tell the user verbatim *"Observability already wired — skipping. Run `/agent365:instrument-observability` to reconfigure."* and mark the task complete. Do NOT invoke the sub-skill.
+- **If `has_obs = false`** (rows 1, 3, 5, 7): **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it now. Observability is part of the AI Teammate package — do not ask whether to add it.
 
 **Mark task complete: "Add Observability"**
 
@@ -679,12 +738,15 @@ Observability is part of the AI Teammate package. **Read** `${CLAUDE_PLUGIN_ROOT
 
 **Mark task in progress: "Add WorkIQ Tools (optional)"**
 
-Ask the user:
+**Skip-gate (from Phase 0C `has_workiq`):**
 
-> "Would you like to add WorkIQ MCP tools now? WorkIQ lets your AI Teammate use Calendar, Mail, and other M365 tools via MCP servers."
->
-> - **Yes** → **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it in full.
-> - **Skip** → inform the user they can run `/agent365:add-workiq-tools` later.
+- **If `has_workiq = true`** (rows 3, 4, 7, 8): tell the user verbatim *"WorkIQ tools already wired (ToolingManifest has non-empty servers list) — skipping. Run `/agent365:add-workiq-tools` to add more or reconfigure."* and mark the task complete. Do NOT ask, do NOT invoke the sub-skill.
+- **If `has_workiq = false`** (rows 1, 2, 5, 6): ask the user:
+
+  > "Would you like to add WorkIQ MCP tools now? WorkIQ lets your AI Teammate use Calendar, Mail, and other M365 tools via MCP servers."
+  >
+  > - **Yes** → **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/SKILL.md` and follow it in full.
+  > - **Skip** → inform the user they can run `/agent365:add-workiq-tools` later.
 
 **Mark task complete: "Add WorkIQ Tools (optional)"**
 
@@ -694,161 +756,32 @@ Ask the user:
 
 **Mark task in progress: "Register, publish, and deploy"**
 
-This phase runs the full AI Teammate registration and publishing pipeline:
-`a365 setup all` → manifest verification → `a365 publish` → smoke test. The CLI handles bot endpoint registration and Teams Developer Portal configuration automatically — no manual portal steps required.
+This is the full registration + publish + Teams Developer Portal + instance-request
+pipeline — about 370 lines of step-by-step guidance. It lives in its own reference
+file because the steps are largely language-agnostic and would dominate the SKILL.md
+otherwise.
 
----
+**Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/deploy-pipeline.md`
+and follow it in full. The step numbering matches Phase 9.7 (9.7.1 through 9.7.7)
+so this skill's stop-hook prompt, the eval expectations, and the README all keep
+pointing at the same places. Inside the deploy pipeline you'll go through:
 
-### Step 9.7.1 — Register the Blueprint (`a365 setup all`)
+- **9.7.1** — `a365 setup all --aiteammate` (skip-gated when `has_setup = true`),
+  with the CEA / `--m365` auto-decision based on `usesTeamsOrCopilot`.
+- **9.7.2 / 9.7.2a / 9.7.2b / 9.7.2c / 9.7.2d** — choose Run Target (prod vs local),
+  collect the production hosting sub-question (dev tunnel vs cloud), reconcile
+  `chosenEndpoint` against the blueprint's `messagingEndpoint`, and validate the
+  environment-config table (per-language `.env` / `appsettings.json` keys plus
+  cloud-platform env-var checks).
+- **9.7.3 → 9.7.6** — manifest verify (read-only — CLI owns the file),
+  `a365 publish` to produce `manifest.zip`, manual upload at M365 Admin Center,
+  Teams Developer Portal config (Agent Type = API Based, Notification URL =
+  `messagingEndpoint`), and the agent-instance request + admin approval.
+  Skipped entirely when `runTarget = "local"`.
+- **9.7.7** — smoke test (Teams for prod, AgentsPlayground for local).
 
-Ask the user for the **agent name** (reuse from session context if available, otherwise ask). Then show a dry-run first:
-
-```bash
-# Dry-run preview (required before applying)
-a365 setup all --agent-name <name> --aiteammate --dry-run
-```
-
-Show the full dry-run output and ask:
-> "Here's what `a365 setup all` will create. Does this look correct? Type **yes** to proceed or **no** to abort."
-
-**If yes**, decide whether to add `--m365` based on the CEA detection signal `usesTeamsOrCopilot` (from `.a365-workspace-detection.json` / session context):
-
-- **If `usesTeamsOrCopilot = 1`** (CEA detected — Teams/Copilot markers found in repo): set `isM365 = true` automatically. **Do NOT ask the user** — just inform them in one line: *"Detected Teams/Copilot integration in this project — adding `--m365` to register the agent in the M365 admin center."*
-- **If `usesTeamsOrCopilot = 0`** (no CEA markers): ask the user, since this is an explicit deployment decision that can't be inferred from code:
-  ```
-  Will this agent be accessible directly from Microsoft Teams or Microsoft Copilot (M365-integrated)?
-    1. Yes — M365-integrated (add --m365)
-    2. No — standalone AI Teammate (programmatic / API consumers only)
-  ```
-  Store as `isM365 = true/false`.
-
-Then apply:
-
-```bash
-# Standalone AI Teammate (no Teams/Copilot catalog integration) — isM365 = false
-a365 setup all --agent-name <name> --aiteammate
-
-# M365-registered AI Teammate (Teams / Microsoft Copilot integration) — isM365 = true
-a365 setup all --agent-name <name> --aiteammate --m365
-```
-
-**`--authmode` note:** Do NOT pass `--authmode` with `--aiteammate`. AI Teammate agents use the Agentic User identity (the agent's own M365 identity — not the caller's token). In CLI 1.1+, `--authmode obo` is accepted but emits a warning (OBO is the default for AI Teammate — the flag is superfluous). `--authmode s2s` or `--authmode both` with `--aiteammate` is rejected with an error. Omit `--authmode` entirely.
-
-**Windows Account Manager (WAM):** If `"Authenticating via Windows Account Manager..."` appears, a native Windows sign-in dialog appeared. Do NOT kill the process — tell the user: "Please complete the sign-in dialog — setup will continue automatically." If no dialog appears on a headless machine: `Ctrl+C`, run `az login --allow-no-subscriptions`, retry. If blocked by Conditional Access Policy (AADSTS53003), the CLI automatically falls back to device code flow.
-
-After completion:
-- Show the **Setup Summary table** verbatim from CLI output.
-- Extract and store `blueprintId` from `a365.generated.config.json`:
-
-```bash
-node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint ID:', c.agentBlueprintId)"
-```
-
-**If the CLI output includes a "Permission Grants" action item or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can copy it. This is only expected for agents upgrading from a pre-1.1 CLI version where OtelWrite was not yet auto-granted. For newly provisioned agents no admin consent step is required.
-
----
-
-### Step 9.7.2 — Verify `manifest.json` (do NOT hand-edit)
-
-**Glob** for `manifest.json` or `appPackage/manifest.json`.
-
-**The CLI owns this file.** `a365 setup all --aiteammate` (Step 9.7.1) creates or updates the manifest with the correct `$schema` (Teams v1.22+), `manifestVersion`, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents`, and `validDomains` based on `a365.generated.config.json`. `a365 publish` (Step 9.7.3) re-substitutes IDs at package time. **Do NOT hand-write or modify these fields in this step** — let the CLI generate them.
-
-This step is a **read-only verification**. Read the manifest and confirm to the user:
-
-- ✅ File exists at `manifest.json` or `appPackage/manifest.json`
-- ✅ `$schema` references a Teams v1.22+ schema
-- ✅ `bots[0].botId` is populated (or contains a Teams Toolkit token like `${{TEAMS_APP_ID}}`)
-- ✅ `copilotAgents.customEngineAgents` block is present (the AI Teammate marker — distinguishes an AI Teammate from a regular Teams bot)
-
-If anything looks missing or wrong, re-run `a365 setup all --aiteammate` (idempotent) — the CLI will regenerate the missing fields. Do NOT patch them by hand.
-
-For reference, the AI Teammate marker block looks like this (top-level — sibling of `bots`, not nested inside it):
-
-```json
-"copilotAgents": {
-  "customEngineAgents": [
-    { "id": "<agentAppId — same as bots[0].botId>", "type": "bot" }
-  ]
-}
-```
-
-> **Teams Toolkit projects** use token placeholders like `${{TEAMS_APP_ID}}` and `${{AAD_APP_CLIENT_ID}}` instead of literal IDs — Toolkit resolves these during package build. If you see Toolkit tokens, leave them alone.
-
-If `manifest.json` does **not** exist:
-> "No `manifest.json` found. If you're using Teams Toolkit it manages this file automatically. Otherwise, re-run `a365 setup all --aiteammate` — the CLI will generate it."
-
-Stop until the user confirms whether to continue.
-
----
-
-### Step 9.7.3 — Publish (`a365 publish`)
-
-```bash
-a365 publish
-```
-
-In CLI 1.1+, this command:
-1. Reads the manifest and updates `bots[0].botId`, `webApplicationInfo.id`, and the `copilotAgents.customEngineAgents` ID from `a365.generated.config.json` (the CLI handles ID substitution end-to-end; Step 9.7.2 is read-only verification).
-2. Packages the manifest + icons into `manifest.zip` (or `appPackage.zip` for Teams Toolkit projects).
-3. Attempts upload to the Teams App Catalog; if direct upload is not possible (e.g. user lacks Teams Administrator role), prints upload instructions for **Microsoft 365 Admin Center → Agents → All agents → Upload custom agent** using the produced `manifest.zip`.
-
-| Output | Action |
-|--------|--------|
-| `"Published successfully"` / `"Upload complete"` | Proceed to next step |
-| `"Manifest validation failed"` (any schema error) | Re-run `a365 setup all --aiteammate` (idempotent) so the CLI regenerates the manifest fields, then retry `a365 publish`. If the error persists, show the CLI output verbatim to the user and report to the A365 CLI team — do NOT hand-edit `manifest.json`. |
-| `"Authorization denied"` | Account needs **Teams Administrator** role. Offer sideload fallback below |
-
-**Sideload fallback** (if publish authorization fails — installs for current user only):
-```bash
-a365 manifest package   # produces a .zip app package
-```
-> "Upload the `.zip` manually: Teams → Apps → Manage your apps → Upload an app → Upload a custom app. Org-wide publish requires a Teams Administrator."
-
----
-
-### Step 9.7.4 — (Optional) Verify in Teams Developer Portal
-
-`a365 publish` (Step 9.7.3) registers the app and sets the bot messaging endpoint automatically. No manual configuration is required in **https://dev.teams.microsoft.com** — do NOT instruct the user to update the messaging endpoint by hand.
-
-If the user wants to visually confirm the registration succeeded, they can:
-
-1. Open **https://dev.teams.microsoft.com** → **Apps** → find the app by name or App ID (`teamsAppId` from `a365.generated.config.json`).
-2. Spot-check that `App ID` matches `teamsAppId`, `Bot ID` matches `agentAppId`, and `Messaging endpoint` is the live `/api/messages` URL.
-
-If anything looks wrong, re-run `a365 publish` (idempotent) rather than hand-editing the portal.
-
----
-
-### Step 9.7.5 — Smoke Test
-
-Guide the user through a quick end-to-end test:
-
-**Option A — Microsoft Teams** (if `--m365` was used):
-1. Teams → **Chat** → search for the agent by UPN or display name.
-2. Send: `"Hello"` — the agent should respond within a few seconds.
-3. Watch terminal/logs for activity handler invocations.
-
-**Option B — AgentsPlayground** (any configuration):
-```bash
-agentsplayground
-```
-Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send a test message.
-
-**Terminal log signals to watch for:**
-- Node.js: `[A365] Activity received: message`
-- .NET: `ActivityHandler: OnMessageActivityAsync called`
-- Python: `process_user_message called`
-- If observability was added: OTel span lines with `a365.span`
-
-**Troubleshooting:**
-
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| No response in Teams | Bot endpoint not registered | Re-check Step 9.7.5 — verify messaging endpoint in Dev Portal |
-| `401 Unauthorized` in logs | App ID / secret mismatch | Confirm `MICROSOFT_APP_ID` and `MICROSOFT_APP_PASSWORD` in `.env` match the registered app |
-| `Connection refused` on tunnel | Tunnel not running | `devtunnel host <name> --port 3978` |
-| `404` on `/api/messages` | Agent not started | `npm start` / `dotnet run` / `python host_agent_server.py` |
+When you return from the reference, mark the task complete and continue to
+Phase 10.
 
 **Mark task complete: "Register, publish, and deploy"**
 
@@ -856,20 +789,44 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 
 ## Phase 10 — Final Summary and Next Steps
 
-**TaskList** — show all completed tasks, then tell the user:
+**TaskList** — show all completed tasks, then build a **state-aware summary**. Adapt each bullet to whether the step ran, was skipped because already wired, or was skipped because of `runTarget = "local"`:
 
 ```
-✅ AI Teammate is live!
+✅ AI Teammate flow complete!
+
+Resolved state at entry: has_obs={T/F}, has_workiq={T/F}, has_setup={T/F}
+Run Target: {prod | local}{runTarget = "prod" ? " — hosting: " + runTargetHosting + " (" + chosenEndpoint + ")" : ""}
 
 Your agent now has:
   • Hosting layer         (/api/health + /api/messages)
   • Agent routing         (message, notification, InstallationUpdate handlers)
   • Email notifications + install/uninstall lifecycle
   • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
-  • Blueprint registered  (a365 setup all --aiteammate)
-  • Published to Teams    (a365 publish)
-  [• Observability:        OpenTelemetry + A365 tracing exporter wired]  (if added)
-  [• WorkIQ tools:         M365 data access via MCP]                     (if added)
+  • Blueprint              {has_setup-at-entry
+                              ? "reused (Blueprint ID: " + existingBlueprintId + ")"
+                              : "registered (a365 setup all --aiteammate" + (--m365 ? ", --m365" : "") + ")"}
+  • Observability          {has_obs-at-entry
+                              ? "already wired — skipped"
+                              : "OpenTelemetry + A365 tracing exporter wired"}
+  • WorkIQ tools           {has_workiq-at-entry
+                              ? "already wired — skipped"
+                              : (user picked yes
+                                   ? "M365 data access via MCP wired"
+                                   : "offered, user skipped — run /agent365:add-workiq-tools later")}
+
+{If runTarget = "prod":}
+  • Hosting               {runTargetHosting = "devtunnel"
+                              ? "Dev tunnel — " + chosenEndpoint
+                              : "Cloud (Azure / AWS / GCP) — " + chosenEndpoint}
+  • Manifest packaged     (a365 publish → manifest.zip; uploaded manually to M365 Admin Center)
+  • Dev Portal configured (Agent Type=API Based, Notification URL={chosenEndpoint})
+  • Instance requested    (request from Teams Apps; admin approves at admin.cloud.microsoft/#/agents/all/requested)
+
+{If runTarget = "local":}
+  • Run mode: Local       Agent runs at http://localhost:3978/api/messages.
+                          (publish, Dev Portal config, MAC upload, instance request all SKIPPED)
+                          When you're ready for production, re-run /agent365:make-ai-teammate
+                          and choose Prod at Step 9.7.2 (then dev tunnel or cloud at 9.7.2b).
 
 Useful commands:
   cat a365.generated.config.json            — show Blueprint ID, App ID, and agent details
@@ -877,9 +834,22 @@ Useful commands:
   devtunnel host <name> --port 3978         — restart dev tunnel for local testing
 
 Next steps:
-  1. Run the test-local skill for guided local testing with AgentsPlayground
-  2. Add observability:  run the instrument-observability skill  (if not done)
-  3. Add WorkIQ tools:   run the add-workiq-tools skill          (if not done)
+  1. {runTarget = "local"
+       ? "Run the test-local skill for guided AgentsPlayground testing — your agent isn't deployed yet."
+       : "Wait for tenant admin to approve the instance request at admin.cloud.microsoft, then test in Teams."}
+  2. Re-run this skill any time — it's idempotent and detects what's already wired.
+```
+
+**Row 8 Verify-only sub-case:** if the Phase 0C sub-question resolved to "Verify only", skip the deployment bullets entirely and show just the resolved state + a confirmation line:
+
+```
+✅ Everything is already wired. Nothing to do.
+
+  • has_obs:       true (Observability is wired)
+  • has_workiq:    true (WorkIQ is wired)
+  • has_setup:     true (Blueprint ID: {existingBlueprintId})
+
+If you want to push a code change, re-run /agent365:make-ai-teammate and pick "Re-publish" at the row 8 sub-question.
 ```
 
 ---
@@ -899,8 +869,8 @@ Next steps:
 | `IAgentHttpAdapter` not found | .NET | Ensure `Microsoft.Agents.Hosting.AspNetCore` is referenced |
 | `IChatClient` not found | .NET (AgentFramework) | Ensure `Microsoft.Extensions.AI.OpenAI` is installed |
 | `Kernel` / `IChatCompletionService` not found | .NET (Semantic Kernel) | Ensure `Microsoft.SemanticKernel` NuGet package is installed |
-| `Microsoft.Agents.A365.*` not found | .NET | Add `--prerelease` flag; check NuGet source includes prerelease feeds |
-| `ModuleNotFoundError` for `microsoft_agents_a365_*` | Python | Run `uv add <package> --prerelease` |
+| `Microsoft.Agents.A365.*` not found | .NET | check NuGet source includes prerelease feeds |
+| `ModuleNotFoundError` for `microsoft_agents_a365_*` | Python | Run `uv add <package>` |
 | `requires-python` version mismatch | Python | Ensure Python 3.11+ is active in the virtual environment |
 
 ---
@@ -923,6 +893,9 @@ Never overwrite a file that already has the required pattern — only add what i
 
 **Python patterns:**
 - `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/python-ai-teammate.md`
+
+**Deploy pipeline (Phase 9.7 — language-agnostic):**
+- `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/deploy-pipeline.md`
 
 **Shared:**
 - `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md`

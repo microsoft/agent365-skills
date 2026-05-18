@@ -13,7 +13,7 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 
 - **Microsoft Agent 365** tenant with developer access
 - **Node.js 18+**, **.NET 8.0+**, or **Python 3.11+** (depending on your agent)
-- **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease`
+- **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
 ---
@@ -217,8 +217,8 @@ wiring any code, asks a two-stage question to determine **agent kind** and **aut
 - **Agent (Non AI Teammate)**: no Agentic User; then asks whether it is `obo` (On-Behalf-Of) or `s2s` (Service Principal, no user token). **Observability supports both; WorkIQ requires `obo` (delegated user token).**
 
 **Wiring by auth mode:**
-- **`obo` / `agentic-user`** (OBO token exchange): `AddAgenticTracingExporter` + per-turn `RegisterObservability` with `AgenticTokenStruct`
-- **`s2s`** (Service Principal, all languages): creates a scaffold token-service file per language (`Observability/ObservabilityTokenService.cs` for .NET, `observability/observability-token-service.ts` for Node.js, `observability/observability_token_service.py` for Python) that acquires the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via MSAL client credentials and refreshes every 50 min — no per-turn token call
+- **`obo` / `agentic-user`** (OBO token exchange): the unified `Microsoft.OpenTelemetry` distro (.NET) / `@microsoft/opentelemetry` (Node.js) / `microsoft-opentelemetry` (Python) auto-registers the agentic token cache; the message handler calls per-turn `RegisterObservability` / `RefreshObservabilityToken` / `cache_agentic_token` with the OBO token
+- **`s2s`** (Service Principal, all languages): creates a scaffold token-service file per language (`Observability/ObservabilityTokenService.cs` for .NET, `observability/observability-token-service.ts` for Node.js, `observability/observability_token_service.py` for Python) that acquires the Observability API token (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) via the MSAL FMI 3-hop chain and refreshes every 50 min — no per-turn token call
 
 All new code is marked `// A365 Observability — best-effort instrumentation` and changes are non-destructive and idempotent.
 
@@ -382,6 +382,15 @@ The installer always copies skill files into `.agents/skills/` (open standard �
 
 To update after pulling changes, re-run `gh skill add microsoft/agent365-skills` (idempotent) or delete `.agents/skills/` and re-run `install.js`.
 
+### Running validators and tests locally
+
+```bash
+npm test          # unit tests for every stop-hook validator (tests/*.test.js)
+npm run validate  # run all six stop-hook validators against the current directory
+```
+
+The stop-hook validators share a single project-tree walk via `plugins/agent365/hooks/lib/project-scan.js` — when adding a new validator, import `scanProject` / `filterByName` / `fileContains` from that module rather than re-implementing `findFiles`. The version check (`plugins/agent365/scripts/check-version.js`) runs as a `sessionStart` hook declared in `plugins/agent365/.claude-plugin/plugin.json` — it fires once per session (not once per skill invocation) and caches the `gh release view` result for 24h under `$LOCALAPPDATA/agent365-skills/` (Windows) or `~/.cache/agent365-skills/` (Unix), so the per-session cost is sub-millisecond after the first hit.
+
 ---
 
 ## Safety & Security
@@ -393,7 +402,7 @@ The plugin is designed around a least-privilege model — it cannot exceed the p
 - **No automatic permission grants** — Permissions are always explained and require either `a365 setup all` (developer-run) or `a365 setup permissions mcp` (Global Administrator); the plugin never silently grants access
 - **ToolingManifest.json is CLI-managed** — WorkIQ servers are added only via `a365 develop add-mcp-servers`; the plugin never hand-edits the manifest
 - **Additive changes only** — Skills never delete or restructure existing agent code; all added code is marked with a comment identifying the skill that added it
-- **Path guard hook** — A `preToolUse` hook blocks every Write and Edit call that targets a file outside the agent project directory or inside the plugin directory itself; symlinks are resolved and Windows path casing is normalized before the check
+- **Path guard hook** — A `preToolUse` hook blocks every Write and Edit call that targets a file outside the agent project directory or inside the plugin directory itself. The project root is taken from `$CLAUDE_PROJECT_DIR` when set (the CLI's canonical project root, so writes still work when Claude is invoked from a subdirectory) and falls back to `process.cwd()`; symlinks are resolved and Windows path casing is normalized before the check
 - **No plugin telemetry** — The plugin does not collect or transmit usage analytics; data flows only to your Azure tenant and to the AI host (Claude or Copilot) as part of normal operation
 
 ---

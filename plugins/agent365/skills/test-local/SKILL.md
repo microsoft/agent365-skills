@@ -1,6 +1,5 @@
 ---
 name: test-local
-version: 1.6.0
 description: >
   Runs an Agent 365 AI Teammate agent locally and opens AgentsPlayground for interactive
   local testing. Works with any AI Teammate stack — .NET (AgentFramework, Semantic Kernel),
@@ -36,8 +35,6 @@ hooks:
         If all items are complete, or the user declined to launch, return {"ok": true}.
       timeout: 30000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Test Agent Locally (AgentsPlayground)
 

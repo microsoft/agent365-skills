@@ -1,6 +1,5 @@
 ---
 name: make-a365-agent
-version: 1.6.0
 description: >
   Provisions a non-AI Teammate agent with Agent 365 — use this skill for Register
   and Observability paths. Runs a365 setup all to create the Blueprint and Entra ID permissions.
@@ -36,8 +35,6 @@ hooks:
         If all items completed (or were explicitly skipped by the user), return {"ok": true}.
       timeout: 30000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Make A365 Agent
 
@@ -364,6 +361,6 @@ Next steps:
 **CLI error surfacing:** When any CLI command exits non-zero or prints a warning or error line, **show the complete output verbatim** in a fenced code block before suggesting a fix. Do not abstract, paraphrase, or discard CLI output — the exact error message is always more useful than a summary. If the error is not in the table below, display it and ask the user how to proceed.
 
 - Run failing commands with `-v` / `--verbose` for detailed logs.
-- Check log files: Windows `%APPDATA%/a365/logs/`, Linux/Mac `~/.config/a365/logs/`.
+- Manage and locate CLI diagnostic logs via `a365 logs --help`. Log files live at Windows `%APPDATA%/a365/logs/`, Linux/Mac `~/.config/a365/logs/`.
 - Most `a365` commands are idempotent — safe to re-run after fixing an issue.
-- Use `a365 cleanup azure` or `a365 cleanup blueprint` only as a last resort.
+- For a full cleanup of a config-free agent: `a365 cleanup --agent-name <name>`. For granular cleanup: `a365 cleanup blueprint`, `a365 cleanup azure`, or `a365 cleanup instance`. Use only as a last resort.
