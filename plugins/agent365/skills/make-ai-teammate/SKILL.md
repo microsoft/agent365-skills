@@ -89,15 +89,30 @@ hooks:
 
 ---
 
-## Phase 0A — Load Detection Cache
+## Phase 0A — Workspace Triage and Detection Cache
 
-**Read** `.a365-workspace-detection.local.json`.
+### Step 1 — Triage the workspace
 
-If the file is missing or `detectedAt` is older than 60 minutes:
-> "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
-> the project detection cache this skill depends on. Run `a365-setup` now, then return here."
+Run in parallel and combine results:
 
-Stop until the user confirms `a365-setup` has been run.
+- **Glob** `**/*.csproj`, `package.json`, `requirements.txt`, `pyproject.toml`, `src/**/*.ts`, `**/*.cs`, `**/*.py` → does any agent code or project file exist? Call this `hasProjectFiles`.
+- **Read** `.a365-workspace-detection.local.json` → does the cache exist, and is `detectedAt` within 60 minutes? Call this `cacheState` (`fresh`, `stale`, or `missing`).
+- **Parse `$ARGUMENTS`** for an explicit framework hint (e.g. `dotnet`, `dotnet-sk`, `langchain`, `openai`, `claude`, `semantickernel`, `googleadk`, `python`) and the word `create`. Store as `argFramework` and `argCreateIntent`.
+
+Decide what to do next from this table — do not fall through to Step 2 until one of these branches has run:
+
+| `cacheState` | `hasProjectFiles` | Action |
+|--------------|-------------------|--------|
+| `fresh`      | —                 | Continue to Step 2 below (load cache). |
+| `missing`    | false             | **Empty workspace, new-agent path.** Tell the user: *"This is a fresh workspace — I'll scaffold a starter agent from Agent365-Samples first, then run `a365-setup` to register it."* Jump directly to **Phase 0A.5**. If `argFramework` is set, pre-select the matching sample (e.g. `dotnet` → option 1, `dotnet-sk` → option 2, `langchain` → option 3, etc.) and skip the menu. After scaffolding completes, **Read** `${CLAUDE_PLUGIN_ROOT}/skills/a365-setup/SKILL.md` and follow it to register the new agent — then return to Step 2 below. |
+| `missing`    | true              | Tell the user: *"I found existing agent code but no Agent 365 registration. I'll run `a365-setup` now to register it and detect its framework, then continue here automatically."* **Read** `${CLAUDE_PLUGIN_ROOT}/skills/a365-setup/SKILL.md` and follow it to completion, then return to Step 2 below. |
+| `stale`      | —                 | Tell the user the detection cache is stale (>60 min) and re-run `a365-setup` the same way as the `missing + true` row, then return to Step 2. |
+
+> **Why this triage exists:** Phase 0A.5 was designed for the empty-workspace new-agent path, but is only reachable after Step 2 succeeds. Without this triage, a user running `/make-ai-teammate create a dotnet agentframework agent` in an empty directory gets a "run a365-setup first" wall instead of the scaffold flow they asked for.
+
+### Step 2 — Load Detection Cache
+
+(Only reached once the cache is fresh — either it already was, or `a365-setup` just wrote it.)
 
 Load from cache:
 - `programmingLanguage` → use as `language`
@@ -117,7 +132,24 @@ Store the main source file(s) as `existingFiles`.
 
 ## Phase 0A.5 — New Agent Path (no source files found)
 
-**Check for empty directory:** If `existingFiles` is empty AND no `.csproj`, `package.json`, or `requirements.txt` exists anywhere in the working directory, the user is starting fresh with no existing agent code.
+This phase is normally entered directly from the **Phase 0A Step 1** triage when `cacheState = missing` and `hasProjectFiles = false`. It can also be entered as a fallback when Phase 0A Step 2 runs but finds no LLM entry point.
+
+**Argument pre-selection:** If `$ARGUMENTS` contained `argFramework` from Phase 0A, map it to the option below and skip the menu — only show the menu when the user gave no framework hint:
+
+| `argFramework` keyword | Auto-selected option |
+|------------------------|----------------------|
+| `dotnet` (alone) or `dotnet agentframework` | 1 — .NET Agent Framework |
+| `dotnet-sk` or `dotnet semantickernel` | 2 — .NET Semantic Kernel |
+| `langchain` (Node.js context implied) | 3 — Node.js LangChain |
+| `openai` (Node.js context implied) | 4 — Node.js OpenAI Agents SDK |
+| `python` (alone) or `python agentframework` | 5 — Python Agent Framework |
+| `claude` (Python context implied) | 6 — Python Claude SDK |
+| `googleadk` or `google-adk` | 7 — Python Google ADK |
+| `semantickernel` (no language given) | Ask the user: ".NET (option 2) or Python? Python Semantic Kernel sample isn't published yet — defaulting to .NET." |
+
+When pre-selected, tell the user the inference: *"Picked option {N} ({sample name}) based on your request. Proceeding to clone…"* and jump straight to **Step 1 (Verify git)** below.
+
+**Empty-directory fallback check** (only when not entered from Phase 0A triage): If `existingFiles` is empty AND no `.csproj`, `package.json`, or `requirements.txt` exists anywhere in the working directory, the user is starting fresh — show the menu below.
 
 In this case, **do NOT fail** — offer to scaffold from an official sample:
 

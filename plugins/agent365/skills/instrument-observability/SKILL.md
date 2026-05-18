@@ -93,13 +93,22 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 **TaskCreate** — "Load detection cache and validate with user"
 
-**Read** `.a365-workspace-detection.local.json`.
+### Step 0.1 — Triage the workspace
 
-If the file is missing or `detectedAt` is older than 60 minutes:
-> "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
-> the project detection cache this skill depends on. Run `a365-setup` now, then return here."
+Run in parallel:
 
-Stop until the user confirms `a365-setup` has been run.
+- **Glob** `**/*.csproj`, `package.json`, `requirements.txt`, `pyproject.toml`, `src/**/*.ts`, `**/*.cs`, `**/*.py` → `hasProjectFiles`.
+- **Read** `.a365-workspace-detection.local.json` → `cacheState` (`fresh` if `detectedAt` < 60 min, `stale` if older, `missing` if absent).
+
+Decide:
+
+| `cacheState` | `hasProjectFiles` | Action |
+|--------------|-------------------|--------|
+| `fresh`      | —                 | Continue to Step 0.2 below. |
+| `missing` / `stale` | false       | **Hard stop with a useful message:** *"This skill instruments an existing agent for observability — there's no agent code in this workspace yet. Run `/agent365:make-ai-teammate` (if this will be a Teams/Copilot agent) or `/agent365:make-a365-agent` first to scaffold and register the agent, then come back here."* Do not proceed. |
+| `missing` / `stale` | true        | Tell the user: *"Found existing agent code but no fresh Agent 365 registration. I'll run `a365-setup` now to register it and write the detection cache, then continue here automatically."* **Read** `${CLAUDE_PLUGIN_ROOT}/skills/a365-setup/SKILL.md` and follow it through completion, then continue to Step 0.2. |
+
+### Step 0.2 — Load from cache
 
 Load from cache: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode` (if previously stored).
 
