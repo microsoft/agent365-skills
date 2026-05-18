@@ -269,7 +269,6 @@ Filter the choices by `language` (do not show options that are not supported):
 | CrewAI                          |    | ✓      |            | https://github.com/crewAIInc/crewAI |
 | Vercel SDK                      |    |        | ✓          | https://ai-sdk.dev/docs/introduction |
 | Google Agent Development Kit    |    | ✓      | ✓          | https://google.github.io/adk-docs/ |
-| LlamaIndex                      |    | ✓      | ✓          | https://docs.llamaindex.ai/en/stable/ (Python) · https://ts.llamaindex.ai/ (TS) |
 | Claude Agent SDK                |    | ✓      | ✓          | https://code.claude.com/docs/en/agent-sdk/overview |
 
 When asking the user, present each option with its documentation link so they
@@ -297,7 +296,7 @@ If not inferable, ask:
 > - Microsoft Azure
 > - Amazon Bedrock
 > - Anthropic Console
-> - Google Vertex AI
+> - Google Gemini Enterprise Agent Platform
 
 Record as `modelProvider`. Use this to pick the correct env-var names in
 Phase 8 (e.g. `AZURE_OPENAI_*`, `AWS_*` + `BEDROCK_*`, `ANTHROPIC_API_KEY`,
