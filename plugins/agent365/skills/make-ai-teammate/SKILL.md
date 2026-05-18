@@ -44,7 +44,14 @@ hooks:
         3. Phase 9.7.2d — required env vars present in .env / appsettings.json.
            For prod: completed=true AND resourceConsents non-empty (else GA
            handoff message shown), cloud-platform env vars set, platform state
-           Running/Ready.
+           Running/Ready. Prod-only env-var checklist must show:
+             - Python: AUTH_HANDLER_NAME=AGENTIC (must NOT be empty); .NET:
+               AgentApplication:AgenticAuthHandlerName="agentic"; Node.js:
+               MyAgent.authHandlerName='agentic' in code.
+             - ENABLE_A365_OBSERVABILITY_EXPORTER=true (Python / Node.js env;
+               .NET appsettings or app-service env). If this is false in prod
+               the agent runs but no spans reach the Agent 365 portal or
+               Microsoft Defender.
         4. Phase 9.5 — instrument-observability ran OR has_obs was true.
         5. Phase 9.6 — add-workiq-tools was offered (or has_workiq true).
         6. For runTarget = "prod": manifest.json reviewed (CLI owns it),

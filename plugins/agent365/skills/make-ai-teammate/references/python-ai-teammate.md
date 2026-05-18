@@ -461,8 +461,13 @@ def extract_turn_context_details(
 ## .env template
 
 ```dotenv
-# Authentication
-AUTH_HANDLER_NAME=
+# A365 Authentication
+# AUTH_HANDLER_NAME picks the auth handler at runtime. For prod (Teams /
+# Copilot reachable) this MUST be AGENTIC — leaving it empty causes every
+# incoming Teams message to fail token exchange.
+AUTH_HANDLER_NAME=AGENTIC
+# BEARER_TOKEN is local-dev only (acquired via `a365 develop get-token`).
+# Do NOT carry this into prod cloud config.
 BEARER_TOKEN=
 
 # Azure OpenAI
@@ -484,6 +489,12 @@ CONNECTIONSMAP_0_CONNECTION=SERVICE_CONNECTION
 USE_AGENTIC_AUTH=true
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__TYPE=AgenticUserAuthorization
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__SCOPES=https://graph.microsoft.com/.default
+
+# A365 Observability
+# Required for prod — sends spans to Agent 365 portal + Microsoft Defender.
+# Set to `false` for local dev (console-only). The full set of observability
+# vars (sponsor identity etc.) is wired by `instrument-observability`.
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
 
 # Server
 PORT=3978
