@@ -1,6 +1,6 @@
 {
   "skill_name": "make-ai-teammate",
-  "eval_instructions": "Test against agents that are NOT yet M365-integrated across three languages: Node.js (LangChain/OpenAI/Claude), .NET AgentFramework, and Python AgentFramework. Requires .a365-workspace-detection.json to be present (written by a365-setup). The skill must WRAP existing LLM code, not replace it. For Node.js verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has getClient() factory wrapping the LLM, (4) ToolingManifest.json exists (pre-populated with Calendar and Mail WorkIQ MCP servers), (5) core @microsoft/agents-hosting, @microsoft/agents-a365-runtime, @microsoft/agents-a365-notifications packages in package.json, (6) tsconfig has module: node16. For .NET verify: (1) Program.cs has AddAgent<T> + /api/messages + /api/health, (2) agent class extends AgentApplication with dual isAgenticOnly registrations, (3) .csproj has Microsoft.Agents.A365.Notifications, (4) appsettings.json has AgentApplication + TokenValidation + Connections. For Python verify: (1) host_agent_server.py has CloudAdapterAiohttp + /api/messages + /api/health + on_agent_notification, (2) agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity, (3) agent_interface.py exists, (4) pyproject.toml has microsoft_agents_a365_notifications + microsoft_agents_a365_runtime + microsoft-agents-hosting-aiohttp. The skill runs instrument-observability (Phase 9.5) automatically as part of the AI Teammate package. add-workiq-tools (Phase 9.6) is optional — the user is asked and can accept or skip. Phase 9.7.1 (`a365 setup all --aiteammate`): the `--m365` flag is **auto-added** when `usesTeamsOrCopilot = 1` from CEA detection (no user question — inform-only); the M365-integrated question is only asked when `usesTeamsOrCopilot = 0` (uplift-a-non-CEA-to-M365 case). The skill ends at Phase 10 (Final Summary) suggesting test-local as the next step (and add-workiq-tools if it was skipped).",
+  "eval_instructions": "Test against agents that are NOT yet M365-integrated across three languages: Node.js (LangChain/OpenAI/Claude), .NET AgentFramework, and Python AgentFramework. Requires .a365-workspace-detection.local.json to be present (written by a365-setup). The skill must WRAP existing LLM code, not replace it. For Node.js verify: (1) index.ts has CloudAdapter + authorizeJWT + /api/health + /api/messages, (2) agent.ts has AgentApplication with message/notification/InstallationUpdate handlers, (3) client.ts has getClient() factory wrapping the LLM, (4) ToolingManifest.json exists (pre-populated with Calendar and Mail WorkIQ MCP servers), (5) core @microsoft/agents-hosting, @microsoft/agents-a365-runtime, @microsoft/agents-a365-notifications packages in package.json, (6) tsconfig has module: node16. For .NET verify: (1) Program.cs has AddAgent<T> + /api/messages + /api/health, (2) agent class extends AgentApplication with dual isAgenticOnly registrations, (3) .csproj has Microsoft.Agents.A365.Notifications, (4) appsettings.json has AgentApplication + TokenValidation + Connections. For Python verify: (1) host_agent_server.py has CloudAdapterAiohttp + /api/messages + /api/health + on_agent_notification, (2) agent.py implements AgentInterface with process_user_message and handle_agent_notification_activity, (3) agent_interface.py exists, (4) pyproject.toml has microsoft_agents_a365_notifications + microsoft_agents_a365_runtime + microsoft-agents-hosting-aiohttp. The skill runs instrument-observability (Phase 9.5) automatically as part of the AI Teammate package. add-workiq-tools (Phase 9.6) is optional — the user is asked and can accept or skip. Phase 9.7.1 (`a365 setup all --aiteammate`): the `--m365` flag is **auto-added** when `usesTeamsOrCopilot = 1` from CEA detection (no user question — inform-only); the M365-integrated question is only asked when `usesTeamsOrCopilot = 0` (uplift-a-non-CEA-to-M365 case). The skill ends at Phase 10 (Final Summary) suggesting test-local as the next step (and add-workiq-tools if it was skipped).",
   "evals": [
     {
       "id": 1,
@@ -287,11 +287,11 @@
       "expectations": [
         "Phase 9.7.2: Run Target question asked with 2 options (Prod / Local)",
         "User picks Production",
-        "runTarget=prod written to .a365-workspace-detection.json",
+        "runTarget=prod written to .a365-workspace-detection.local.json",
         "Phase 9.7.2b: hosting sub-question asked (devtunnel / cloud)",
         "User picks Dev tunnel; skill walks through devtunnel user login → create → host",
         "chosenEndpoint stored with /api/messages appended to the tunnel URL",
-        "runTargetHosting=devtunnel written to .a365-workspace-detection.json",
+        "runTargetHosting=devtunnel written to .a365-workspace-detection.local.json",
         "Phase 9.7.2c: chosenEndpoint reconciled with messagingEndpoint (update-endpoint if different)",
         "Phase 9.7.3: manifest.json verified (read-only)",
         "Phase 9.7.4: a365 publish runs and produces manifest.zip",
@@ -310,7 +310,7 @@
       "expectations": [
         "Phase 9.7.2: Run Target question asked",
         "User picks Local",
-        "runTarget=local written to .a365-workspace-detection.json",
+        "runTarget=local written to .a365-workspace-detection.local.json",
         "Phase 9.7.2b: hosting sub-question NOT asked (only Prod triggers it)",
         "Skill tells user verbatim agent runs at http://localhost:3978/api/messages",
         "Phase 9.7.3-9.7.6 NOT run; skip message shown verbatim",
@@ -323,10 +323,10 @@
       "prompt": "Make this agent an AI Teammate",
       "description": "Run Target + hosting remember-with-confirm — second invocation reads previous runTarget AND runTargetHosting from cache.",
       "language": "nodejs",
-      "expected_output": "On re-run, Phase 9.7.2 reads runTarget=prod and runTargetHosting=cloud from .a365-workspace-detection.json and offers \"Last time you chose prod — cloud. Use the same again? (yes/switch)\". User confirms yes → keeps both. Or switches → asks the full Run Target 2-option question, and (if Prod again) the hosting sub-question.",
+      "expected_output": "On re-run, Phase 9.7.2 reads runTarget=prod and runTargetHosting=cloud from .a365-workspace-detection.local.json and offers \"Last time you chose prod — cloud. Use the same again? (yes/switch)\". User confirms yes → keeps both. Or switches → asks the full Run Target 2-option question, and (if Prod again) the hosting sub-question.",
       "files": [],
       "expectations": [
-        "Phase 9.7.2: previous runTarget AND runTargetHosting read from .a365-workspace-detection.json",
+        "Phase 9.7.2: previous runTarget AND runTargetHosting read from .a365-workspace-detection.local.json",
         "Skill shows remember-with-confirm prompt with the previous values (both runTarget and runTargetHosting)",
         "If user confirms yes: same runTarget and runTargetHosting reused; chosenEndpoint reused too",
         "If user picks switch: full Run Target 2-option question asked; if Prod again, hosting sub-question follows; new values persisted"
@@ -343,8 +343,8 @@
         "Phase 9.7.2b: user picks Cloud endpoint",
         "Skill asks for the full HTTPS messaging endpoint URL",
         "Skill validates URL is HTTPS and ends in /api/messages",
-        "chosenEndpoint persisted to .a365-workspace-detection.json",
-        "runTargetHosting=cloud persisted to .a365-workspace-detection.json",
+        "chosenEndpoint persisted to .a365-workspace-detection.local.json",
+        "runTargetHosting=cloud persisted to .a365-workspace-detection.local.json",
         "Phase 9.7.2c: a365 setup blueprint --update-endpoint runs if chosenEndpoint differs from existing messagingEndpoint",
         "Phase 9.7.5: Dev Portal Notification URL = chosenEndpoint (= reconciled messagingEndpoint)"
       ]

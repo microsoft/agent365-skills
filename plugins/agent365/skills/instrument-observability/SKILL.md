@@ -93,7 +93,7 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 **TaskCreate** — "Load detection cache and validate with user"
 
-**Read** `.a365-workspace-detection.json`.
+**Read** `.a365-workspace-detection.local.json`.
 
 If the file is missing or `detectedAt` is older than 60 minutes:
 > "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
@@ -129,7 +129,7 @@ Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non A
 - **AI Teammate:** `agentic-user` (agent's own M365 identity — not the caller's token; auto-set, no question needed)
 - **Agent (Non AI Teammate):** `obo` (On-Behalf-Of — signed-in user token) or `s2s` (Service Principal, no user token)
 
-**Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
+**Update `.a365-workspace-detection.local.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `detectedAt`). Use the **Write** tool to write the merged object back.
 
 The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry point wiring (Phase 3), message handler pattern (Phase 4), and token resolver (Phase 5). **Phases 2, 6, 7, and 8 are identical regardless of `authMode`.**
 

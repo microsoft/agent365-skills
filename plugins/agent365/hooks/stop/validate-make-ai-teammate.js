@@ -10,7 +10,7 @@
  *
  * State-matrix compatibility:
  *   The make-ai-teammate skill supports an 8-row state matrix driven by
- *   (has_obs, has_workiq, has_setup) in .a365-workspace-detection.json
+ *   (has_obs, has_workiq, has_setup) in .a365-workspace-detection.local.json
  *   plus the Phase 9.7.2 runTarget (prod | local) decision. This validator
  *   focuses on code-gen artifacts (hosting layer, agent class, notifications,
  *   packages) which are required regardless of which row the matrix routes

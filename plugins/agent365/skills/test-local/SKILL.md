@@ -91,7 +91,7 @@ TaskCreate: "Guide local test"
 
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` for detection heuristics.
 
-2. **Check for detection cache.** Read `.a365-workspace-detection.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack` and `programmingLanguage` — skip the globs below and go to step 3.
+2. **Check for detection cache.** Read `.a365-workspace-detection.local.json` if it exists. If `detectedAt` is within the last 60 minutes, load `agentStack` and `programmingLanguage` — skip the globs below and go to step 3.
 
    If cache is missing or stale, run detection globs **in parallel**:
    - **Glob** `**/*.csproj` → .NET

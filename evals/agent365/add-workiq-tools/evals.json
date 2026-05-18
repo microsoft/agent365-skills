@@ -11,7 +11,7 @@
       "expectations": [
         "Phase 0B: Agent type question presented — AI Teammate or Agent (Non AI Teammate)",
         "Phase 0B: Auth mode question presented based on agent type selection",
-        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
+        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.local.json",
         "Phase 0B: If authMode is s2s, skill exits immediately — WorkIQ not available for s2s agents",
         "Phase 1: Agent type is detected as .NET AgentFramework",
         "Phase 1: a365 --version is run to verify CLI is installed",
@@ -46,7 +46,7 @@
       "expectations": [
         "Phase 0B: Agent type question presented — AI Teammate or Agent (Non AI Teammate)",
         "Phase 0B: Auth mode question presented based on agent type selection",
-        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.json",
+        "Phase 0B: agentType and authMode determined and stored in .a365-workspace-detection.local.json",
         "Phase 0B: If authMode is s2s, skill exits immediately — WorkIQ not available for s2s agents",
         "Phase 1: Agent type is detected as Node.js LangChain",
         "Phase 1: a365 develop list-configured is run",
@@ -92,7 +92,7 @@
       "expected_output": "The skill detects that the servers are already configured and GetMcpToolsAsync is already wired, skips those steps, and validates the build.",
       "files": [],
       "expectations": [
-        "Phase 0B: .a365-workspace-detection.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
+        "Phase 0B: .a365-workspace-detection.local.json is read — agentType and authMode loaded from cache if previously set (no re-questioning)",
         "Phase 1: a365 develop list-configured shows WorkIQ servers already present",
         "Phase 2: User is informed which servers are already configured",
         "Phase 3: a365 develop add-mcp-servers is SKIPPED for already-configured servers",
@@ -124,7 +124,7 @@
       "expectations": [
         "Phase 0B: Agent type question presented — AI Teammate or Agent (Non AI Teammate)",
         "Phase 0B: Auth mode question presented based on agent type selection",
-        "Phase 0B: agentType and authMode stored in .a365-workspace-detection.json",
+        "Phase 0B: agentType and authMode stored in .a365-workspace-detection.local.json",
         "Phase 1: Agent type is detected as Python",
         "Phase 1: references/python-workiq.md is read for Python patterns",
         "Phase 1: a365 develop list-configured is run",

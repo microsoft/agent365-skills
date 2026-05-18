@@ -79,7 +79,7 @@ All changes are **additive** and **idempotent** — rerunning is safe.
 
 ## Phase 0A — Load Detection Cache
 
-**Read** `.a365-workspace-detection.json`.
+**Read** `.a365-workspace-detection.local.json`.
 
 If the file is missing or `detectedAt` is older than 60 minutes:
 > "`a365-setup` must be run before this skill — it registers your agent with Agent 365 and writes
@@ -109,7 +109,7 @@ If `agentType` and `authMode` are already present in the detection cache (from a
 
 Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`, or `agentic-user`).
 
-**Update `.a365-workspace-detection.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
+**Update `.a365-workspace-detection.local.json`** — merge `agentType` and `authMode` into the existing cache file, preserving all other fields. Use the **Write** tool to write the merged object back.
 
 **If `authMode = s2s`, stop immediately and exit:**
 

@@ -118,7 +118,7 @@ describe('validate-a365-setup — .gitignore warning', () => {
   });
 });
 
-// ── .a365-workspace-detection.json authMode checks ────────────────────────────
+// ── .a365-workspace-detection.local.json authMode checks ────────────────────────────
 
 describe('validate-a365-setup — authMode in detection cache', () => {
   test('no detection file → ok (a365-setup may not have written it yet)', () => {
@@ -131,7 +131,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with authMode=obo → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: 'obo' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: 'obo' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -141,7 +141,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with authMode=s2s → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 's2s' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'LangChain', authMode: 's2s' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -151,7 +151,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with authMode=agentic-user → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'agentic-user' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'agentic-user' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -161,7 +161,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with legacy authMode=both → reports unsupported', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'both' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'LangChain', authMode: 'both' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -172,7 +172,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with empty authMode → reports missing authMode', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: '' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'AgentFramework', authMode: '' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -183,7 +183,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with missing authMode key → reports missing authMode', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ agentStack: 'AgentFramework', agentType: 'system-agent' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentStack: 'AgentFramework', agentType: 'system-agent' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -194,7 +194,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('hasBlueprintConfig=1 with reuseBlueprint set → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework', authMode: 'obo',
         hasBlueprintConfig: 1, reuseBlueprint: true, existingBlueprintId: 'bp-abc-123',
       }),
@@ -207,7 +207,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('hasBlueprintConfig=1 but reuseBlueprint not set → reports missing reuseBlueprint', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework', authMode: 'obo', hasBlueprintConfig: 1,
       }),
     });
@@ -220,7 +220,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('malformed detection file → reports parse error', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': '{ invalid json',
+      '.a365-workspace-detection.local.json': '{ invalid json',
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -232,7 +232,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
   // 8-row state-matrix flags (introduced alongside make-ai-teammate Phase 0C).
   test('detection file with has_obs / has_workiq / has_aiteammate_structure flags → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         has_aiteammate_structure: 1,
@@ -249,7 +249,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with legacy hasAITeammateChanges field → ok with warning (no longer stored)', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'obo',
         hasAITeammateChanges: 1,
@@ -263,7 +263,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with runTarget=prod → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'prod',
@@ -277,7 +277,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with runTarget=local → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'local',
@@ -291,7 +291,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with invalid runTarget → reports unsupported value', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'staging',
@@ -306,7 +306,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with empty runTarget → ok (not yet asked)', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: '',
@@ -321,7 +321,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
   // runTargetHosting — Phase 9.7.2b sub-question (devtunnel | cloud).
   test('detection file with runTargetHosting=devtunnel + runTarget=prod → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'prod',
@@ -336,7 +336,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with runTargetHosting=cloud + runTarget=prod → ok', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'prod',
@@ -351,7 +351,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
 
   test('detection file with invalid runTargetHosting → reports unsupported value', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'prod',
@@ -368,7 +368,7 @@ describe('validate-a365-setup — authMode in detection cache', () => {
   test('detection file with runTargetHosting set but runTarget=local → ok with warning', () => {
     // Non-fatal: hosting sub-choice is ignored when runTarget=local; validator warns but does not block.
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({
+      '.a365-workspace-detection.local.json': JSON.stringify({
         agentStack: 'AgentFramework',
         authMode: 'agentic-user',
         runTarget: 'local',

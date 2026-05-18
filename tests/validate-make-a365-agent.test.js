@@ -25,7 +25,7 @@ describe('validate-make-a365-agent — blueprint config', () => {
   test('a365.config.json with blueprintId (reuseBlueprint=true) → ok', () => {
     const dir = createFixture({
       'a365.config.json': JSON.stringify({ blueprintId: 'bp-abc-123' }),
-      '.a365-workspace-detection.json': JSON.stringify({ reuseBlueprint: true }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ reuseBlueprint: true }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -36,7 +36,7 @@ describe('validate-make-a365-agent — blueprint config', () => {
   test('a365.config.json with agentBlueprintId field (reuseBlueprint=true) → ok', () => {
     const dir = createFixture({
       'a365.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123' }),
-      '.a365-workspace-detection.json': JSON.stringify({ reuseBlueprint: true }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ reuseBlueprint: true }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -47,7 +47,7 @@ describe('validate-make-a365-agent — blueprint config', () => {
   test('reuseBlueprint=true with existingBlueprintId in cache (no ID in file) → ok', () => {
     const dir = createFixture({
       'a365.config.json': JSON.stringify({ agentName: 'my-agent' }),
-      '.a365-workspace-detection.json': JSON.stringify({ reuseBlueprint: true, existingBlueprintId: 'bp-abc-123' }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ reuseBlueprint: true, existingBlueprintId: 'bp-abc-123' }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -78,7 +78,7 @@ describe('validate-make-a365-agent — blueprint config', () => {
   test('a365.config.json with empty blueprintId and no cache ID (reuseBlueprint=true) → reports missing', () => {
     const dir = createFixture({
       'a365.config.json': JSON.stringify({ blueprintId: '' }),
-      '.a365-workspace-detection.json': JSON.stringify({ reuseBlueprint: true }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ reuseBlueprint: true }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -89,7 +89,7 @@ describe('validate-make-a365-agent — blueprint config', () => {
 
   test('reuseBlueprint=true but no config files found → reports missing', () => {
     const dir = createFixture({
-      '.a365-workspace-detection.json': JSON.stringify({ reuseBlueprint: true }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ reuseBlueprint: true }),
     });
     try {
       const r = runValidator(VALIDATOR, dir);

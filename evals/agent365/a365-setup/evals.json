@@ -16,7 +16,7 @@
         "Phase 1B: capabilities menu shown FIRST — user selects option 1 (Register)",
         "Phase 1B: Capabilities menu shows all 4 options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1B: authMode question asked AFTER capabilities (obo or s2s only — agentic-user not offered)",
-        "Phase 1B: authMode written to .a365-workspace-detection.json",
+        "Phase 1B: authMode written to .a365-workspace-detection.local.json",
         "Phase 1C: 3 todos created: Step 1 (Install and Verify All Prerequisites), Step 2 (Configure Azure Identity), Step 3 (Run the make-a365-agent skill)",
         "Step 1: Parallel scan runs all version checks in one pass: dotnet, a365, pwsh, az, git, gh, node, npm, python, uv",
         "Step 1: Summary table of ✅/❌ shown to user before any installs",
@@ -82,10 +82,10 @@
       "id": 4,
       "prompt": "Register this agent",
       "description": "Non-AI Teammate path — fresh detection cache exists (under 60 min old)",
-      "expected_output": "The skill finds a fresh .a365-workspace-detection.json, skips re-detection, shows the cached values to the user for confirmation, then proceeds to validate CLI, Azure prerequisites, and delegates to make-a365-agent.",
+      "expected_output": "The skill finds a fresh .a365-workspace-detection.local.json, skips re-detection, shows the cached values to the user for confirmation, then proceeds to validate CLI, Azure prerequisites, and delegates to make-a365-agent.",
       "files": [],
       "expectations": [
-        "Phase 1A: .a365-workspace-detection.json is read and cache is within 60 minutes",
+        "Phase 1A: .a365-workspace-detection.local.json is read and cache is within 60 minutes",
         "Phase 1A: Detection steps are skipped — cached values used",
         "Phase 1B: Cached detection summary shown to user for confirmation",
         "Step 1: a365 CLI is validated",
@@ -262,7 +262,7 @@
         "Phase 1B: Capabilities menu shown FIRST with all four options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1B: User selects option 4 (AI Teammate)",
         "Phase 1B: Auth mode question NOT shown — AI Teammate always uses agentic-user (agent's own M365 identity, not the caller's token)",
-        "Phase 1C: isAITeammate=true and authMode=agentic-user stored in .a365-workspace-detection.json",
+        "Phase 1C: isAITeammate=true and authMode=agentic-user stored in .a365-workspace-detection.local.json",
         "Phase 1C: Delegates to make-ai-teammate",
         "Step 1: All ✅ tools skipped; only ❌ missing tools processed"
       ]
@@ -281,7 +281,7 @@
         "Phase 1B: Capabilities menu shows ONLY Register and WorkIQ — Observability hidden (has_obs=true) and AI Teammate hidden (already configured)",
         "Phase 1C: cache writes has_aiteammate_structure, has_obs, has_workiq; does NOT write hasAITeammateChanges (derived)",
         "Phase 1C: isAITeammate=false (agent has AI Teammate changes but full AI Teammate path not selected)",
-        "Phase 1C: authMode and selection stored in .a365-workspace-detection.json",
+        "Phase 1C: authMode and selection stored in .a365-workspace-detection.local.json",
         "Delegates to make-a365-agent"
       ]
     },
@@ -289,7 +289,7 @@
       "id": 15,
       "prompt": "Set up A365 for this autonomous agent",
       "description": "s2s auth mode — non-AI Teammate agent; user selects s2s after capabilities; WorkIQ is dropped with warning",
-      "expected_output": "Skill outputs intro message. Phase 1A detects non-CEA agent. Phase 1B shows capabilities menu first (all 4 options including WorkIQ). User selects Register. Auth mode question shown after capabilities; user selects s2s. If WorkIQ had been selected, skill warns and drops it. authMode=s2s stored in .a365-workspace-detection.json. Delegates to make-a365-agent.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects non-CEA agent. Phase 1B shows capabilities menu first (all 4 options including WorkIQ). User selects Register. Auth mode question shown after capabilities; user selects s2s. If WorkIQ had been selected, skill warns and drops it. authMode=s2s stored in .a365-workspace-detection.local.json. Delegates to make-a365-agent.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
@@ -297,7 +297,7 @@
         "Phase 1B: User selects Register (not WorkIQ) from capabilities",
         "Phase 1B: Auth mode question asked AFTER capabilities — user selects s2s",
         "Phase 1B: If user had selected WorkIQ, skill warns that WorkIQ requires OBO token and drops it from selection",
-        "Phase 1C: authMode=s2s stored in .a365-workspace-detection.json",
+        "Phase 1C: authMode=s2s stored in .a365-workspace-detection.local.json",
         "Phase 1C: isAITeammate=false",
         "Delegates to make-a365-agent with authMode=s2s",
         "add-workiq-tools is never invoked or offered in this flow"

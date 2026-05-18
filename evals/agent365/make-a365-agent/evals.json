@@ -73,11 +73,11 @@
       "id": 5,
       "prompt": "Register this agent",
       "description": "Invoked directly (no session context) — skill asks the user for capabilities",
-      "expected_output": "Skill detects no session context, checks .a365-workspace-detection.json, if not found asks user to select capability path. Proceeds with normal flow including always offering observability and WorkIQ.",
+      "expected_output": "Skill detects no session context, checks .a365-workspace-detection.local.json, if not found asks user to select capability path. Proceeds with normal flow including always offering observability and WorkIQ.",
       "files": [],
       "expectations": [
         "Phase 0: No session context detected",
-        "Phase 0: .a365-workspace-detection.json checked — if absent, capability menu shown",
+        "Phase 0: .a365-workspace-detection.local.json checked — if absent, capability menu shown",
         "Phase 0: User selects a path; 3 todos always created",
         "Phase 1: agent_name and project_dir collected",
         "Phase 2: a365 setup all --dry-run shown, user confirms, then runs",
