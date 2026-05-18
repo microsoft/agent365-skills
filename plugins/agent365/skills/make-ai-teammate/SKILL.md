@@ -798,8 +798,8 @@ and follow it in full. The step numbering matches Phase 9.7 (9.7.1 through 9.7.7
 so this skill's stop-hook prompt, the eval expectations, and the README all keep
 pointing at the same places. Inside the deploy pipeline you'll go through:
 
-- **9.7.1** — `a365 setup all --aiteammate` (skip-gated when `has_setup = true`),
-  with the CEA / `--m365` auto-decision based on `usesTeamsOrCopilot`.
+- **9.7.1** — `a365 setup all --aiteammate --m365` (skip-gated when `has_setup = true`).
+  `--m365` is always passed for AI Teammate — no user question.
 - **9.7.2 / 9.7.2a / 9.7.2b / 9.7.2c / 9.7.2d** — choose Run Target (prod vs local),
   collect the production hosting sub-question (dev tunnel vs cloud), reconcile
   `chosenEndpoint` against the blueprint's `messagingEndpoint`, and validate the
@@ -836,7 +836,7 @@ Your agent now has:
   • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
   • Blueprint              {has_setup-at-entry
                               ? "reused (Blueprint ID: " + existingBlueprintId + ")"
-                              : "registered (a365 setup all --aiteammate" + (--m365 ? ", --m365" : "") + ")"}
+                              : "registered (a365 setup all --aiteammate --m365)"}
   • Observability          {has_obs-at-entry
                               ? "already wired — skipped"
                               : "OpenTelemetry + A365 tracing exporter wired"}

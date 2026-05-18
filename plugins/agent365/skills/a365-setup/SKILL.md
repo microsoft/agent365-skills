@@ -136,12 +136,13 @@ Run all checks **in parallel** (Glob + Grep). These three primary flags are writ
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
 
-*Observability signals (from `instrument-observability`) — `has_obs = 1` if any one matches:*
-- `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
-- `@microsoft/agents-a365-observability` or `@microsoft/opentelemetry` in `package.json` (Node.js)
-- `microsoft-agents-a365-observability-core` or `microsoft-opentelemetry` in `requirements.txt` or `pyproject.toml` (Python)
-- `UseMicrosoftOpenTelemetry` / `useMicrosoftOpenTelemetry` / `use_microsoft_opentelemetry` in source files
-- `A365 Observability` comment in any `src/**/*.ts`, `**/*.cs`, or `**/*.py` file
+*Observability signals (from `instrument-observability`) — `has_obs = 1` ONLY when the new **Microsoft.OpenTelemetry distro API call** is present in source. Package presence alone is NOT enough — legacy `Microsoft.Agents.A365.Observability.*` / `@microsoft/agents-a365-observability` / `microsoft-agents-a365-observability-*` packages might exist without the distro being wired (or the package was added but never called). The source-call check ensures `instrument-observability` re-runs and upgrades partial / legacy wiring onto the current distro. `has_obs = 1` if any one matches:*
+
+- `UseMicrosoftOpenTelemetry` in any `**/*.cs` (.NET)
+- `useMicrosoftOpenTelemetry` in any `src/**/*.ts` (Node.js)
+- `use_microsoft_opentelemetry` in any `**/*.py` (Python)
+
+Do NOT count: package-name-only matches (the legacy or new distro package could be installed without the API being called); `A365 Observability` source comments (they outlive the code they reference). If only those weak signals match, treat `has_obs = 0` and let `instrument-observability` run to bring the agent onto the current distro.
 
 *WorkIQ signal — `has_workiq = 1` if:*
 - `ToolingManifest.json` exists AND its top-level `mcpServers` (or `servers` in legacy v1 schema) array is non-empty. Parse the JSON; at least one entry → `has_workiq = 1`.
@@ -767,8 +768,8 @@ a365 setup all --agent-name <name> --agent-registration-only  # re-register only
 a365 setup all --agent-name <name> --m365
 a365 setup permissions bot                                  # required after --m365
 
-# AI Teammate
-a365 setup all --agent-name <name> --aiteammate             # add --m365 for Teams-registered
+# AI Teammate — --m365 is always required (registers the agent in M365 admin center)
+a365 setup all --agent-name <name> --aiteammate --m365
 ```
 
 Blueprint-only and permissions subcommands:
