@@ -236,31 +236,32 @@
     {
       "id": 12,
       "prompt": "Make this agent an AI Teammate",
-      "description": "Row 5 (has_obs=F, has_workiq=F, has_setup=T) — blueprint exists but no instrumentation; skill runs obs, asks workiq, skips a365 setup all.",
+      "description": "Row 5 (has_obs=F, has_workiq=F, has_setup=T) — blueprint exists but no instrumentation; skill runs obs, asks workiq, and at Phase 9.7.1 asks the user Reuse / Re-run / Fresh (existing blueprint detected on disk).",
       "language": "python",
-      "expected_output": "Phase 0B detects has_setup=true (a365.generated.config.json with agentBlueprintId). Phase 0C resolves Row 5: Observability=run, WorkIQ=ask, Setup=skip. Phase 9.5 invokes instrument-observability. Phase 9.6 offers WorkIQ. Phase 9.7.1 prints \"Blueprint already registered\" and does NOT run a365 setup all. Phase 9.7.2 asks Run Target.",
+      "expected_output": "Phase 0B detects has_setup=true (a365.generated.config.json with agentBlueprintId). Phase 0C resolves Row 5: Observability=run, WorkIQ=ask, Setup=ask-at-9.7.1. Phase 9.5 invokes instrument-observability. Phase 9.6 offers WorkIQ. Phase 9.7.1a re-checks a365.generated.config.json on disk and presents the 3-option blueprint question (Reuse / Re-run / Fresh). If the user picks Reuse, setup-all is skipped. If Re-run, the CLI is invoked and reuses the existing blueprint. If Fresh, a365 cleanup runs first. Phase 9.7.2 asks Run Target.",
       "files": [],
       "expectations": [
         "Phase 0B: has_setup=true detected via existing a365.generated.config.json",
-        "Phase 0C: Resolved state announced as Row 5; no re-register noted",
+        "Phase 0C: Resolved state announced as Row 5; setup decision deferred to 9.7.1",
         "Phase 9.5: instrument-observability invoked",
         "Phase 9.6: WorkIQ offer shown",
-        "Phase 9.7.1: a365 setup all --aiteammate NOT run; skip message shown",
+        "Phase 9.7.1a: blueprint reuse/re-run/fresh question is asked (NOT silently skipped); existing Blueprint ID shown to the user",
+        "Phase 9.7.1b: setup-all runs only if user picked Re-run or Fresh; for Reuse, agentBlueprintId+messagingEndpoint are read from a365.generated.config.json and the skill jumps to 9.7.2",
         "Phase 9.7.2: Run Target question asked"
       ]
     },
     {
       "id": 13,
       "prompt": "Make this agent an AI Teammate",
-      "description": "Row 6 (has_obs=T, has_workiq=F, has_setup=T) — observability and blueprint done; only WorkIQ remains (if wanted).",
+      "description": "Row 6 (has_obs=T, has_workiq=F, has_setup=T) — observability and blueprint done; only WorkIQ remains. Phase 9.7.1 still asks Reuse / Re-run / Fresh since a blueprint exists.",
       "language": "dotnet",
-      "expected_output": "Phase 0C resolves Row 6: Observability=skip, WorkIQ=ask, Setup=skip. Phase 9.5 skipped. Phase 9.6 offers WorkIQ. Phase 9.7.1 skipped. Phase 9.7.2 asks Run Target. Final summary lists what was done vs skipped.",
+      "expected_output": "Phase 0C resolves Row 6: Observability=skip, WorkIQ=ask, Setup=ask-at-9.7.1. Phase 9.5 skipped. Phase 9.6 offers WorkIQ. Phase 9.7.1a presents the 3-option blueprint question. Phase 9.7.2 asks Run Target. Final summary lists what was done vs skipped.",
       "files": [],
       "expectations": [
         "Phase 0C: Resolved state announced as Row 6 (WorkIQ only)",
         "Phase 9.5: skipped — has_obs=true",
         "Phase 9.6: WorkIQ offer shown",
-        "Phase 9.7.1: skipped — has_setup=true",
+        "Phase 9.7.1a: blueprint reuse/re-run/fresh question is asked (NOT silently skipped)",
         "Phase 9.7.2: Run Target question asked"
       ]
     },

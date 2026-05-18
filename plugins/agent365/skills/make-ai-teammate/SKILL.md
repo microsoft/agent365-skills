@@ -415,16 +415,18 @@ TaskCreate: "Register, publish, and deploy"
 
 The 8-row state matrix below decides what runs vs skips vs short-circuits based on `(has_obs, has_workiq, has_setup)`. Compute the row, print the resolved plan to the user, and route accordingly.
 
+> **Note on `setup`:** the matrix's "skip setup" rows (5–8) are **advisory only**. Step 9.7.1 always re-checks `a365.generated.config.json` on disk and asks the user explicitly (reuse / re-run / fresh) when a blueprint exists — the user always sees the choice. The matrix's `~~setup~~` cells mean *the default suggestion is reuse*, not that setup-all is silently skipped.
+
 | # | Obs | WorkIQ | Setup | What runs | Note |
 |---|-----|--------|-------|-----------|------|
 | 1 | F | F | F | obs → workiq? → setup | Full flow |
 | 2 | T | F | F | ~~obs~~ → workiq? → setup | Skip obs, rest normal |
 | 3 | F | T | F | obs → ~~workiq~~ → setup | Skip workiq, rest normal |
 | 4 | T | T | F | ~~obs~~ → ~~workiq~~ → setup | Register only |
-| 5 | F | F | T | obs → workiq? → ~~setup~~ | No re-register |
-| 6 | T | F | T | ~~obs~~ → workiq? → ~~setup~~ | WorkIQ only (if wanted) |
-| 7 | F | T | T | obs → ~~workiq~~ → ~~setup~~ | Observability only, no re-register |
-| 8 | T | T | T | ~~obs~~ → ~~workiq~~ → ~~setup~~ | Confirmation only — sub-question below |
+| 5 | F | F | T | obs → workiq? → setup* | * user asked at 9.7.1: reuse / re-run / fresh |
+| 6 | T | F | T | ~~obs~~ → workiq? → setup* | * user asked at 9.7.1 |
+| 7 | F | T | T | obs → ~~workiq~~ → setup* | * user asked at 9.7.1 |
+| 8 | T | T | T | ~~obs~~ → ~~workiq~~ → setup* | * user asked at 9.7.1; row 8 sub-question below adds Re-publish / Verify-only at Phase 0C entry |
 
 **Print the resolved state to the user**, verbatim, before any work runs:
 
@@ -434,7 +436,8 @@ Resolved state (row {N}): has_obs={T/F}, has_workiq={T/F}, has_setup={T/F}
 Plan:
   • Observability:   {run | skip — already wired}
   • WorkIQ:          {ask user | skip — already wired | skip — guard (row 4/8)}
-  • Setup (register): {run a365 setup all --aiteammate | skip — blueprint exists}
+  • Setup (register): {run a365 setup all --aiteammate --m365 (no existing blueprint)
+                     | ask user at 9.7.1: reuse / re-run / fresh (blueprint exists)}
   • Run Target:      asked at Phase 9.7.2 (Prod vs Local). For Prod, a hosting
                      sub-question (Phase 9.7.2b) follows: dev tunnel or cloud
                      endpoint (Azure / AWS / Google Cloud). For Local, agent
@@ -805,8 +808,12 @@ and follow it in full. The step numbering matches Phase 9.7 (9.7.1 through 9.7.7
 so this skill's stop-hook prompt, the eval expectations, and the README all keep
 pointing at the same places. Inside the deploy pipeline you'll go through:
 
-- **9.7.1** — `a365 setup all --aiteammate --m365` (skip-gated when `has_setup = true`).
-  `--m365` is always passed for AI Teammate — no user question.
+- **9.7.1** — `a365 setup all --aiteammate --m365`. Re-checks disk for an
+  existing `a365.generated.config.json` and asks the user explicitly:
+  reuse (skip setup-all), re-run for refresh (idempotent), or create
+  fresh (cleanup first). The cache-based skip-gate is advisory only —
+  the user always sees the choice when a blueprint already exists.
+  `--m365` is always passed for AI Teammate — no separate user question.
 - **9.7.2 / 9.7.2a / 9.7.2b / 9.7.2c / 9.7.2d** — choose Run Target (prod vs local),
   collect the production hosting sub-question (dev tunnel vs cloud), reconcile
   `chosenEndpoint` against the blueprint's `messagingEndpoint`, and validate the
