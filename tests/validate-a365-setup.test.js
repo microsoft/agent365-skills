@@ -68,6 +68,27 @@ describe('validate-a365-setup — a365.generated.config.json', () => {
       assert.match(r.reason, /cannot be parsed/);
     } finally { cleanup(dir); }
   });
+
+  // GA-handoff signals — non-blocking warnings, must not change ok status.
+  test('config with completed=false → ok (non-blocking warning for pending GA consent)', () => {
+    const dir = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123', completed: false }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('config with empty resourceConsents → ok (non-blocking warning for pending GA consent)', () => {
+    const dir = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123', resourceConsents: [] }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
 });
 
 // ── .gitignore check (non-blocking warning — does not affect ok/fail) ─────────
@@ -205,6 +226,158 @@ describe('validate-a365-setup — authMode in detection cache', () => {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
       assert.match(r.reason, /cannot be parsed/);
+    } finally { cleanup(dir); }
+  });
+
+  // 8-row state-matrix flags (introduced alongside make-ai-teammate Phase 0C).
+  test('detection file with has_obs / has_workiq / has_aiteammate_structure flags → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        has_aiteammate_structure: 1,
+        has_obs: 1,
+        has_workiq: 0,
+        hasBlueprintConfig: 0,
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with legacy hasAITeammateChanges field → ok with warning (no longer stored)', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'obo',
+        hasAITeammateChanges: 1,
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with runTarget=prod → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'prod',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with runTarget=local → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'local',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with invalid runTarget → reports unsupported value', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'staging',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /unsupported runTarget/);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with empty runTarget → ok (not yet asked)', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: '',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  // runTargetHosting — Phase 9.7.2b sub-question (devtunnel | cloud).
+  test('detection file with runTargetHosting=devtunnel + runTarget=prod → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'prod',
+        runTargetHosting: 'devtunnel',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with runTargetHosting=cloud + runTarget=prod → ok', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'prod',
+        runTargetHosting: 'cloud',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with invalid runTargetHosting → reports unsupported value', () => {
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'prod',
+        runTargetHosting: 'ngrok',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /unsupported runTargetHosting/);
+    } finally { cleanup(dir); }
+  });
+
+  test('detection file with runTargetHosting set but runTarget=local → ok with warning', () => {
+    // Non-fatal: hosting sub-choice is ignored when runTarget=local; validator warns but does not block.
+    const dir = createFixture({
+      '.a365-workspace-detection.json': JSON.stringify({
+        agentStack: 'AgentFramework',
+        authMode: 'agentic-user',
+        runTarget: 'local',
+        runTargetHosting: 'devtunnel',
+      }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
     } finally { cleanup(dir); }
   });
 });

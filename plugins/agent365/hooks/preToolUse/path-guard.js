@@ -32,7 +32,12 @@ function safeRealpath(p) {
   }
 }
 
-const cwd        = safeRealpath(process.cwd());
+// Prefer CLAUDE_PROJECT_DIR (set by the CLI to the user's project root) over
+// process.cwd() — Claude may be invoked from a subdirectory of the agent project,
+// and we don't want to block legitimate writes to the project root in that case.
+const projectRoot = safeRealpath(path.resolve(
+  process.env.CLAUDE_PROJECT_DIR || process.cwd()
+));
 const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT
   ? safeRealpath(path.resolve(process.env.CLAUDE_PLUGIN_ROOT))
   : null;
@@ -65,13 +70,13 @@ process.stdin.on('end', () => {
     process.exit(2);
   }
 
-  // Block writes outside the working directory
-  if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) {
+  // Block writes outside the agent project directory
+  if (!resolved.startsWith(projectRoot + path.sep) && resolved !== projectRoot) {
     process.stdout.write(JSON.stringify({
       decision: 'block',
       reason:
         `Path guard: refusing to write outside the agent project directory. ` +
-        `cwd=${cwd}, target=${resolved}`,
+        `project=${projectRoot}, target=${resolved}`,
     }));
     process.exit(2);
   }

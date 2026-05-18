@@ -22,7 +22,7 @@ Add to the `.csproj` file:
 <PackageReference Include="Azure.Identity" Version="1.17.1" />
 ```
 
-Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications` is GA, no `--prerelease` needed):
+Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications`):
 ```bash
 dotnet add package Microsoft.Agents.A365.Notifications
 dotnet add package Microsoft.Agents.AI
@@ -495,7 +495,7 @@ Source: [Agent365-Samples/dotnet/semantic-kernel/sample-agent](https://github.co
 
 Key difference from AgentFramework: use `Microsoft.SemanticKernel.*` packages instead of `Microsoft.Extensions.AI.OpenAI` and `Azure.AI.OpenAI`.
 
-Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications` is GA, no `--prerelease` needed):
+Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications`):
 ```bash
 dotnet add package Microsoft.Agents.A365.Notifications
 dotnet add package Microsoft.Agents.Hosting.AspNetCore

@@ -13,10 +13,14 @@
  */
 
 const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const { scanProject, filterByName } = require('../lib/project-scan');
 
+// In unit tests we set VALIDATE_SKIP_EXEC=1 to bypass the tool-presence
+// checks — otherwise test results depend on what happens to be installed on
+// the dev machine. When the flag is set, every `run()` call returns a sentinel
+// string so the validator treats every external tool as available.
 function run(cmd) {
+  if (process.env.VALIDATE_SKIP_EXEC) return 'skipped';
   try {
     return execSync(cmd, { encoding: 'utf8', stdio: 'pipe' }).trim();
   } catch {
@@ -24,50 +28,21 @@ function run(cmd) {
   }
 }
 
-function findFiles(dir, extensions, maxDepth = 5) {
-  const results = [];
-  function walk(current, depth) {
-    if (depth > maxDepth) return;
-    let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj') continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full, depth + 1);
-      else if (extensions.some(e => entry.name === e || entry.name.endsWith(e))) results.push(full);
-    }
-  }
-  walk(dir, 0);
-  return results;
-}
-
-function fileContains(filePath, ...patterns) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return patterns.every(p => content.includes(p));
-  } catch { return false; }
-}
-
 const cwd = process.cwd();
 const issues = [];
 
 // ── Detect project type ─────────────────────────────────────────────────────
 
-const csprojFiles = findFiles(cwd, ['.csproj']);
-const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
-const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
-  f.endsWith('package.json') && !f.includes('node_modules'));
-const pyFiles     = findFiles(cwd, ['.py']).filter(f =>
-  !f.includes('__pycache__') && !f.includes('.venv') && !f.includes('/venv/'));
-const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
+const allFiles    = scanProject(cwd);
+const csprojFiles = filterByName(allFiles, '.csproj');
+const tsFiles     = filterByName(allFiles, '.ts', '.js');
+const pkgJsonFiles = filterByName(allFiles, 'package.json');
+const pyFiles     = filterByName(allFiles, '.py');
+const reqFiles    = filterByName(allFiles, 'requirements.txt', 'pyproject.toml');
 
 const isDotnet  = csprojFiles.length > 0;
-const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
-const isPython  = !isDotnet && !isNodejs && (
-  pyFiles.length > 0 ||
-  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
-);
+const isNodejs  = !isDotnet && pkgJsonFiles.length > 0 && tsFiles.length > 0;
+const isPython  = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
 const isUnknown = !isDotnet && !isNodejs && !isPython;
 
 // Unknown project — pass through, skill handles detection interactively

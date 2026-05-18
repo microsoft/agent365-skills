@@ -38,7 +38,7 @@ function runCmd(cmd) {
 // ── Check 1: a365 CLI is installed ──────────────────────────────────────────
 const a365Version = process.env.VALIDATE_SKIP_EXEC ? 'skipped' : runCmd('a365 --version');
 if (!a365Version) {
-  issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease');
+  issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli');
 }
 
 // ── Check 2: If generated config exists, verify Blueprint ID is present ─────
@@ -51,6 +51,15 @@ if (fileExists(genConfigPath)) {
     const genConfig = JSON.parse(fs.readFileSync(genConfigPath, 'utf8'));
     if (!genConfig.agentBlueprintId || genConfig.agentBlueprintId === '') {
       issues.push('a365.generated.config.json exists but agentBlueprintId is empty — Blueprint creation may have failed');
+    }
+    // Non-blocking signals that the GA handoff is still pending.
+    // Per the docs, when setup runs as Agent ID Developer (not GA), `completed` may
+    // stay false and `resourceConsents` may be empty until a GA completes the grants.
+    if (genConfig.completed === false) {
+      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has completed=false — OAuth2 permission grants are still pending. A Global Administrator must run the PowerShell script printed in the setup summary (or grant admin consent via Entra portal).');
+    }
+    if (Array.isArray(genConfig.resourceConsents) && genConfig.resourceConsents.length === 0) {
+      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has empty resourceConsents — OAuth2 grants for Graph / Agent 365 Tools / Bot API / Observability are not yet recorded. Expected if a non-GA developer ran setup; ask a Global Administrator to complete the grants.');
     }
   } catch {
     issues.push('a365.generated.config.json exists but cannot be parsed — file may be malformed');
@@ -84,6 +93,32 @@ if (fileExists(detectionPath)) {
     if ((detection.hasBlueprintConfig === 1 || detection.hasBlueprintConfig === true) &&
         (detection.reuseBlueprint === undefined || detection.reuseBlueprint === null)) {
       issues.push('.a365-workspace-detection.json has hasBlueprintConfig=1 but reuseBlueprint is not set — the skill must ask the developer whether to reuse the existing blueprint or create fresh before delegating');
+    }
+    // New 8-row state-matrix flags (introduced alongside make-ai-teammate Phase 0C):
+    // has_aiteammate_structure, has_obs, has_workiq are all primary stored flags.
+    // hasAITeammateChanges is DERIVED inline (has_aiteammate_structure && has_obs) — not stored.
+    // Warn if the legacy field is still being written (it indicates an out-of-date a365-setup).
+    if (detection.hasAITeammateChanges !== undefined) {
+      console.warn('[validate-a365-setup] Warning: .a365-workspace-detection.json contains the legacy "hasAITeammateChanges" field — this is now derived inline. Remove it from the cache writer in a365-setup Phase 1C.');
+    }
+    // runTarget validation: optional at first run; if present, must be "prod" or "local".
+    if (detection.runTarget !== undefined && detection.runTarget !== '' && detection.runTarget !== null) {
+      const VALID_RUN_TARGETS = new Set(['prod', 'local']);
+      if (!VALID_RUN_TARGETS.has(String(detection.runTarget).toLowerCase())) {
+        issues.push(`.a365-workspace-detection.json has unsupported runTarget "${detection.runTarget}" — expected "prod" or "local" (set in make-ai-teammate Phase 9.7.2)`);
+      }
+    }
+    // runTargetHosting validation: optional; only meaningful when runTarget = "prod".
+    // Valid values: "devtunnel", "cloud", or empty/absent.
+    if (detection.runTargetHosting !== undefined && detection.runTargetHosting !== '' && detection.runTargetHosting !== null) {
+      const VALID_HOSTING = new Set(['devtunnel', 'cloud']);
+      if (!VALID_HOSTING.has(String(detection.runTargetHosting).toLowerCase())) {
+        issues.push(`.a365-workspace-detection.json has unsupported runTargetHosting "${detection.runTargetHosting}" — expected "devtunnel" or "cloud" (set in make-ai-teammate Phase 9.7.2b)`);
+      }
+      // runTargetHosting only meaningful with runTarget = "prod". Warn if mismatched.
+      if (detection.runTarget && String(detection.runTarget).toLowerCase() === 'local') {
+        console.warn('[validate-a365-setup] Warning: runTargetHosting is set but runTarget is "local" — runTargetHosting only applies when runTarget = "prod". The value will be ignored.');
+      }
     }
   } catch {
     issues.push('.a365-workspace-detection.json exists but cannot be parsed — file may be malformed');

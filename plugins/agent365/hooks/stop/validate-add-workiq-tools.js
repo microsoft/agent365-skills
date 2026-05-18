@@ -15,36 +15,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-
-function findFiles(dir, extensions, maxDepth = 5) {
-  const results = [];
-  function walk(current, depth) {
-    if (depth > maxDepth) return;
-    let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj' ||
-          entry.name === 'venv' || entry.name === '__pycache__' || entry.name === 'site-packages') continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full, depth + 1);
-      else if (extensions.some(e => entry.name === e || entry.name.endsWith(e))) results.push(full);
-    }
-  }
-  walk(dir, 0);
-  return results;
-}
-
-function fileContains(filePath, ...patterns) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return patterns.every(p => content.includes(p));
-  } catch { return false; }
-}
-
-function anyFileContains(files, ...patterns) {
-  return files.some(f => fileContains(f, ...patterns));
-}
+const { scanProject, filterByName, fileContains } = require('../lib/project-scan');
 
 function runCmd(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 8000 }); } catch { return ''; }
@@ -79,25 +50,23 @@ if (fs.existsSync(manifestPath)) {
 }
 
 // ── Detect project type ─────────────────────────────────────────────────────
+// Single walk; bucket by extension/name afterwards.
 
-const csprojFiles = findFiles(cwd, ['.csproj']);
-const tsFiles     = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
-const jsonFiles   = findFiles(cwd, ['.json']).filter(f =>
-  f.endsWith('package.json') && !f.includes('node_modules'));
-const pyFiles     = findFiles(cwd, ['.py']);
-const reqFiles    = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
+const allFiles    = scanProject(cwd);
+const csprojFiles = filterByName(allFiles, '.csproj');
+const tsFiles     = filterByName(allFiles, '.ts', '.js');
+const pkgJsonFiles = filterByName(allFiles, 'package.json');
+const pyFiles     = filterByName(allFiles, '.py');
+const reqFiles    = filterByName(allFiles, 'requirements.txt', 'pyproject.toml');
 
 const isDotnet  = csprojFiles.length > 0;
-const isNodejs  = !isDotnet && jsonFiles.length > 0 && tsFiles.length > 0;
-const isPython  = !isDotnet && !isNodejs && (
-  pyFiles.length > 0 ||
-  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
-);
+const isNodejs  = !isDotnet && pkgJsonFiles.length > 0 && tsFiles.length > 0;
+const isPython  = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
 
 // ── Check 2: Agent code is wired to load MCP servers ──────────────────────────
 
 if (isDotnet) {
-  const csFiles = findFiles(cwd, ['.cs']).filter(f => !f.includes('obj') && !f.includes('bin'));
+  const csFiles = filterByName(allFiles, '.cs');
 
   const hasMcpWiring = csFiles.some(f =>
     fileContains(f, 'GetMcpToolsAsync') ||
@@ -110,7 +79,7 @@ if (isDotnet) {
 
   const hasToolingPkg = csprojFiles.some(f => fileContains(f, 'Microsoft.Agents.A365.Tooling'));
   if (!hasToolingPkg) {
-    issues.push('.NET: Microsoft.Agents.A365.Tooling package is not referenced in any .csproj — run: dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --prerelease');
+    issues.push('.NET: Microsoft.Agents.A365.Tooling package is not referenced in any .csproj — run: dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework');
   }
 }
 
@@ -126,7 +95,7 @@ if (isNodejs) {
     issues.push('Node.js: No TypeScript/JS file uses McpToolRegistrationService, A365McpToolClient, or imports agents-a365-tooling');
   }
 
-  const hasToolingPkg = jsonFiles.some(f => fileContains(f, 'agents-a365-tooling'));
+  const hasToolingPkg = pkgJsonFiles.some(f => fileContains(f, 'agents-a365-tooling'));
   if (!hasToolingPkg) {
     issues.push('Node.js: @microsoft/agents-a365-tooling is not in package.json — run: npm install @microsoft/agents-a365-tooling');
   }

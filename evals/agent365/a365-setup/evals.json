@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-setup",
-  "eval_instructions": "Test against real agent projects in clean state. Skill MUST output a mandatory intro message before doing anything else — describing the 4-step flow (detect, confirm, capabilities, then auth mode conditionally for non-AI Teammate). Phase 1A detects agentStack, programmingLanguage, usesTeamsOrCopilot, hasBlueprintConfig (existing a365.config.json or a365.generated.config.json), AND hasAITeammateChanges (make-ai-teammate + observability signals). Phase 1B shows all detections including blueprint and AI Teammate setup status; asks blueprint question when hasBlueprintConfig=1 (reuse vs fresh — never assumes). CEA rule: if usesTeamsOrCopilot=1, authMode auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. hasAITeammateChanges rule: if hasAITeammateChanges=1, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ. For non-CEA agents: capabilities question asked first (all 4 options always shown including AI Teammate and WorkIQ); authMode question (obo or s2s only — agentic-user is not user-selectable here) asked AFTER capabilities if AI Teammate was not selected; if AI Teammate was selected, authMode question is skipped (auto-set to agentic-user — agent's own M365 identity, not the caller's token); if s2s selected and user had also picked WorkIQ, WorkIQ is dropped with a warning; selecting AI Teammate auto-includes Register and Observability (WorkIQ is optional and offered later in make-ai-teammate Phase 9.6). Step 1 runs a parallel quick scan of all tools and shows a ✅/❌ summary; only ❌ sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt), with one explicit exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Step 2 covers Azure login and Entra ID roles only. Step 3 delegates. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked.",
+  "eval_instructions": "Test against real agent projects in clean state. Skill MUST output a mandatory intro message before doing anything else — describing the 4-step flow (detect, confirm, capabilities, then auth mode conditionally for non-AI Teammate). Phase 1A detects agentStack, programmingLanguage, usesTeamsOrCopilot, hasBlueprintConfig, AND the three primary state flags (has_aiteammate_structure, has_obs, has_workiq) — these three drive the 8-row matrix in make-ai-teammate Phase 0C. The legacy hasAITeammateChanges is DERIVED inline (has_aiteammate_structure && has_obs) — it is no longer stored in the cache. Phase 1B shows all detections; asks blueprint question when hasBlueprintConfig=1 (reuse vs fresh — never assumes). CEA rule: if usesTeamsOrCopilot=1, authMode auto-set to 'agentic-user' and capabilities auto-set to [Register, Observability, WorkIQ, AI Teammate] — no questions asked. Derived 'already an AI Teammate' rule: if (has_aiteammate_structure && has_obs)=true, authMode auto-set to 'agentic-user' and capabilities menu shows only Register and WorkIQ (further filtered: WorkIQ hidden if has_workiq=true). For non-CEA agents: capabilities question asked first — capability rows are auto-hidden when their flag is true (Observability hidden if has_obs=true; WorkIQ hidden if has_workiq=true); authMode question (obo or s2s only — agentic-user is not user-selectable here) asked AFTER capabilities if AI Teammate was not selected; if AI Teammate was selected, authMode question is skipped (auto-set to agentic-user); if s2s selected and user had also picked WorkIQ, WorkIQ is dropped with a warning; selecting AI Teammate auto-includes Register and Observability (WorkIQ is optional and offered later in make-ai-teammate Phase 9.6). Step 1 runs a parallel quick scan of all tools and shows a ✅/❌ summary; only ❌ sections are processed — ✅ tools are skipped entirely (no reinstall, no re-prompt), with one explicit exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Step 2 covers Azure login and Entra ID roles only. Step 3 delegates. Azure login MUST use 'az login --allow-no-subscriptions'. For the AI Teammate path (isAITeammate=true), Step 3 reads make-ai-teammate/SKILL.md. For all other paths, Step 3 reads make-a365-agent/SKILL.md. a365-setup does NOT run a365 setup all, does NOT create a365.config.json, and does NOT run a365 publish. Phase 1C derives registrationType from usesTeamsOrCopilot. registrationType is derived, never asked. The cache writer in Phase 1C writes has_aiteammate_structure, has_obs, has_workiq individually; it does NOT write hasAITeammateChanges (derived).",
   "evals": [
     {
       "id": 1,
@@ -103,7 +103,7 @@
       "expectations": [
         "Step 1: a365 --version is attempted",
         "Step 1: Command fails — a365 not found",
-        "Step 1: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease is provided",
+        "Step 1: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli is provided",
         "Step 1: User is asked to install and retry",
         "No delegation to make-a365-agent or make-ai-teammate occurs"
       ]
@@ -196,7 +196,7 @@
         "make-ai-teammate Phase 9: a365 setup all --aiteammate is run — NOT just a365 setup all (the --aiteammate flag is required for AI Teammate blueprint type)",
         "make-ai-teammate Phase 9: Setup Summary table shown verbatim from CLI output",
         "make-ai-teammate Phase 9: Blueprint ID and AGENTIC_APP_ID are read from a365.generated.config.json after setup all completes",
-        "make-ai-teammate Phase 9: If CLI output includes Permission Grants action item or 403 errors, PowerShell script is displayed (upgrade scenario — not expected for fresh setup with CLI 1.1+; no GA consent needed for new agents)",
+        "make-ai-teammate Phase 9: If CLI output includes Permission Grants action item or 403 errors, the printed PowerShell script is displayed verbatim for a Global Administrator to run — required whenever the developer isn't a GA (OtelWrite is auto-granted, but Graph / Bot API / custom permission grants still need GA consent)",
         "a365 setup all without --aiteammate is NOT used for the AI Teammate path",
         "a365 publish is NOT run by a365-setup"
       ]
@@ -214,7 +214,7 @@
         "Step 1: User is prompted before each install — skill does NOT install silently",
         "Step 1: .NET SDK 8+ offered first — winget install Microsoft.DotNet.SDK.8 (Windows) or dotnet.microsoft.com/download link",
         "Step 1: User asked to open a new terminal after .NET install to refresh PATH before continuing",
-        "Step 1: a365 CLI install offered — dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease",
+        "Step 1: a365 CLI install offered — dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli",
         "Step 1: PATH note shown — user told to add %USERPROFILE%\\.dotnet\\tools to PATH if a365 not found after install",
         "Step 1: PowerShell 7+ install offered — winget install Microsoft.PowerShell (Windows) or platform equivalent",
         "Step 1: Azure CLI install offered — winget install Microsoft.AzureCLI (Windows) or platform equivalent",
@@ -254,11 +254,11 @@
       "id": 13,
       "prompt": "Make this agent an AI Teammate",
       "description": "Non-CEA agent selecting AI Teammate from capabilities menu — agentic-user authMode set automatically (not user-selectable in auth mode question)",
-      "expected_output": "Skill outputs intro message. Phase 1A detects a non-CEA agent (usesTeamsOrCopilot=0, hasAITeammateChanges=0). Phase 1B shows capabilities menu first (all 4 options). User selects option 4 (AI Teammate). Auth mode question is NOT shown — authMode is auto-set to agentic-user (agent's own M365 identity). isAITeammate=true stored in cache. Delegates to make-ai-teammate.",
+      "expected_output": "Skill outputs intro message. Phase 1A detects a non-CEA agent (usesTeamsOrCopilot=0; has_aiteammate_structure, has_obs, has_workiq all false → the derived hasAITeammateChanges = has_aiteammate_structure && has_obs is also false, but only the three underlying flags are stored — the derived value is recomputed inline). Phase 1B shows capabilities menu first (all 4 options). User selects option 4 (AI Teammate). Auth mode question is NOT shown — authMode is auto-set to agentic-user (agent's own M365 identity). isAITeammate=true stored in cache. Delegates to make-ai-teammate.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
-        "Phase 1A: usesTeamsOrCopilot=0 and hasAITeammateChanges=0 detected (non-CEA agent)",
+        "Phase 1A: usesTeamsOrCopilot=0 detected (non-CEA agent); has_aiteammate_structure / has_obs / has_workiq all detected as false (so the derived hasAITeammateChanges = has_aiteammate_structure && has_obs is false too — but NOT written to the cache)",
         "Phase 1B: Capabilities menu shown FIRST with all four options: Register, Observability, WorkIQ, AI Teammate",
         "Phase 1B: User selects option 4 (AI Teammate)",
         "Phase 1B: Auth mode question NOT shown — AI Teammate always uses agentic-user (agent's own M365 identity, not the caller's token)",
@@ -270,15 +270,16 @@
     {
       "id": 14,
       "prompt": "Set up A365 for this agent",
-      "description": "hasAITeammateChanges=1 path — existing AI Teammate signals detected; capabilities menu shows only Register and WorkIQ",
-      "expected_output": "Skill outputs intro message. Phase 1A detects hasAITeammateChanges=1 (existing AI Teammate structure or observability signals found). Phase 1B shows the detection summary including the AI Teammate change indicator. Capabilities menu shows only Register and WorkIQ — Observability is omitted (already present in the AI Teammate setup) and AI Teammate is omitted (already configured). User selects Register. Delegates to make-a365-agent.",
+      "description": "Derived hasAITeammateChanges=true path — has_aiteammate_structure=true AND has_obs=true; capabilities menu shows only Register and WorkIQ (WorkIQ hidden too if has_workiq=true)",
+      "expected_output": "Skill outputs intro message. Phase 1A Step 5 detects has_aiteammate_structure=true, has_obs=true, has_workiq=false. Phase 1B computes hasAITeammateChanges = (has_aiteammate_structure && has_obs) = true inline (NOT stored in cache). Detection summary includes 'AI Teammate setup: already configured' and explicit 'Observability: already wired'. Capabilities menu shows ONLY Register and WorkIQ — Observability and AI Teammate are omitted (already configured). User selects Register. Delegates to make-a365-agent. The cache writer in Phase 1C writes has_aiteammate_structure, has_obs, has_workiq individually; does NOT write hasAITeammateChanges.",
       "files": [],
       "expectations": [
         "Skill outputs mandatory intro message before any tool calls",
-        "Phase 1A: hasAITeammateChanges=1 detected — AI Teammate structure or existing observability signals found",
-        "Phase 1B: Detection summary includes 'AI Teammate changes detected' indicator",
-        "Phase 1B: Capabilities menu shows ONLY Register and WorkIQ — NOT Observability, NOT AI Teammate setup",
-        "Phase 1B: Skill does not offer Observability since AI Teammate already includes it",
+        "Phase 1A Step 5: has_aiteammate_structure=true, has_obs=true, has_workiq=false stored individually",
+        "Phase 1B: hasAITeammateChanges is computed inline (has_aiteammate_structure && has_obs); not stored",
+        "Phase 1B: Detection summary lists Observability=already wired and AI Teammate setup=already configured",
+        "Phase 1B: Capabilities menu shows ONLY Register and WorkIQ — Observability hidden (has_obs=true) and AI Teammate hidden (already configured)",
+        "Phase 1C: cache writes has_aiteammate_structure, has_obs, has_workiq; does NOT write hasAITeammateChanges (derived)",
         "Phase 1C: isAITeammate=false (agent has AI Teammate changes but full AI Teammate path not selected)",
         "Phase 1C: authMode and selection stored in .a365-workspace-detection.json",
         "Delegates to make-a365-agent"
@@ -300,6 +301,21 @@
         "Phase 1C: isAITeammate=false",
         "Delegates to make-a365-agent with authMode=s2s",
         "add-workiq-tools is never invoked or offered in this flow"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Set up A365 for this agent",
+      "description": "Row F/F/T at a365-setup — blueprint exists (has_setup=true), no observability or workiq yet; capabilities menu shows Register, Observability, WorkIQ, AI Teammate (no flags trigger hiding)",
+      "expected_output": "Phase 1A Step 5 detects has_aiteammate_structure=false, has_obs=false, has_workiq=false; Phase 1A Step 4 detects hasBlueprintConfig=1 (blueprint already provisioned). Phase 1B presents the full 4-option capabilities menu — none are hidden. Blueprint question is asked (reuse vs fresh). Cache writer stores the three primary flags and hasBlueprintConfig; not hasAITeammateChanges.",
+      "files": [],
+      "expectations": [
+        "Phase 1A Step 4: hasBlueprintConfig=1 detected",
+        "Phase 1A Step 5: all three primary flags (has_aiteammate_structure, has_obs, has_workiq) detected as false",
+        "Phase 1B: Blueprint question asked (reuse vs fresh)",
+        "Phase 1B: Capabilities menu shows ALL 4 options — no flags trigger row hiding",
+        "Phase 1C: cache writes the three primary flags + hasBlueprintConfig + reuseBlueprint",
+        "Phase 1C: hasAITeammateChanges is NOT written"
       ]
     }
   ]

@@ -41,9 +41,9 @@ The agent's `authMode` (read from `.a365-workspace-detection.json`) determines w
 
 | `authMode` | Used by | Token mechanism | Identity in traces | Wiring | Per-turn token refresh |
 |---|---|---|---|---|---|
-| `agentic-user` | AI Teammate (always) | OBO exchange | Agent's own M365 identity (Agentic User — UPN, mailbox) | `AgenticTokenCacheInstance` | ✅ Call `RefreshObservabilityToken` |
-| `obo` | Non-AI Teammate | OBO exchange | Whatever the configured auth handler resolves — typically the signed-in user, but can also be the agent's own identity | `AgenticTokenCacheInstance` | ✅ Call `RefreshObservabilityToken` |
-| `s2s` | Non-AI Teammate | Service principal client credentials (no token exchange) | Agent Identity SP — no user context | Custom `tokenResolver` + background FMI token service | ❌ Do NOT call `RefreshObservabilityToken` |
+| `agentic-user` | AI Teammate (always) | OBO exchange | Agent's own M365 identity (Agentic User — UPN, mailbox) | `AgenticTokenCacheInstance` | ✅ Call `refreshObservabilityToken` (camelCase in GA 1.0+) |
+| `obo` | Non-AI Teammate | OBO exchange | Whatever the configured auth handler resolves — typically the signed-in user, but can also be the agent's own identity | `AgenticTokenCacheInstance` | ✅ Call `refreshObservabilityToken` |
+| `s2s` | Non-AI Teammate | Service principal client credentials (no token exchange) | Agent Identity SP — no user context | Custom `tokenResolver` + background FMI token service | ❌ Do NOT call `refreshObservabilityToken` |
 
 > AI Teammate is **always** `agentic-user` — no question is asked. Non-AI Teammate agents are asked at setup whether they want `obo` or `s2s`.
 >
@@ -71,21 +71,32 @@ import {
 import { resourceFromAttributes } from '@opentelemetry/resources';
 
 useMicrosoftOpenTelemetry({
+  // Optional: also dump spans to stdout (useful in production for quick triage
+  // alongside the Agent365 backend export).
+  enableConsoleExporters: true,
   resource: resourceFromAttributes({
     'service.name': process.env.SERVICE_NAME ?? 'my-agent',
   }),
   a365: {
     enabled: true,
-    enableObservabilityExporter: true,  // REQUIRED in 1.0+ to actually export spans
+    // enableObservabilityExporter is OPTIONAL when `ENABLE_A365_OBSERVABILITY_EXPORTER=true`
+    // is set in .env (auto-stamped by `a365 setup all`). Setting it in code is the more
+    // explicit path; either route activates the A365 exporter.
+    // enableObservabilityExporter: true,
     tokenResolver: (agentId, tenantId) =>
       AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
   },
+  // Framework-specific opt-ins. Include for agents that use LangChain.
+  instrumentationOptions: { langchain: {} },
 });
 ```
 
-> **Two flags required (1.0 breaking change):** `enabled: true` only registers
-> `A365SpanProcessor`. You must **also** set `enableObservabilityExporter: true`
-> (or env `ENABLE_A365_OBSERVABILITY_EXPORTER=true`) to send spans to A365.
+> **Exporter activation (GA 1.0):** `a365.enabled: true` registers the
+> `A365SpanProcessor`. To actually send spans to A365 you also need
+> `enableObservabilityExporter: true` **or** the env var
+> `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (auto-stamped into `.env` by
+> `a365 setup all`). Either path works — the env-var route is what production
+> A365 samples ship with.
 
 > **OpenAI Agents / LangChain auto-instrumentation is now ON by default.**
 > Do NOT call `OpenAIAgentsTraceInstrumentor.enable()` or
@@ -395,8 +406,11 @@ configureA365Hosting(adapter, {
 With `configureA365Hosting({ enableBaggage: true })` registered at startup, the handler
 does NOT build baggage manually. Per-turn behavior differs by auth mode.
 
-> **`BaggageBuilderUtils.fromTurnContext` is no longer in the public API.** If you previously
-> called it manually, remove it — the middleware now handles baggage.
+> **Alternative pattern (still supported in GA 1.0):** if you prefer per-turn baggage construction over the middleware,
+> `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).sessionDescription(...).build()`
+> is still in the public API. Working langchain sample uses this pattern. The `as any` cast is needed because the
+> GA `TurnContextLike` shape declares `activity.getAgenticTenantId()` as `string` while `@microsoft/agents-hosting`'s
+> `TurnContext` returns `string | undefined`.
 
 ### OBO and agentic-user — refresh exporter token per turn
 
@@ -429,11 +443,13 @@ async function preloadObservabilityToken(turnContext: TurnContext): Promise<void
   // The cache instance handles the OBO token exchange internally.
   // Identity returned = whatever the configured auth handler resolves to
   // (Agentic User for agentic-user mode; signed-in user for obo mode).
-  await AgenticTokenCacheInstance.RefreshObservabilityToken(
+  // `as any` casts are required: the GA `TurnContextLike` / `AuthorizationLike`
+  // interfaces are stricter than the @microsoft/agents-hosting types they were modeled on.
+  await AgenticTokenCacheInstance.refreshObservabilityToken(
     agentId,
     tenantId,
-    turnContext,
-    agentApplication.authorization,
+    turnContext as any,
+    agentApplication.authorization as any,
   );
 }
 ```
@@ -449,7 +465,7 @@ For `s2s`, the background token service started in the entry point (see [S2S Tok
 async function handleMessage(turnContext: TurnContext, state: ApplicationTurnState) {
   // BaggageMiddleware (from configureA365Hosting) already populated baggage from TurnContext.
   // No per-turn token refresh — background token service handles auth.
-  // Do NOT call AgenticTokenCacheInstance.RefreshObservabilityToken for S2S.
+  // Do NOT call AgenticTokenCacheInstance.refreshObservabilityToken for S2S.
 
   // ... your agent invocation goes here ...
 }
@@ -485,10 +501,12 @@ import type {
   AgentDetails,
   InferenceDetails,
   InvokeAgentScopeDetails,
-  Request,
+  A365Request,
   ToolCallDetails,
   ServiceEndpoint,
 } from '@microsoft/opentelemetry';
+
+// Note: the GA distro renamed `Request` to `A365Request` to avoid clashing with the DOM `Request` type.
 ```
 
 ### InvokeAgentScope
@@ -501,7 +519,7 @@ import {
   CallerDetails,
   UserDetails,
   Channel,
-  Request,
+  A365Request,
   ServiceEndpoint,
 } from '@microsoft/opentelemetry';
 
@@ -519,7 +537,7 @@ const scopeDetails: InvokeAgentScopeDetails = {
   endpoint: { host: 'myagent.contoso.com', port: 443 } as ServiceEndpoint,
 };
 
-const request: Request = {
+const request: A365Request = {
   content: 'Please help me organize my emails',
   sessionId: 'session-42',
   conversationId: 'conv-xyz',
@@ -595,7 +613,7 @@ import {
 import type {
   AgentDetails,
   InferenceDetails,
-  Request,
+  A365Request,
   UserDetails,
 } from '@microsoft/opentelemetry';
 
@@ -605,7 +623,7 @@ const inferenceDetails: InferenceDetails = {
   providerName: 'azure-openai',
 };
 
-const request: Request = {
+const request: A365Request = {
   conversationId: context.activity?.conversation?.id || `conv-${Date.now()}`,
 };
 
@@ -621,6 +639,9 @@ const userDetails: UserDetails = {
   userEmail: process.env.agent365Observability__sponsorUserEmail || '',
 };
 
+// userDetails is optional — `InferenceScope.start(request, inferenceDetails, agentDetails)`
+// is also a valid 3-arg call (used by the langchain Agent365 sample). Add userDetails when
+// you want caller context (UPN, name) on the span — useful in MAC traces.
 let response = '';
 const scope = InferenceScope.start(request, inferenceDetails, agentDetails, userDetails);
 try {
@@ -741,8 +762,12 @@ agent365Observability__sponsorUserEmail=<<Blueprint Sponsor Email>>
 | `agent365Observability__sponsorUserEmail` | `<<Sponsor Email>>` | `<<Sponsor Email>>` |
 | `NODE_ENV` | `development` | `production` |
 
-> **Removed:** `AGENT365_USE_S2S_ENDPOINT` env var (use `useS2SEndpoint: true` in code instead),
-> `Use_Custom_Resolver` (no longer needed — always pass your own `tokenResolver`).
+> **Removed:** `AGENT365_USE_S2S_ENDPOINT` env var (use `useS2SEndpoint: true` in code instead).
+>
+> **Sample-only switch:** `Use_Custom_Resolver` is a *sample-level* toggle in the
+> langchain/openai/claude Agent365 samples that demonstrates swapping between a
+> custom in-process token cache and the built-in `AgenticTokenCacheInstance`. It is
+> not an SDK contract — you always pass *some* `tokenResolver` to `useMicrosoftOpenTelemetry`.
 
 ---
 
@@ -783,7 +808,7 @@ Key console messages:
 | `BaggageBuilder` | Fluent builder for tenant/agent/correlation baggage (rarely needed manually) |
 | `BaggageMiddleware` | Adapter middleware — auto-populates baggage (registered by `configureA365Hosting`) |
 | `ObservabilityHostingManager` | Lower-level alternative to `configureA365Hosting` |
-| `AgenticTokenCacheInstance` | Singleton: `getObservabilityToken`, `RefreshObservabilityToken` |
+| `AgenticTokenCacheInstance` | Singleton: `getObservabilityToken`, `refreshObservabilityToken` |
 | `AgenticTokenCache` | Class form (advanced; usually the singleton above is enough) |
 | `Agent365Exporter` / `A365SpanProcessor` | Re-exported for advanced custom pipeline scenarios |
 | `InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails)` | Agent invocation scope |
@@ -807,7 +832,7 @@ Key console messages:
 | Traces not in Admin Center | Missing `enableObservabilityExporter: true` (1.0 breaking change) | Set `enableObservabilityExporter: true` in `a365` options, or `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in env |
 | Duplicate spans for OpenAI/LangChain calls | Manual `.enable()` / `.instrument()` call after migration | Remove manual instrumentor calls; auto-instrumentation is ON by default |
 | Spans missing baggage | `configureA365Hosting()` not called | Add `configureA365Hosting(adapter, { enableBaggage: true })` once at startup |
-| Token resolver always returns `''` | `RefreshObservabilityToken` not called per turn (OBO) | Call `AgenticTokenCacheInstance.RefreshObservabilityToken(...)` at the start of each handler turn |
+| Token resolver always returns `''` | `refreshObservabilityToken` not called per turn (OBO) | Call `AgenticTokenCacheInstance.refreshObservabilityToken(...)` at the start of each handler turn |
 | `Cannot find module '@microsoft/opentelemetry'` | Package not installed | `npm install @microsoft/opentelemetry` |
 | 401 on export | Missing `Agent365.Observability.OtelWrite` permission | CLI 1.1+ grants this automatically via `a365 setup all`. For pre-1.1 agents, GA must grant it manually |
 | Spans dropped silently | Missing tenant/agent ID | Ensure `configureA365Hosting({ enableBaggage: true })` is registered before creating spans |

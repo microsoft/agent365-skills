@@ -8,6 +8,22 @@
  * Detects the project language (Node.js / .NET / Python) and validates
  * that the full AI Teammate hosting layer was added.
  *
+ * State-matrix compatibility:
+ *   The make-ai-teammate skill supports an 8-row state matrix driven by
+ *   (has_obs, has_workiq, has_setup) in .a365-workspace-detection.json
+ *   plus the Phase 9.7.2 runTarget (prod | local) decision. This validator
+ *   focuses on code-gen artifacts (hosting layer, agent class, notifications,
+ *   packages) which are required regardless of which row the matrix routes
+ *   through — those artifacts must always be present after the skill runs
+ *   (or be present at entry, which is the precondition for skip-gates).
+ *   Therefore no conditional logic is needed here: the absence of any
+ *   required code-gen artifact is a real failure no matter which row ran.
+ *
+ *   The validator does respect `runTarget = "local"` for one thing: when
+ *   set, it does NOT require any setup-all / publish / Dev-Portal artifact
+ *   to be present (those are owned by validate-make-a365-agent.js and the
+ *   make-ai-teammate Phase 9.7 stop-hook prompt, not by this script).
+ *
  * Exit codes:
  *   0  → ok: true  (session may end)
  *   1  → ok: false (session blocked, reason shown to user)
@@ -16,42 +32,22 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-
-function findFiles(dir, extensions, maxDepth = 5) {
-  const results = [];
-  function walk(current, depth) {
-    if (depth > maxDepth) return;
-    let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (['node_modules', 'dist', 'bin', 'obj', '.git', '__pycache__', '.venv'].includes(entry.name)) continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full, depth + 1);
-      else if (extensions.some(e => entry.name.endsWith(e))) results.push(full);
-    }
-  }
-  walk(dir, 0);
-  return results;
-}
-
-function fileContains(filePath, ...patterns) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return patterns.every(p => content.includes(p));
-  } catch { return false; }
-}
-
-function anyFileContains(files, ...patterns) {
-  return files.some(f => fileContains(f, ...patterns));
-}
+const {
+  scanProject,
+  filterByName,
+  fileContains,
+  anyFileContains,
+} = require('../lib/project-scan');
 
 const cwd    = process.cwd();
 const issues = [];
 
 // ── Detect language ─────────────────────────────────────────────────────────
+// One walk; bucket by name afterwards.
 
-const hasCsproj     = findFiles(cwd, ['.csproj']).length > 0;
+const allFiles      = scanProject(cwd);
+const csprojFiles   = filterByName(allFiles, '.csproj');
+const hasCsproj     = csprojFiles.length > 0;
 const hasPyproject  = fs.existsSync(path.join(cwd, 'pyproject.toml'));
 const hasPackageJson = fs.existsSync(path.join(cwd, 'package.json'));
 
@@ -83,8 +79,8 @@ if (!fs.existsSync(manifestFile)) {
 // ── Node.js validations ─────────────────────────────────────────────────────
 
 if (language === 'nodejs') {
-  const tsFiles   = findFiles(cwd, ['.ts']).filter(f => !f.includes('node_modules'));
-  const jsonFiles = findFiles(cwd, ['package.json']).filter(f => !f.includes('node_modules'));
+  const tsFiles   = filterByName(allFiles, '.ts');
+  const jsonFiles = filterByName(allFiles, 'package.json');
 
   // Check 1: Hosting layer — index.ts
   const indexFile = path.join(cwd, 'src', 'index.ts');
@@ -167,7 +163,7 @@ if (language === 'nodejs') {
 // ── .NET validations ────────────────────────────────────────────────────────
 
 if (language === 'dotnet') {
-  const csFiles = findFiles(cwd, ['.cs']);
+  const csFiles = filterByName(allFiles, '.cs');
 
   // Check 1: Program.cs — hosting layer
   const programFile = path.join(cwd, 'Program.cs');
@@ -200,14 +196,13 @@ if (language === 'dotnet') {
   }
 
   // Check 3: Required NuGet packages in .csproj — tooling/observability added by separate skills
-  const csprojFiles = findFiles(cwd, ['.csproj']);
   if (csprojFiles.length > 0) {
     const required = [
       'Microsoft.Agents.A365.Notifications',
     ];
     for (const pkg of required) {
       if (!anyFileContains(csprojFiles, pkg)) {
-        issues.push(`${pkg} not found in .csproj — add with: dotnet add package ${pkg} --prerelease`);
+        issues.push(`${pkg} not found in .csproj — add with: dotnet add package ${pkg}`);
       }
     }
   } else {
@@ -231,7 +226,7 @@ if (language === 'dotnet') {
 // ── Python validations ──────────────────────────────────────────────────────
 
 if (language === 'python') {
-  const pyFiles = findFiles(cwd, ['.py']);
+  const pyFiles = filterByName(allFiles, '.py');
 
   // Check 1: host_agent_server.py — hosting layer
   const hostFile = path.join(cwd, 'host_agent_server.py');
@@ -299,18 +294,23 @@ function runBuild(cmd, timeoutMs) {
   }
 }
 
-if (language === 'nodejs') {
-  const result = runBuild('npx tsc --noEmit', 15000);
-  if (!result.ok) {
-    issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+// Build check is bypassed in unit tests via VALIDATE_SKIP_EXEC=1 — matching
+// the convention used by validate-instrument-observability and
+// validate-add-workiq-tools, so test fixtures don't have to be buildable.
+if (!process.env.VALIDATE_SKIP_EXEC) {
+  if (language === 'nodejs') {
+    const result = runBuild('npx tsc --noEmit', 15000);
+    if (!result.ok) {
+      issues.push('TypeScript compilation failed (tsc --noEmit) — fix errors before ending the session');
+    }
+  } else if (language === 'dotnet') {
+    const result = runBuild('dotnet build --no-restore -v minimal', 25000);
+    if (!result.ok || !result.output.includes('Build succeeded')) {
+      issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
+    }
   }
-} else if (language === 'dotnet') {
-  const result = runBuild('dotnet build --no-restore -v minimal', 25000);
-  if (!result.ok || !result.output.includes('Build succeeded')) {
-    issues.push('dotnet build --no-restore failed — fix compilation errors before ending the session');
-  }
+  // Python has no compilation step.
 }
-// Python has no compilation step.
 
 // ── Result ──────────────────────────────────────────────────────────────────
 

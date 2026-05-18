@@ -53,6 +53,22 @@ pip3 install msal azure-identity httpx 2>/dev/null || pip install msal azure-ide
 
 Minimum Python: **3.10+** (for `str | None` typing in code samples; the package itself supports 3.9+).
 
+### Google ADK projects — pin the OTel stack
+
+If `pyproject.toml` lists `google-adk`, `uv sync` will spin for minutes resolving the OTel graph because `google-adk` requires `opentelemetry-sdk<1.39.0` while `microsoft-opentelemetry` 1.1.x pulls a newer transitive OTel SDK. Force a compatible version with `[tool.uv] override-dependencies`:
+
+```toml
+# pyproject.toml — merge into existing [tool.uv] or add this block
+[tool.uv]
+prerelease = "allow"
+override-dependencies = [
+    "opentelemetry-api>=1.38.0,<1.39.0",
+    "opentelemetry-sdk>=1.38.0,<1.39.0",
+]
+```
+
+This is the same pattern documented in `make-ai-teammate/references/python-ai-teammate.md` for the Google ADK sample. Apply only to Google ADK projects — all other stacks (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel) accept OTel 1.39+ without this pin.
+
 ---
 
 ## Entry Point — Observability Init (before any LLM imports)
@@ -812,6 +828,7 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 | Spans missing baggage | `ObservabilityHostingManager.configure` not called or `enable_baggage` not set to `True` | Default is `False`. Pass `ObservabilityHostingOptions(enable_baggage=True)` explicitly |
 | Token resolver returns `None` | Per-turn OBO token cache was never refreshed | Call `exchange_token()` and cache the result at the start of each handler turn (OBO / agentic-user only) |
 | `ModuleNotFoundError: microsoft.opentelemetry` | Package not installed | `pip install microsoft-opentelemetry` |
+| `uv sync` runs for minutes / appears to hang on a Google ADK project | OTel resolver backtracking between `google-adk` (`opentelemetry-sdk<1.39.0`) and `microsoft-opentelemetry` 1.1.x (newer transitive OTel SDK) | Add `[tool.uv] override-dependencies` to `pyproject.toml` pinning `opentelemetry-api` and `opentelemetry-sdk` to `>=1.38.0,<1.39.0`. See the "Google ADK projects — pin the OTel stack" section above. |
 | 401 on export | Missing `Agent365.Observability.OtelWrite` permission | CLI 1.1+ grants this automatically via `a365 setup all`. For pre-1.1 agents, GA must grant manually |
 | Spans dropped silently | Missing tenant/agent ID in baggage | Ensure `enable_baggage=True` and that `populate(builder, context)` runs before scope creation |
 | S2S: OBO token-refresh code still runs in the handler | S2S does not use per-turn OBO token exchange | Remove the OBO handler refresh path; token comes from the background token service via `a365_token_resolver` |

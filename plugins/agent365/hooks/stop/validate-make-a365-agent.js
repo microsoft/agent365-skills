@@ -31,7 +31,7 @@ function runCmd(cmd) {
 // ── Check 1: a365 CLI is installed ──────────────────────────────────────────
 const a365Version = process.env.VALIDATE_SKIP_EXEC ? 'skipped' : runCmd('a365 --version');
 if (!a365Version) {
-  issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli --prerelease');
+  issues.push('a365 CLI is not installed — run: dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli');
 }
 
 // ── Check 1.5: Read detection cache for reuseBlueprint flag ──────────────────
@@ -69,6 +69,19 @@ if (!blueprintConfigPath) {
                 || (reuseBlueprint && existingBlueprintId !== '');
     if (!hasId) {
       issues.push('Blueprint ID not found in ' + path.basename(blueprintConfigPath) + ' (checked agentBlueprintId and blueprintId) — Blueprint creation may have failed');
+    }
+    // Non-blocking signals that the GA handoff is still pending. Only apply to
+    // a365.generated.config.json (a365.config.json doesn't carry these fields).
+    if (path.basename(blueprintConfigPath) === 'a365.generated.config.json') {
+      if (blueprintConfig.completed === false) {
+        console.warn('[validate-make-a365-agent] Warning: a365.generated.config.json has completed=false — OAuth2 permission grants are still pending. A Global Administrator must complete the consent grants via the PowerShell script printed in the setup summary (or Entra portal admin consent).');
+      }
+      if (Array.isArray(blueprintConfig.resourceConsents) && blueprintConfig.resourceConsents.length === 0) {
+        console.warn('[validate-make-a365-agent] Warning: a365.generated.config.json has empty resourceConsents — OAuth2 grants for Graph / Bot API / Observability are not yet recorded. Expected if a non-GA developer ran setup; ask a Global Administrator to complete the grants.');
+      }
+      if (!blueprintConfig.managedIdentityPrincipalId) {
+        console.warn('[validate-make-a365-agent] Warning: a365.generated.config.json is missing managedIdentityPrincipalId — the Web App managed identity may not be enabled. Run "az webapp identity show --name <web-app> --resource-group <rg>" to verify and "az webapp identity assign ..." to enable. Observability instrumentation depends on this.');
+      }
     }
   } catch {
     issues.push('Could not parse ' + path.basename(blueprintConfigPath) + ' — file may be malformed');

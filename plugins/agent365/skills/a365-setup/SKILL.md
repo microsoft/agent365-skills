@@ -1,6 +1,5 @@
 ---
 name: a365-setup
-version: 1.6.0
 description: >
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
@@ -37,8 +36,6 @@ hooks:
         If no setup ran this session, or all items are complete, return {"ok": true}.
       timeout: 30000
 ---
-
-> **Plugin check**: Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/check-version.js"` — if it outputs a message, show it to the user before proceeding.
 
 # Agent 365 CLI Setup
 
@@ -128,25 +125,36 @@ If either file exists → `hasBlueprintConfig = 1`. Read the blueprint ID using 
 Store whichever is present as `existingBlueprintId` (may be empty if not yet set).
 Otherwise → `hasBlueprintConfig = 0`
 
-**Step 5: Detect AI Teammate Changes** → Store as `hasAITeammateChanges`
+**Step 5: Detect skill-state signals** → store as `has_aiteammate_structure`, `has_obs`, `has_workiq`
 
-Run all checks **in parallel** (Glob + Grep):
+Run all checks **in parallel** (Glob + Grep). These three primary flags are written to the detection cache. `hasAITeammateChanges` is no longer stored — it is **derived inline** as `has_aiteammate_structure && has_obs` wherever the legacy concept is needed.
 
-*AI Teammate structure signals (from `make-ai-teammate`) — any one counts:*
+*AI Teammate structure signals (from `make-ai-teammate`) — `has_aiteammate_structure = 1` if any one matches:*
 - `AgentApplication` in `src/**/*.ts`, `**/*.cs`, or `**/*.py`
 - `CloudAdapter` in `src/**/*.ts` or `CloudAdapterAiohttp` in `**/*.py`
 - `@microsoft/agents-a365-notifications` in `package.json`
 - `Microsoft.Agents.A365.Notifications` in `**/*.csproj`
 - `ToolingManifest.json` exists
 
-*Observability signals (from `instrument-observability`) — any one counts:*
+*Observability signals (from `instrument-observability`) — `has_obs = 1` if any one matches:*
 - `Microsoft.Agents.A365.Observability.Runtime` or `Microsoft.Agents.A365.Observability.Hosting` or `Microsoft.OpenTelemetry` in `**/*.csproj` (.NET)
 - `@microsoft/agents-a365-observability` or `@microsoft/opentelemetry` in `package.json` (Node.js)
 - `microsoft-agents-a365-observability-core` or `microsoft-opentelemetry` in `requirements.txt` or `pyproject.toml` (Python)
+- `UseMicrosoftOpenTelemetry` / `useMicrosoftOpenTelemetry` / `use_microsoft_opentelemetry` in source files
 - `A365 Observability` comment in any `src/**/*.ts`, `**/*.cs`, or `**/*.py` file
 
-If at least one signal from **each** category is found → `hasAITeammateChanges = 1`
-Otherwise → `hasAITeammateChanges = 0`
+*WorkIQ signal — `has_workiq = 1` if:*
+- `ToolingManifest.json` exists AND its top-level `mcpServers` (or `servers` in legacy v1 schema) array is non-empty. Parse the JSON; at least one entry → `has_workiq = 1`.
+
+These three flags drive the 8-row state matrix used by `make-ai-teammate` Phase 0C and by the `a365-setup` capabilities menu / auth-mode question below.
+
+**Derived (computed inline, not stored):**
+
+```
+hasAITeammateChanges = has_aiteammate_structure && has_obs
+```
+
+This is the legacy flag that controlled "auto-detect already-an-AI-Teammate" routing. Compute it on demand wherever needed.
 
 ### Phase 1B: User Validation Questions
 
@@ -159,9 +167,11 @@ Here's what we detected about your agent:
   • Agent type:        {usesTeamsOrCopilot == 1
                          ? "M365 Custom Engine Agent (CEA) — has Teams/Copilot integration"
                          : "Agent (Non AI Teammate) — no Teams/Copilot markers detected"}
-  • AI Teammate setup: {hasAITeammateChanges == 1
+  • AI Teammate setup: {(has_aiteammate_structure && has_obs)
                          ? "already configured (make-ai-teammate + observability detected)"
                          : "not yet configured"}
+  • Observability:     {has_obs ? "already wired" : "not yet wired"}
+  • WorkIQ tools:      {has_workiq ? "already wired" : "not yet wired"}
   • Blueprint:         {hasBlueprintConfig == 1
                          ? "existing config found" + (existingBlueprintId ? " (ID: " + existingBlueprintId + ")" : "")
                          : "none found — will create new"}
@@ -186,6 +196,7 @@ I found an existing Agent 365 config in this project. What would you like to do?
 
 Wait for the answer:
 - If **1 (reuse)**: ask "What is your blueprint ID?" if `existingBlueprintId` is empty. Store as `existingBlueprintId`. Set `reuseBlueprint = true`. Downstream skills will skip `a365 setup all` and use this ID directly.
+  > **Compatibility check:** Blueprints created before May 2025 may lack the required `managerApplications` field — the platform now rejects them. If any downstream call (`a365 query-entra`, `a365 publish`, instance provisioning) reports a `managerApplications` error, fall back to fresh provisioning by re-running `a365 setup all` (or patch the blueprint via the Graph API).
 - If **2 (fresh)**: set `reuseBlueprint = false`. Proceed normally — `a365 setup all` will run as usual.
 
 ---
@@ -196,27 +207,29 @@ If `usesTeamsOrCopilot = 1` (CEA), **do not ask** — automatically set `capabil
 
 > "Custom Engine Agents can only be configured as AI Teammates. **Register**, **Observability**, **WorkIQ**, and **AI Teammate** have been selected automatically."
 
-Otherwise, if `hasAITeammateChanges = 1`, only present these options (Observability and AI Teammate are already configured):
+Otherwise, compute `hasAITeammateChanges = has_aiteammate_structure && has_obs` and filter the menu:
+
+- **If `hasAITeammateChanges = true`** (already an AI Teammate): only present these options (Observability and AI Teammate are already configured):
 
   1. Register — make the agent findable in the Agent 365 catalog
-  2. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  2. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive) — **hide this row if `has_workiq = true`**
 
-Otherwise, present all options:
+- **Otherwise**, present all options:
 
   1. Register — make the agent findable in the Agent 365 catalog
-  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender
-  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive)
+  2. Observability — end-to-end activity tracing for every message, LLM call, and tool use, visible in the Agent 365 portal and Microsoft Defender — **hide this row if `has_obs = true`**
+  3. WorkIQ — add WorkIQ MCP servers (M365 data: email, calendar, Teams, SharePoint, OneDrive) — **hide this row if `has_workiq = true`**
   4. AI Teammate — agent gets a first-class M365 identity (Agentic User with UPN). AI Teammates interact with productivity workflows using their own identity
 
 Wait for the answer. Store as `capabilities`.
 
-**Auth mode question — ask only if AI Teammate is NOT in capabilities AND `hasAITeammateChanges = 0`:**
+**Auth mode question — ask only if AI Teammate is NOT in capabilities AND `hasAITeammateChanges` (derived) is false:**
 
-- If `hasAITeammateChanges = 1`: set `authMode = "agentic-user"` — the agent is already an AI Teammate (existing structure detected); skip the auth mode question.
+- If `hasAITeammateChanges = true` (derived = `has_aiteammate_structure && has_obs`): set `authMode = "agentic-user"` — the agent is already an AI Teammate (existing structure detected); skip the auth mode question.
 
 - If `capabilities` includes **AI Teammate**: set `authMode = "agentic-user"` — AI Teammate uses the Agentic User identity (the agent's own M365 identity, not the caller's token). `--authmode` is not used with `--aiteammate`.
 
-- Otherwise (no AI Teammate in capabilities AND `hasAITeammateChanges = 0`), ask:
+- Otherwise (no AI Teammate in capabilities AND `hasAITeammateChanges` derived = false), ask:
 
 ```
 How will your agent authenticate when calling downstream APIs?
@@ -241,13 +254,13 @@ How will your agent authenticate when calling downstream APIs?
 
 After the capabilities question is answered (and the detection/confirmation above is complete):
 
-1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected) **OR** `hasAITeammateChanges = 1` (existing AI Teammate structure detected — already configured). Else `isAITeammate = false`.
+1. Set `isAITeammate = true` if **AI Teammate** is in `capabilities` (whether auto-set or user-selected) **OR** `(has_aiteammate_structure && has_obs)` (existing AI Teammate structure detected — already configured). Else `isAITeammate = false`.
 
 2. **Write `.a365-workspace-detection.json`** now (see `agent-detection.md` cache format). Include `agentType` derived from `isAITeammate` and `authMode` collected above:
    - `isAITeammate = true` → `agentType: "ai-teammate"`
    - `isAITeammate = false` → `agentType: "system-agent"`
    - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `"agentic-user"` for AI Teammate).
-   - Write `hasAITeammateChanges` as detected in Phase 1A Step 5 (`1` or `0`).
+   - Write the three primary state flags from Phase 1A Step 5: `has_aiteammate_structure` (`1`/`0`), `has_obs` (`1`/`0`), `has_workiq` (`1`/`0`). **Do NOT write `hasAITeammateChanges`** — it is derived inline (`has_aiteammate_structure && has_obs`) at read sites.
    - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
 
 3. Derive `registrationType` from Phase 1A signals (do not ask the user):
@@ -283,7 +296,7 @@ Then create all todos for the path and mark Todo 1 in-progress:
 **RULE 6 — CLI ERROR SURFACING.** When any `a365`, `az`, `dotnet`, or `npm` command exits with a non-zero exit code or prints a warning/error line, **always show the complete output verbatim** to the user before attempting any fix. Do NOT abstract, paraphrase, or silently discard CLI output. If the CLI prints a multi-line error or warning block, display it in a fenced code block exactly as printed. Only after showing the raw output should you cross-reference the error table and suggest a resolution. If the error is not in the table, show it and ask the user how to proceed.
 
 **RULE 7 — SKILL DELEGATION.** After Steps 1 and 2, all paths delegate to a specialized skill at Step 3 — do not run setup or publish inline here:
-- **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, Teams Dev Portal).
+- **AI Teammate path** (`isAITeammate = true`): delegate to `make-ai-teammate` (code generation, a365.config.json, setup all, publish, guided manual Teams Dev Portal config, instance request).
 - **Agent (Non AI Teammate) paths** (`isAITeammate = false`): delegate to `make-a365-agent` (setup all + optional observability/WorkIQ).
 
 ---
@@ -365,13 +378,13 @@ dotnet tool list -g 2>/dev/null
 **If NOT FOUND — install:**
 
 ```bash
-dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet tool install --global Microsoft.Agents.A365.DevTools.Cli
 ```
 
 **If already installed — always update to latest:**
 
 ```bash
-dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli --prerelease
+dotnet tool update --global Microsoft.Agents.A365.DevTools.Cli
 ```
 
 Run `a365 --version` after install or update and show the version to the user so they can confirm they are on the latest release.
@@ -661,7 +674,15 @@ az login --allow-no-subscriptions --use-device-code
 
 ### Microsoft Entra ID roles
 
-The authenticated account must be at minimum an **Agent ID Administrator** or **Agent ID Developer**. Global Administrator is **not required** for new agent setup — Blueprint provisioning, agent identity creation, and OtelWrite grants all happen automatically. Azure Contributor is needed only if the CLI provisions Azure resources (e.g. App Service). If the logged-in user lacks the minimum roles, prompt them to use an appropriate account or have an admin grant the needed roles.
+The authenticated account needs roles based on which setup steps will run:
+
+- **Agent ID Developer** — required to run `a365 setup blueprint` (and the blueprint phase of `setup all`).
+- **Global Administrator** — required to complete `a365 setup permissions {mcp, bot, custom, copilotstudio}`, which grants OAuth2 consent.
+- **Azure Subscription Contributor** — required when the CLI provisions Azure resources (App Service Plan, Web App).
+
+If the developer is not a Global Administrator, `a365 setup all` runs as far as it can and **prints next-steps for a GA** to complete the consent grants (typically a PowerShell script in the setup summary). There is no separate `setup admin` subcommand — the GA reads the printed instructions and runs them.
+
+If the logged-in user lacks the minimum roles, prompt them to switch accounts or to ask an admin to grant the role.
 
 ### Windows Account Manager (WAM) — what to expect
 
@@ -706,7 +727,7 @@ The CLI is verified and Azure prerequisites are confirmed. All remaining work is
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and follow it from the beginning.
 
-The `make-ai-teammate` skill handles everything: code generation, a365.config.json, `a365 setup all`, manifest review, `a365 publish`, Teams Dev Portal registration, and downstream capability offers (Observability, WorkIQ, local testing).
+The `make-ai-teammate` skill handles everything: code generation, a365.config.json, `a365 setup all`, manifest review, `a365 publish`, the **required manual Teams Developer Portal configuration** (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`), the agent-instance request, and downstream capability offers (Observability, WorkIQ, local testing). Reference: [Create agent instance — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
 
 > The `make-ai-teammate` skill will detect that the CLI is already installed (Phase 9 Step 1) and that Azure prerequisites are met. It will proceed directly to collecting agent identity inputs.
 
@@ -726,76 +747,61 @@ Mark Todo 3 as completed when the delegated skill finishes.
 
 ---
 
-## Step 4 (Reference Only)
+## Steps 4-5 (Reference Only) — CLI commands for re-running setup or re-publishing
 
-> **This step is now handled by the `make-a365-agent` or `make-ai-teammate` skill (Step 3 above).**
-> Kept as a reference for re-running setup without the full skill flow.
-
-### Re-running `a365 setup all`
+The full setup-all / publish / endpoint-register flow is owned by Step 3's
+delegated skill (`make-a365-agent` or `make-ai-teammate`). The blocks below are
+quick-reference CLI snippets for the case where the user just wants to re-run
+one piece without the full skill flow.
 
 `a365 setup all` is idempotent — safe to re-run after fixing any issue.
 
-**Agent (Non AI Teammate):**
 ```bash
-a365 setup all --agent-name <agent_name> --dry-run   # preview
-a365 setup all --agent-name <agent_name>              # apply
-a365 setup all --agent-name <agent_name> --authmode s2s  # S2S auth mode
+# Agent (Non AI Teammate)
+a365 setup all --agent-name <name> --dry-run                # preview
+a365 setup all --agent-name <name>                          # apply
+a365 setup all --agent-name <name> --authmode s2s           # S2S
+a365 setup all --agent-name <name> --agent-registration-only  # re-register only
+
+# Custom Engine Agent (Teams / Copilot integration)
+a365 setup all --agent-name <name> --m365
+a365 setup permissions bot                                  # required after --m365
+
+# AI Teammate
+a365 setup all --agent-name <name> --aiteammate             # add --m365 for Teams-registered
 ```
 
-**Custom Engine Agent (CEA) with Teams/Copilot integration:**
-```bash
-a365 setup all --agent-name <agent_name> --m365       # registers endpoint via MCP Platform
-a365 setup permissions bot                            # required after setup all for CEA agents
-```
-
-**AI Teammate:**
-```bash
-a365 setup all --agent-name <agent_name> --aiteammate
-# for M365-registered AI Teammates, also add --m365
-```
-
-### Additional permissions subcommands
-
-Run these individually when the blueprint already exists and you need to add specific grants:
+Blueprint-only and permissions subcommands:
 
 ```bash
-a365 setup permissions mcp          # MCP server OAuth2 grants (always first)
-a365 setup permissions bot          # Messaging Bot API grants — CEA agents, run after mcp
-a365 setup permissions custom       # Custom resource OAuth2 grants
-a365 setup permissions copilotstudio  # CopilotStudio.Copilots.Invoke permission
+a365 setup blueprint --agent-name <name>                              # create blueprint + endpoint
+a365 setup blueprint --agent-name <name> --update-endpoint <new-url>  # replace messaging endpoint
+a365 setup blueprint --agent-name <name> --show-secret                # print stored client secret
+                                                                       # (Windows: same machine + user that created it)
+a365 setup permissions mcp                                            # MCP grants — always first
+a365 setup permissions copilotstudio                                  # CopilotStudio.Copilots.Invoke
+a365 setup permissions custom --resource-app-id <guid> --scopes Mail.Read,User.Read
 ```
 
-### Admin handoff with `setup admin`
-
-For teams where the developer is not a Global Administrator, use the two-step handoff:
+**Admin handoff (developer is not Global Admin):** `a365 setup all` completes
+everything it can, then prints a PowerShell snippet in the setup summary for a
+GA to run. Equivalent path: Entra portal → App registrations → Blueprint app
+→ API permissions → Grant admin consent. Read the Blueprint ID any time with:
 
 ```bash
-# Step 1 — Developer runs (produces a blueprint ID in output):
-a365 setup all --agent-name <agent_name>
-
-# Step 2 — Global Admin grants consent via Entra portal or PowerShell:
-# Option A: Entra portal > App registrations > Blueprint app > API permissions > Grant admin consent
-# Option B: Copy the PowerShell script printed in the a365 setup all summary output and run as GA
-
-# Retrieve the blueprint ID at any time:
-node -e "const c=require('./a365.generated.config.json'); console.log(c.agentBlueprintId)"
+node -e "console.log(require('./a365.generated.config.json').agentBlueprintId)"
 ```
 
-> **Note:** `a365 setup admin` has been removed in CLI 1.1. Use the Entra portal or the PowerShell instructions printed by `a365 setup all` instead.
+There is no `a365 setup admin` subcommand — the CLI handles the handoff via the
+setup summary.
 
----
-
-## Step 5: Review, Publish, and Register Endpoint
-
-> **This step is handled by the `make-ai-teammate` skill (Step 3 above).** This section is kept as a reference for standalone re-registration scenarios only.
-
-If you need to re-publish or re-register an existing AI Teammate agent without re-running the full `make-ai-teammate` flow, the steps are in `make-ai-teammate` Phase 10:
-- Manifest review (read-only — `manifest/manifest.json`)
-- `a365 publish` (handles bot endpoint registration automatically — no manual Teams Developer Portal config needed)
-- Create agent instance via Teams > Apps > Request Instance
-- Admin approval at [admin.cloud.microsoft/#/agents/all/requested](https://admin.cloud.microsoft/#/agents/all/requested)
-
-To re-run just this phase: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and jump to Phase 10.
+**Re-publishing an AI Teammate (manifest verify → `a365 publish` → manual zip
+upload at M365 Admin Center → Teams Developer Portal configuration → instance
+request → admin approval at `admin.cloud.microsoft/#/agents/all/requested`):**
+follow `make-ai-teammate` Phase 9.7. The CLI owns `manifest.json` and the bot
+endpoint registration; do not hand-edit either. For non-AI-Teammate agents
+already registered via `a365 setup all`, use `a365 publish --use-blueprint`
+(only valid when `--aiteammate` was not passed).
 
 ---
 
@@ -809,9 +815,9 @@ For detailed guidance, refer to:
 ### Quick tips
 
 - Run failing commands with `-v` / `--verbose` for detailed logs.
-- Check log files: Windows `%APPDATA%/a365/logs/`, Linux/Mac `~/.config/a365/logs/`.
+- Manage and locate CLI diagnostic logs via `a365 logs --help`. Log files live at Windows `%APPDATA%/a365/logs/`, Linux/Mac `~/.config/a365/logs/`.
 - Most `a365` commands are idempotent — safe to re-run after fixing an issue.
-- Use `a365 cleanup azure` or `a365 cleanup blueprint` only as a last resort.
+- For a full cleanup of a config-free agent: `a365 cleanup --agent-name <name>` (reads resource IDs from the generated config). For granular cleanup: `a365 cleanup blueprint`, `a365 cleanup azure`, or `a365 cleanup instance`. Use only as a last resort.
 
 ### Dev tunnel issues
 

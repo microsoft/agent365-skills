@@ -13,44 +13,15 @@
  *   1  → ok: false (session blocked, reason shown to user)
  */
 
-const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-
-function findFiles(dir, extensions, maxDepth = 5) {
-  const results = [];
-  function walk(current, depth) {
-    if (depth > maxDepth) return;
-    let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      // Skip hidden *directories* (e.g. .git, .vs) but NOT hidden files (e.g. .env, .env.example)
-      if (entry.isDirectory() && entry.name.startsWith('.')) continue;
-      if (entry.name === 'node_modules' || entry.name === 'bin' || entry.name === 'obj' ||
-          entry.name === '__pycache__' || entry.name === '.venv' || entry.name === 'venv') continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full, depth + 1);
-      else if (extensions.some(e => entry.name === e || entry.name.endsWith(e))) results.push(full);
-    }
-  }
-  walk(dir, 0);
-  return results;
-}
-
-function fileContains(filePath, ...patterns) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    return patterns.every(p => content.includes(p));
-  } catch { return false; }
-}
-
-function readJson(filePath) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
-}
-
-function anyFileContains(files, ...patterns) {
-  return files.some(f => fileContains(f, ...patterns));
-}
+const {
+  scanProject,
+  filterByName,
+  fileContains,
+  anyFileContains,
+  readJson,
+} = require('../lib/project-scan');
 
 const cwd = process.cwd();
 const issues = [];
@@ -59,24 +30,20 @@ const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.js
 const authMode = (workspaceDetection.authMode || '').toLowerCase();
 
 // ── Detect project type ─────────────────────────────────────────────────────
+// Walk the project tree once, then bucket by name.
 
-const csprojFiles   = findFiles(cwd, ['.csproj']);
-const tsFiles       = findFiles(cwd, ['.ts', '.js']).filter(f => !f.includes('node_modules'));
-const pyFiles       = findFiles(cwd, ['.py']).filter(f =>
-  !f.includes('__pycache__') && !f.includes('.venv') && !f.includes('/venv/'));
-const envFiles      = findFiles(cwd, ['.env', '.env.example', '.env.production', '.env.local']);
-const reqFiles      = findFiles(cwd, ['requirements.txt', 'pyproject.toml']);
-
-const packageJsonFiles = findFiles(cwd, ['package.json']).filter(f =>
-  !f.includes('node_modules'));
+const allFiles    = scanProject(cwd);
+const csprojFiles = filterByName(allFiles, '.csproj');
+const tsFiles     = filterByName(allFiles, '.ts', '.js');
+const pyFiles     = filterByName(allFiles, '.py');
+const envFiles    = filterByName(allFiles, '.env', '.env.example', '.env.production', '.env.local');
+const reqFiles    = filterByName(allFiles, 'requirements.txt', 'pyproject.toml');
+const packageJsonFiles = filterByName(allFiles, 'package.json');
 
 const isDotnet   = csprojFiles.length > 0;
 // Node.js: any project with a package.json + .ts/.js source files
 const isNodejs   = !isDotnet && packageJsonFiles.length > 0 && tsFiles.length > 0;
-const isPython   = !isDotnet && !isNodejs && (
-  pyFiles.length > 0 ||
-  reqFiles.some(f => f.endsWith('requirements.txt') || f.endsWith('pyproject.toml'))
-);
+const isPython   = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
 const isUnknown  = !isDotnet && !isNodejs && !isPython;
 
 if (isUnknown) {
@@ -102,7 +69,7 @@ if (isDotnet) {
   //   - S2S: UseMicrosoftOpenTelemetry + AddAgent365Observability for the scaffold token service
   // Legacy (pre-distro, kept for older agents): AddA365Tracing + AddAgenticTracingExporter (OBO)
   //   or AddA365Tracing + AddAgent365Observability (S2S)
-  const programFiles = findFiles(cwd, ['Program.cs']);
+  const programFiles = filterByName(allFiles, 'Program.cs');
   const hasDistroWired = anyFileContains(programFiles, 'UseMicrosoftOpenTelemetry');
   const hasLegacyOBOWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgenticTracingExporter');
   const hasLegacyS2SWired = anyFileContains(programFiles, 'AddA365Tracing', 'AddAgent365Observability') ||
@@ -130,8 +97,7 @@ if (isDotnet) {
   // 3. Observability context wired in agent code
   // OBO path: BaggageBuilder or BaggageTurnMiddleware
   // S2S path: ObservabilityTokenService scaffold + Agent365ObservabilityContext injection
-  const csFiles = findFiles(cwd, ['.cs']).filter(f =>
-    !f.includes('obj') && !f.includes('bin'));
+  const csFiles = filterByName(allFiles, '.cs');
   const hasS2SScaffold = anyFileContains(csFiles, 'ObservabilityTokenService') ||
                          anyFileContains(csFiles, 'Agent365ObservabilityContext');
   const hasBaggage = anyFileContains(csFiles, 'BaggageBuilder') ||
@@ -142,7 +108,7 @@ if (isDotnet) {
   }
 
   // 4. appsettings has observability config
-  const appSettingsFiles = findFiles(cwd, ['appsettings.json']);
+  const appSettingsFiles = filterByName(allFiles, 'appsettings.json');
   const hasAppSettingsConfig = anyFileContains(appSettingsFiles,
     'EnableAgent365Exporter', 'Agent365Observability');
   if (!hasAppSettingsConfig) {

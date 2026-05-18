@@ -108,4 +108,35 @@ describe('validate-make-a365-agent — blueprint config', () => {
       assert.match(r.reason, /Could not parse/);
     } finally { cleanup(dir); }
   });
+
+  // GA-handoff signals — non-blocking warnings, must not change ok status.
+  test('a365.generated.config.json with completed=false → ok (non-blocking warning for pending GA consent)', () => {
+    const dir = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123', completed: false }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('a365.generated.config.json with empty resourceConsents → ok (non-blocking warning for pending GA consent)', () => {
+    const dir = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123', resourceConsents: [] }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('a365.generated.config.json missing managedIdentityPrincipalId → ok (non-blocking warning)', () => {
+    const dir = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'bp-abc-123' }),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
 });
