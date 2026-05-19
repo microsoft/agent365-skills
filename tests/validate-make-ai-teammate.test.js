@@ -12,9 +12,10 @@ const VALIDATOR = path.join(
   '../plugins/agent365/hooks/stop/validate-make-ai-teammate.js'
 );
 
-// A valid ToolingManifest.json with the expected `mcpServers` array. Every
-// fixture needs this to clear the cross-language manifest check at the top of
-// the validator.
+// A valid ToolingManifest.json with the expected `mcpServers` array. Used by
+// the per-language happy-path fixtures to mimic an agent that opted into
+// WorkIQ via add-workiq-tools. make-ai-teammate itself no longer writes this
+// file — its absence is a valid completion state.
 const MANIFEST_VALID = JSON.stringify({
   mcpServers: [
     { mcpServerName: 'mcp_CalendarTools', url: 'https://example/calendar' },
@@ -22,18 +23,45 @@ const MANIFEST_VALID = JSON.stringify({
   ],
 }, null, 2);
 
-// ── Cross-language: ToolingManifest.json ─────────────────────────────────────
+// ── Cross-language: ToolingManifest.json (optional) ──────────────────────────
 
-describe('validate-make-ai-teammate — ToolingManifest', () => {
-  test('missing ToolingManifest.json → reports missing', () => {
+describe('validate-make-ai-teammate — ToolingManifest (optional)', () => {
+  test('missing ToolingManifest.json is OK (user skipped WorkIQ at Phase 9.6)', () => {
+    // Build a minimally-valid Node.js fixture so the rest of the validator passes,
+    // then assert the missing manifest does NOT produce a ToolingManifest issue.
     const dir = createFixture({
-      'package.json': JSON.stringify({ name: 'a' }),
-      'src/index.ts': '',
+      'package.json': JSON.stringify({
+        name: 'a',
+        dependencies: {
+          '@microsoft/agents-hosting':            '^1.0.0',
+          '@microsoft/agents-a365-runtime':       '^1.0.0',
+          '@microsoft/agents-a365-notifications': '^1.0.0',
+        },
+      }),
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { module: 'node16', moduleResolution: 'node16' },
+      }),
+      'src/index.ts': `import { configDotenv } from 'dotenv';
+import { CloudAdapter, authorizeJWT } from '@microsoft/agents-hosting';
+configDotenv();
+const adapter = new CloudAdapter();
+app.get('/api/health', () => {});
+app.post('/api/messages', adapter.process);`,
+      'src/agent.ts': `import '@microsoft/agents-a365-notifications';
+import { AgentApplication } from '@microsoft/agents-hosting';
+export class MyAgent extends AgentApplication {
+  onAgentNotification = () => {};
+  onInstallationUpdate = () => {};
+}`,
+      'src/client.ts': `export function getClient() { return {}; }`,
     });
     try {
       const r = runValidator(VALIDATOR, dir);
-      assert.equal(r.ok, false);
-      assert.match(r.reason, /ToolingManifest\.json not found/);
+      // Either the validator fully passes or it fails on some OTHER check —
+      // but it must NOT mention ToolingManifest.json.
+      if (!r.ok) {
+        assert.doesNotMatch(r.reason || '', /ToolingManifest/);
+      }
     } finally { cleanup(dir); }
   });
 

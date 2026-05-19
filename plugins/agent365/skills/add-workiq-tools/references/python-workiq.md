@@ -197,7 +197,7 @@ Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME>` — e.g. `m
     {
       "mcpServerName": "mcp_CalendarTools",
       "mcpServerUniqueName": "mcp_CalendarTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/v2/servers/mcp_CalendarTools",
       "scope": "Tools.ListInvoke.All",
       "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
       "publisher": "Microsoft"
