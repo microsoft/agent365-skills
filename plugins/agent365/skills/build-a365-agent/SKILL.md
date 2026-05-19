@@ -252,8 +252,14 @@ If not inferable, ask:
 > - C#
 > - Python
 > - TypeScript
+> - Other
 
-Record as `language`.
+Record as `language`. If the user picks **Other**, prompt for the freeform
+value and set `languageIsCustom = true`. Warn briefly:
+
+> ⚠️ `${language}` isn't a first-party Agent 365 SDK target. A sidecar
+> approach is planned to support arbitrary languages — for now, continuing
+> is best-effort. Continue?
 
 ---
 
@@ -281,9 +287,13 @@ can review the framework before choosing. Example phrasing:
 > - **CrewAI** — https://github.com/crewAIInc/crewAI
 > - **Claude Agent SDK** — https://code.claude.com/docs/en/agent-sdk/overview
 > - …(only show rows whose `language` column is checked)
+> - **Other**
 
 If not inferable, ask with the filtered list as `choices`. Record as
-`framework`.
+`framework`. If the user picks **Other**, prompt for the freeform value and
+set `frameworkIsCustom = true`. Warn briefly:
+
+> ⚠️ `${framework}` isn't on the curated list — best-effort wiring only.
 
 ---
 
@@ -297,8 +307,14 @@ If not inferable, ask:
 > - Amazon Bedrock
 > - Anthropic Console
 > - Google Gemini Enterprise Agent Platform
+> - Direct API key
+> - Other
 
-Record as `modelProvider`. Use this to pick the correct env-var names in
+Record as `modelProvider`. If the user picks **Direct API key**, prompt for
+the provider name and the env-var name holding the key. If the user picks
+**Other**, prompt for the freeform value and set `modelProviderIsCustom =
+true`; ask which env vars its SDK expects so Phase 8 can wire them
+correctly.Use this to pick the correct env-var names in
 Phase 8 (e.g. `AZURE_OPENAI_*`, `AWS_*` + `BEDROCK_*`, `ANTHROPIC_API_KEY`,
 `GOOGLE_APPLICATION_CREDENTIALS` + `VERTEX_*`).
 

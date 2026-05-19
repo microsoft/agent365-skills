@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>build-a365-agent · Skill Flow Diagram</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #131a31;
+    --panel-2: #182142;
+    --ink: #e6ebff;
+    --muted: #8a93b8;
+    --accent: #6ea8ff;
+    --accent-2: #b78cff;
+    --good: #5ddca0;
+    --warn: #ffce5e;
+    --bad: #ff6b8b;
+    --gate: #ff8e3c;
+    --loop: #f9b85f;
+    --line: #2a345b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #1a2350 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #2a1b4a 0%, transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+  }
+  header {
+    padding: 28px 32px 8px;
+  }
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 24px;
+    letter-spacing: 0.2px;
+  }
+  header h1 .pill {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: #0b1020;
+    margin-left: 10px;
+    vertical-align: middle;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  header p { margin: 4px 0 0; color: var(--muted); max-width: 1100px; }
+  .legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    margin: 18px 32px 0;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 12px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted);}
+  .legend i {
+    width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+  }
+
+  main { padding: 18px 32px 60px; }
+
+  /* Stage rails */
+  .rail {
+    margin: 22px 0;
+    padding: 14px 16px;
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.015);
+    position: relative;
+  }
+  .rail::before {
+    content: attr(data-stage);
+    position: absolute; top: -10px; left: 16px;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase;
+    padding: 0 8px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  /* Phase card */
+  .phase {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    position: relative;
+    min-height: 160px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+  }
+  .phase .num {
+    position: absolute;
+    top: -10px; left: 12px;
+    background: var(--accent);
+    color: #0b1020;
+    font-weight: 800;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    letter-spacing: 0.5px;
+  }
+  .phase h3 {
+    margin: 6px 0 8px;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .phase .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .phase ul { margin: 6px 0 0; padding-left: 16px; color: #cdd5f6; font-size: 12px; }
+  .phase ul li { margin: 2px 0; }
+  .phase code {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: #d7e2ff;
+  }
+  .phase.gate { border-color: var(--gate); box-shadow: 0 0 0 1px rgba(255,142,60,0.25), 0 6px 16px rgba(0,0,0,0.25); }
+  .phase.gate .num { background: var(--gate); }
+  .phase.scaffold { grid-column: 1 / -1; }
+  .phase.scaffold .num { background: var(--accent-2); }
+
+  /* Options chips */
+  .opts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .opt {
+    font-size: 11px; padding: 2px 7px; border-radius: 999px;
+    background: rgba(110,168,255,0.12); color: #cde0ff;
+    border: 1px solid rgba(110,168,255,0.35);
+  }
+  .opt.other { background: rgba(183,140,255,0.14); color: #e2d4ff; border-color: rgba(183,140,255,0.45); }
+  .opt.warn  { background: rgba(255,206,94,0.14);  color: #ffe7a8; border-color: rgba(255,206,94,0.45); }
+  .opt.bad   { background: rgba(255,107,139,0.14); color: #ffd0db; border-color: rgba(255,107,139,0.45); }
+  .opt.good  { background: rgba(93,220,160,0.14);  color: #c5f6dd; border-color: rgba(93,220,160,0.4); }
+
+  /* Connector arrow between rails */
+  .connector {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    margin: -10px 0 -6px;
+  }
+  .connector svg { display: block; margin: 0 auto; }
+
+  /* === Phase 14 loop === */
+  .loop-wrap {
+    background:
+      radial-gradient(500px 200px at 50% 0%, rgba(249,184,95,0.12), transparent 70%),
+      linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid rgba(249,184,95,0.45);
+    border-radius: 16px;
+    padding: 18px 18px 22px;
+    margin-top: 20px;
+    position: relative;
+  }
+  .loop-wrap h2 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    color: var(--loop);
+    letter-spacing: 0.4px;
+  }
+  .loop-wrap .lead {
+    color: #ffe7a8;
+    font-size: 12.5px;
+    margin: 0 0 14px;
+  }
+  .loop-svg-wrap {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    align-items: stretch;
+    margin: 8px 0 6px;
+  }
+  .loop-step {
+    background: #131a31;
+    border: 1px solid rgba(249,184,95,0.4);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 0 6px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+  }
+  .loop-step .badge {
+    display: inline-block;
+    background: var(--loop);
+    color: #0b1020;
+    font-weight: 800;
+    font-size: 11px;
+    width: 22px; height: 22px; line-height: 22px;
+    border-radius: 50%;
+    margin-bottom: 6px;
+  }
+  .loop-step h4 { margin: 0 0 4px; font-size: 13px; color: var(--ink);}
+  .loop-step p { margin: 0; font-size: 11.5px; color: var(--muted);}
+  .loop-arrow {
+    align-self: center;
+    text-align: center;
+    color: var(--loop);
+    font-size: 18px;
+    z-index: 2;
+  }
+  .loop-back {
+    text-align: center;
+    margin-top: 10px;
+    color: var(--loop);
+    font-size: 12px;
+    letter-spacing: 0.4px;
+  }
+  .loop-back .arc {
+    display: inline-block;
+    border: 1px dashed var(--loop);
+    border-top: 0;
+    border-radius: 0 0 14px 14px;
+    padding: 4px 18px 6px;
+    background: rgba(249,184,95,0.06);
+  }
+
+  /* Log emphasis box */
+  .log-box {
+    margin-top: 14px;
+    background: #0a1230;
+    border: 1px solid rgba(110,168,255,0.35);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: ui-monospace, "JetBrains Mono", Consolas, Menlo, monospace;
+    font-size: 11.5px;
+    color: #cde0ff;
+    position: relative;
+    overflow: hidden;
+  }
+  .log-box::before {
+    content: "agent stdout — Phase 14 debug feed";
+    position: absolute; top: 0; right: 10px;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 10px; color: var(--muted);
+    background: var(--panel-2);
+    padding: 2px 8px;
+    border-radius: 0 0 6px 6px;
+    border: 1px solid var(--line);
+    border-top: 0;
+  }
+  .log-box .ok { color: var(--good); }
+  .log-box .info { color: var(--accent); }
+  .log-box .warn { color: var(--warn); }
+  .log-box .err { color: var(--bad); }
+  .log-box .dim { color: var(--muted); }
+
+  /* Sidecar note (margin) */
+  .sidecar {
+    margin: 30px 0 0;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 14px;
+    align-items: start;
+    border: 1px dashed rgba(183,140,255,0.55);
+    background: linear-gradient(180deg, rgba(183,140,255,0.06), rgba(183,140,255,0.02));
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .sidecar .icon {
+    width: 56px; height: 56px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #0b1020;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px;
+    letter-spacing: 0.4px;
+  }
+  .sidecar h3 { margin: 0 0 4px; color: var(--accent-2); font-size: 14px; letter-spacing: 0.4px; }
+  .sidecar h3 .tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    background: rgba(183,140,255,0.18); color: #e9ddff;
+    border: 1px solid rgba(183,140,255,0.45);
+    margin-left: 8px; vertical-align: middle;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .sidecar p { margin: 4px 0 0; color: #d9d2ff; font-size: 12.5px; }
+  .sidecar .diagram {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 8px;
+    align-items: center;
+    font-size: 11.5px;
+  }
+  .sidecar .node {
+    background: #131a31;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: center;
+    color: var(--ink);
+  }
+  .sidecar .node.alt { border-color: rgba(183,140,255,0.5); }
+  .sidecar .arrow { color: var(--accent-2); font-size: 18px; text-align: center; }
+
+  /* Decorative connecting beam */
+  .beam {
+    position: relative;
+    height: 24px;
+    margin: -6px 0 -10px;
+  }
+  .beam svg { width: 100%; height: 100%; display: block;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>build-a365-agent <span class="pill">Skill flow</span></h1>
+  <p>Greenfield path from an empty directory + one-line prompt → fully wired, locally tested, Teams-publish-ready Agent 365 AI Teammate. Orchestrates <code>a365-setup</code>, <code>make-ai-teammate</code>, <code>instrument-observability</code>, <code>add-workiq-tools</code>, and <code>test-local</code>.</p>
+</header>
+
+<div class="legend">
+  <span><i style="background:var(--accent)"></i>Setup / intake phase</span>
+  <span><i style="background:var(--accent-2)"></i>Scaffolding / instrumentation</span>
+  <span><i style="background:var(--gate)"></i>Hard gate (must pass)</span>
+  <span><i style="background:var(--loop)"></i>Iterative loop</span>
+  <span><i style="background:rgba(183,140,255,0.6)"></i>Other / freeform option</span>
+  <span><i style="background:var(--good)"></i>Log signal we look for</span>
+  <span><i style="background:var(--bad)"></i>Log signal we react to</span>
+</div>
+
+<main>
+
+<!-- =================== STAGE 1: BOOTSTRAP =================== -->
+<section class="rail" data-stage="Stage 1 — Bootstrap (Phases 0–2)">
+  <div class="row">
+    <div class="phase">
+      <span class="num">0</span>
+      <h3>Intro + task list</h3>
+      <div class="sub">Speak the 9-step plan verbatim, create in-session todos.</div>
+      <ul>
+        <li>Sets user expectations</li>
+        <li>Spawns todo per phase</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <span class="num">1</span>
+      <h3><code>az login</code></h3>
+      <div class="sub">Azure auth required for MCP + permissions.</div>
+      <ul><li>Skip if <code>az account show</code> succeeds in the right tenant.</li></ul>
+    </div>
+    <div class="phase">
+      <span class="num">2</span>
+      <h3>A365 CLI</h3>
+      <div class="sub">Verify <code>a365 -h</code>; install if missing.</div>
+      <ul><li><code>dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli</code></li></ul>
+    </div>
+  </div>
+</section>
+
+<div class="connector">
+  <svg width="40" height="40" viewBox="0 0 40 40"><path d="M20 4 L20 36 M12 28 L20 36 L28 28" fill="none" stroke="var(--muted)" stroke-width="2"/></svg>
+  Inferred answers skip questions
+</div>
+
+<!-- =================== STAGE 2: ANSWERS =================== -->
+<section class="rail" data-stage="Stage 2 — Collect / infer answers (Phases 3–7)">
+  <div class="row">
+    <div class="phase">
+      <span class="num">3</span>
+      <h3>Agent purpose</h3>
+      <div class="sub">Freeform → <code>agentPurpose</code> (seed for system prompt)</div>
+      <ul><li>AI Teammate always wires <code>AGENT_LIFECYCLE</code> handler (manager greeting via Graph).</li></ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">4</span>
+      <h3>MCP server selection</h3>
+      <div class="sub"><code>a365 develop list-available</code> → suggest by purpose match</div>
+      <div class="opts">
+        <span class="opt good">Yes — accept suggestion</span>
+        <span class="opt">Yes — add more</span>
+        <span class="opt">No — pick from full list</span>
+      </div>
+      <ul><li>Writes selection into <code>ToolingManifest.json</code>.</li></ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">5</span>
+      <h3>Language</h3>
+      <div class="opts">
+        <span class="opt">C#</span>
+        <span class="opt">Python</span>
+        <span class="opt">TypeScript</span>
+        <span class="opt other">Other (freeform)</span>
+      </div>
+      <ul>
+        <li>“Other” → <code>languageIsCustom = true</code>; best-effort, see sidecar note ↓</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">6</span>
+      <h3>Orchestration framework</h3>
+      <div class="sub">Filtered by language</div>
+      <div class="opts">
+        <span class="opt">MS Agent Framework</span>
+        <span class="opt">LangChain</span>
+        <span class="opt">OpenAI Agents SDK</span>
+        <span class="opt">CrewAI</span>
+        <span class="opt">Vercel SDK</span>
+        <span class="opt">Google ADK</span>
+        <span class="opt">Claude Agent SDK</span>
+        <span class="opt other">Other (freeform)</span>
+      </div>
+      <ul><li>“Other” → <code>frameworkIsCustom = true</code></li></ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">7</span>
+      <h3>Model provider</h3>
+      <div class="opts">
+        <span class="opt">Azure</span>
+        <span class="opt">Bedrock</span>
+        <span class="opt">Anthropic</span>
+        <span class="opt">Google Gemini</span>
+        <span class="opt">Direct API key</span>
+        <span class="opt other">Other (freeform)</span>
+      </div>
+      <ul><li>Drives env-var naming in Phase 8 (e.g. <code>AZURE_OPENAI_*</code>, <code>BEDROCK_*</code>).</li></ul>
+    </div>
+  </div>
+</section>
+
+<div class="connector">
+  <svg width="40" height="40" viewBox="0 0 40 40"><path d="M20 4 L20 36 M12 28 L20 36 L28 28" fill="none" stroke="var(--muted)" stroke-width="2"/></svg>
+  Greenfield scaffold from reference markdown (NOT samples)
+</div>
+
+<!-- =================== STAGE 3: SCAFFOLD =================== -->
+<section class="rail" data-stage="Stage 3 — Build the project (Phases 8–10)">
+  <div class="row">
+    <div class="phase scaffold">
+      <span class="num">8</span>
+      <h3>Scaffold the agent project from references</h3>
+      <div class="sub">No copying from <code>Agent365-Samples/</code> — generate from <code>make-ai-teammate/references/*</code>.</div>
+      <ul>
+        <li>HTTP host with <code>/api/messages</code> + <code>/api/health</code></li>
+        <li><code>AgentApplication</code> with handlers: <strong>message</strong>, <strong>notification</strong>, <strong>installation update</strong></li>
+        <li><strong>AGENT_LIFECYCLE</strong> handler → Graph manager greeting (sync dedupe before any <code>await</code>)</li>
+        <li>LLM client wrapper for <code>framework</code> + <code>modelProvider</code>; system prompt seeded from <code>agentPurpose</code></li>
+        <li>Two env files (matching keys): <code>appsettings*.json</code> / <code>.env</code> + <code>.env.local</code></li>
+        <li>Runtime levers: <code>AGENT_RUN_TIMEOUT_SECONDS</code>, <code>DISABLE_MCP_TOOLS</code></li>
+        <li>⏸ <strong>Pause</strong> for user to paste model credentials in <em>both</em> env files</li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">9</span>
+      <h3>Instrument observability</h3>
+      <div class="sub">Skip cache + agent-kind Qs (always AI Teammate + OBO).</div>
+      <ul>
+        <li>Tenant/user/agent pulled from <em>TurnContext</em> at runtime</li>
+        <li><strong>Default: manual instrumentation</strong> (<code>InvokeAgentScope</code>, <code>InferenceScope</code>, <code>ExecuteToolScope</code>)</li>
+        <li>Auto-instrumentation only on explicit request</li>
+        <li><code>agent_blueprint_id</code> from env, NOT <code>recipient.agentic_app_id</code></li>
+      </ul>
+    </div>
+
+    <div class="phase">
+      <span class="num">10</span>
+      <h3>Add WorkIQ MCP tools</h3>
+      <div class="sub">Reuse <code>mcpServers</code> from Phase 4 — no re-asking.</div>
+      <ul>
+        <li>Wire <code>McpToolRegistrationService</code> (or equivalent)</li>
+        <li>Build to confirm wiring compiles</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="connector">
+  <svg width="40" height="40" viewBox="0 0 40 40"><path d="M20 4 L20 36 M12 28 L20 36 L28 28" fill="none" stroke="var(--gate)" stroke-width="2"/></svg>
+  Must respond locally before continuing
+</div>
+
+<!-- =================== STAGE 4: GATE + PUBLISH =================== -->
+<section class="rail" data-stage="Stage 4 — Local proof + publish (Phases 11–13)">
+  <div class="row">
+    <div class="phase gate">
+      <span class="num">11</span>
+      <h3>Build + local test <span style="font-size:10px;color:var(--gate);">HARD GATE</span></h3>
+      <div class="sub">AgentsPlayground → must respond to at least one message.</div>
+      <ul>
+        <li>Bypass JWT locally if needed (<code>BYPASS_AUTH=true</code> / <code>TokenValidation.Enabled=false</code>) — dev file only</li>
+        <li>Block Phase 12 until ✅</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <span class="num">12</span>
+      <h3>A365 setup (AI Teammate + blueprint)</h3>
+      <div class="sub"><code>a365 setup all --aiteammate</code></div>
+      <ul>
+        <li>Skips detection/prereq phases (already done)</li>
+        <li>Read <code>agentBlueprintId</code> from <code>a365.generated.config.json</code></li>
+      </ul>
+    </div>
+    <div class="phase">
+      <span class="num">13</span>
+      <h3>Publish + devtunnel + Teams Dev Portal</h3>
+      <ul>
+        <li><code>a365 publish</code></li>
+        <li><code>devtunnel create --allow-anonymous</code> → <code>port create -p 3978</code> → <code>host</code></li>
+        <li>Set <strong>Endpoint address</strong> = <code>&lt;tunnel&gt;/api/messages</code> at <br/><code>dev.teams.microsoft.com/tools/agent-blueprint/&lt;id&gt;/configuration</code></li>
+        <li>Add agent instance via Teams store</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- =================== STAGE 5: LOOP =================== -->
+<div class="loop-wrap">
+  <h2>↻ Phase 14 — Devtunnel testing + iterative debug loop</h2>
+  <p class="lead">Round-trip through real Teams traffic. The agent <strong>uses its own console logs</strong> — the <em>“message sent / message received”</em> stream is the primary debugging signal. Stay in this loop until the user confirms the experience is good.</p>
+
+  <div class="loop-svg-wrap">
+    <div class="loop-step">
+      <span class="badge">1</span>
+      <h4>Prompt user</h4>
+      <p>One specific test action (e.g. “send <code>hey</code> in Teams”, “summarize my email”, “reinstall to fire onboarding”).</p>
+    </div>
+    <div class="loop-arrow">➜</div>
+    <div class="loop-step">
+      <span class="badge">2</span>
+      <h4>Wait for send</h4>
+      <p>User confirms the message was actually sent through Teams/email.</p>
+    </div>
+    <div class="loop-arrow">➜</div>
+    <div class="loop-step" style="border-color: var(--accent);">
+      <span class="badge" style="background:var(--accent);">3</span>
+      <h4>Tail agent log</h4>
+      <p>Filter MSAL/health noise → scan the <strong>message-flow log lines</strong> below.</p>
+    </div>
+  </div>
+
+  <div class="log-box">
+<span class="dim"># grep -v Acquiring -v Replying -v aiohttp.access  &nbsp;# strip noise</span>
+<span class="ok">📨 hey</span>                                                   <span class="dim"># user text reached handler</span>
+<span class="ok">Turn from user — DisplayName: Grant Harris</span>             <span class="dim"># process_user_message entered</span>
+<span class="info">httpx: HTTP Request: POST https://&lt;llm&gt;/v1/chat → 200 OK</span>  <span class="dim"># LLM call succeeded</span>
+<span class="ok">Token resolved successfully for agent &lt;agentId&gt;</span>       <span class="dim"># observability auth OK</span>
+<span class="ok">HTTP 200 success on attempt 1</span>                          <span class="dim"># A365 exporter shipped span</span>
+<span class="ok">Reply to conversation/activity: 19:abc..., 1:xyz...</span>    <span class="dim"># final reply emitted</span>
+<span class="warn">⚠️ No auth env vars; running anonymous</span>                  <span class="dim"># → dotenv load-order trap (Phase 8)</span>
+<span class="err">connector_client: Error replying to activity: 502</span>      <span class="dim"># lifecycle reply attempt — fix dedupe</span>
+<span class="err">exporter: No spans with tenant/agent identity found</span>    <span class="dim"># missing BaggageBuilder wrap</span>
+  </div>
+
+  <div class="loop-svg-wrap" style="margin-top:14px;">
+    <div class="loop-step">
+      <span class="badge">4</span>
+      <h4>Diagnose</h4>
+      <p>Map symptom → fix using Phase 14.3 table (dotenv trap, retry storm, MCP token, blueprint id, etc.).</p>
+    </div>
+    <div class="loop-arrow">➜</div>
+    <div class="loop-step">
+      <span class="badge">5</span>
+      <h4>Fix &amp; restart</h4>
+      <p>Edit code/env, restart process so vars take effect. Toggle <code>DISABLE_MCP_TOOLS</code> to bisect.</p>
+    </div>
+    <div class="loop-arrow">↩</div>
+    <div class="loop-step" style="border-color: var(--good);">
+      <span class="badge" style="background:var(--good);">✓</span>
+      <h4>Exit loop</h4>
+      <p>User confirms experience is good → quiet logs back down (Phase 14.4) → final summary (14.5).</p>
+    </div>
+  </div>
+
+  <div class="loop-back">
+    <span class="arc">↺ &nbsp;Loop back to step 1 after every fix — same scenario, new message</span>
+  </div>
+</div>
+
+<!-- =================== SIDECAR NOTE =================== -->
+<aside class="sidecar">
+  <div class="icon">SIDE<br/>NOTE</div>
+  <div>
+    <h3>Sidecar approach for unsupported languages <span class="tag">future</span></h3>
+    <p>
+      Today Agent 365 ships first-party SDKs only for <strong>C# / Python / TypeScript</strong>. When the user picks <span class="opt other">Other</span> in Phase 5 (e.g. Go, Java, Rust, Ruby), the agent runs as the workload and a thin <strong>A365 sidecar</strong> hosts the SDK surface alongside it — exposing local HTTP endpoints for messaging, auth, observability, and MCP tool registration. The user’s code talks to the sidecar over loopback; the sidecar speaks the official A365 protocol outbound.
+    </p>
+    <div class="diagram">
+      <div class="node alt">User agent<br/><small>(Go / Java / Rust…)</small></div>
+      <div class="arrow">⇄</div>
+      <div class="node">A365 sidecar<br/><small>(SDK shim, localhost)</small></div>
+      <div class="arrow">⇄</div>
+      <div class="node">Agent 365<br/><small>Teams · WorkIQ · Observability</small></div>
+    </div>
+    <p style="margin-top:8px;color:var(--muted);font-size:11.5px;">
+      Until the sidecar lands, <code>languageIsCustom = true</code> is a best-effort scaffold using the Bot Framework Activity protocol directly on <code>/api/messages</code> with no language-specific reference doc.
+    </p>
+  </div>
+</aside>
+
+</main>
+
+</body>
+</html>
