@@ -725,7 +725,7 @@ connectionsMap__0__connection=service_connection
 |------|-----|
 | `configDotenv()` first line of `index.ts` and `client.ts` | Env vars must be set before any import that reads `process.env` at load time |
 | `/api/health` before `authorizeJWT` | Azure health probes don't carry JWT tokens |
-| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
+| `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Absence is a valid completion state (user skipped WorkIQ at Phase 9.6). |
 | `onAgentNotification` registered BEFORE `onActivity(Message)` | Notification routing must take priority |
 | `onAgentNotification` called with priority `1` and `[authHandlerName]` | Ensures agentic auth is required for notifications |
 | Side-effect import `import '@microsoft/agents-a365-notifications'` | Registers activity deserializers — omitting it silently breaks notification routing |

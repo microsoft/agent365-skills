@@ -7,7 +7,7 @@
       "prompt": "Make this agent an AI Teammate",
       "description": "Full transformation of a plain Node.js LangChain script with no M365 integration",
       "language": "nodejs",
-      "expected_output": "The skill detects LangChain, confirms with the user, installs core @microsoft/agents-* packages (hosting, runtime, notifications), writes src/index.ts with Express + CloudAdapter + JWT auth + health + messages endpoints, writes src/agent.ts with AgentApplication subclass and all handlers, writes src/client.ts with getClient() factory wrapping existing LangChain invocation, creates ToolingManifest.json with empty mcpServers array, updates .env.example with A365 variables, updates tsconfig.json to node16, validates the build, then shows a final summary with next steps (add-workiq-tools, instrument-observability, test-local).",
+      "expected_output": "The skill detects LangChain, confirms with the user, installs core @microsoft/agents-* packages (hosting, runtime, notifications), writes src/index.ts with Express + CloudAdapter + JWT auth + health + messages endpoints, writes src/agent.ts with AgentApplication subclass and all handlers, writes src/client.ts with getClient() factory wrapping existing LangChain invocation, does NOT create ToolingManifest.json (owned by add-workiq-tools — written via a365 develop add-mcp-servers if the user opts in at Phase 9.6), updates .env.example with A365 variables, updates tsconfig.json to node16, validates the build, then shows a final summary with next steps (add-workiq-tools, instrument-observability, test-local).",
       "files": [],
       "expectations": [
         "Phase 0A: language detected as NodeJS from package.json",
@@ -113,7 +113,7 @@
       "prompt": "Convert this agent to a Teams agent",
       "description": "Node.js unknown/unsupported LLM framework — stub path",
       "language": "nodejs",
-      "expected_output": "The skill detects an unrecognized LLM framework and tells the user. It still adds the hosting layer, agent class, and ToolingManifest.json. It stubs out the client factory with a placeholder and tells the user exactly where to integrate their LLM calls.",
+      "expected_output": "The skill detects an unrecognized LLM framework and tells the user. It still adds the hosting layer and agent class. It stubs out the client factory with a placeholder and tells the user exactly where to integrate their LLM calls. ToolingManifest.json is NOT created (owned by add-workiq-tools, offered at Phase 9.6).",
       "files": [],
       "expectations": [
         "Phase 0A: language detected as NodeJS",
@@ -130,7 +130,7 @@
       "prompt": "Make this agent an AI Teammate",
       "description": ".NET AgentFramework project — no existing A365 integration. Has Program.cs with basic ASP.NET Core setup and an agent class using Azure OpenAI IChatClient.",
       "language": "dotnet",
-      "expected_output": "The skill detects a .NET project with AgentFramework. It adds Microsoft.Agents.A365.Notifications NuGet package, updates Program.cs with AddAgent<T> registration, /api/messages and /api/health endpoints, creates or updates the agent class with dual isAgenticOnly activity handlers, creates ToolingManifest.json, updates appsettings.json with A365 auth and connection config, and validates the build with dotnet build. Shows a final summary with next steps (add-workiq-tools, instrument-observability, test-local).",
+      "expected_output": "The skill detects a .NET project with AgentFramework. It adds Microsoft.Agents.A365.Notifications NuGet package, updates Program.cs with AddAgent<T> registration, /api/messages and /api/health endpoints, creates or updates the agent class with dual isAgenticOnly activity handlers, does NOT create ToolingManifest.json (owned by add-workiq-tools — written via a365 develop add-mcp-servers if the user opts in at Phase 9.6), updates appsettings.json with A365 auth and connection config, and validates the build with dotnet build. Shows a final summary with next steps (add-workiq-tools, instrument-observability, test-local).",
       "files": [],
       "expectations": [
         "Phase 0A: language detected as DotNet from .csproj",
@@ -174,7 +174,7 @@
       "prompt": "Make this agent an AI Teammate",
       "description": "Python AgentFramework project — plain agent.py with AzureOpenAI, no hosting or A365 integration",
       "language": "python",
-      "expected_output": "The skill detects a Python project with AgentFramework. It adds microsoft_agents_a365_* dependencies to pyproject.toml, creates agent_interface.py, writes host_agent_server.py with CloudAdapter + MsalConnectionManager (current pattern; legacy CloudAdapterAiohttp also accepted) and all A365 handlers, updates agent.py to implement AgentInterface with MCP tooling and notification handling (preserving the existing LLM client setup), creates ToolingManifest.json, updates .env with A365 variables, and validates with uv sync.",
+      "expected_output": "The skill detects a Python project with AgentFramework. It adds microsoft_agents_a365_* dependencies to pyproject.toml, creates agent_interface.py, writes host_agent_server.py with CloudAdapter + MsalConnectionManager (current pattern; legacy CloudAdapterAiohttp also accepted) and all A365 handlers, updates agent.py to implement AgentInterface with notification handling (preserving the existing LLM client setup; MCP tooling is NOT wired here — add-workiq-tools owns that), does NOT create ToolingManifest.json (owned by add-workiq-tools, offered at Phase 9.6), updates .env with A365 variables, and validates with uv sync.",
       "files": [],
       "expectations": [
         "Phase 0A: language detected as Python from pyproject.toml",
@@ -202,17 +202,16 @@
     {
       "id": 10,
       "prompt": "Add AI Teammate hosting",
-      "description": "Python — idempotency: agent.py already implements AgentInterface, host_agent_server.py exists, only ToolingManifest.json and env vars are missing",
+      "description": "Python — idempotency: agent.py already implements AgentInterface, host_agent_server.py exists, only env vars are missing (ToolingManifest.json absence is a valid state — owned by add-workiq-tools)",
       "language": "python",
-      "expected_output": "The skill detects that hosting and agent class are already present, skips those phases, creates the missing ToolingManifest.json and adds missing env vars, and validates the setup.",
+      "expected_output": "The skill detects that hosting and agent class are already present, skips those phases, adds missing env vars, and validates the setup. ToolingManifest.json is NOT created here — if the user wants WorkIQ wiring, add-workiq-tools (offered at Phase 9.6) writes the manifest via a365 develop add-mcp-servers.",
       "files": [],
       "expectations": [
         "Phase 0A: language detected as Python",
         "Phase 0A: hasHosting detected as ✅ (CloudAdapter or legacy CloudAdapterAiohttp found)",
         "Phase 0A: hasAgentApp detected as ✅ (AgentInterface found)",
-        "Phase 0A: hasManifest detected as ❌",
         "Phases 4 and 5 are skipped entirely",
-        "Phase 7: ToolingManifest.json is created",
+        "Phase 7: ToolingManifest.json is NOT created by this skill — owned by add-workiq-tools (Phase 9.6)",
         "Phase 8: Missing env vars are appended to .env",
         "Phase 9: uv sync succeeds"
       ]

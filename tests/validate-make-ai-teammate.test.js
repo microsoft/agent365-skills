@@ -57,11 +57,11 @@ export class MyAgent extends AgentApplication {
     });
     try {
       const r = runValidator(VALIDATOR, dir);
-      // Either the validator fully passes or it fails on some OTHER check —
-      // but it must NOT mention ToolingManifest.json.
-      if (!r.ok) {
-        assert.doesNotMatch(r.reason || '', /ToolingManifest/);
-      }
+      // Fixture is minimally-valid, so the validator must pass.
+      assert.equal(r.ok, true, `validator failed: ${r.reason || ''}`);
+      // Defense in depth: even if a future regression causes failure, it
+      // must not be due to a missing ToolingManifest.json.
+      assert.doesNotMatch(r.reason || '', /ToolingManifest/);
     } finally { cleanup(dir); }
   });
 

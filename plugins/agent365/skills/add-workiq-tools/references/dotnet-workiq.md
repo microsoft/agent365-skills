@@ -26,7 +26,28 @@ a365 develop get-token
 # Get a raw token (pipe to clipboard or .env)
 a365 develop get-token --resource mcp -o raw
 ```
+Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME>` — e.g. `mcp_CalendarTools` → `BEARER_TOKEN_MCP_CALENDARTOOLS`.
 
+---
+
+## ToolingManifest.json — Written by CLI
+
+`a365 develop add-mcp-servers` writes entries like this (V2 schema):
+
+```json
+{
+  "mcpServers": [
+{
+      "mcpServerName": "mcp_MailTools",
+      "mcpServerUniqueName": "mcp_MailTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
+      "scope": "Tools.ListInvoke.All",
+      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
+      "publisher": "Microsoft"
+    }
+  ]
+}
+```
 **Never hand-edit `ToolingManifest.json`** — always use `a365 develop add-mcp-servers`.
 
 ---
@@ -51,9 +72,9 @@ a365 develop get-token --resource mcp -o raw
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling` (GA 1.0.0) |
-| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` (GA 1.0.0) |
-| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` (GA 1.0.0) |
+| `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling` |
+| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` |
+| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` |
 
 Install core + the adapter for your framework. Example for AgentFramework:
 ```bash
@@ -78,7 +99,7 @@ builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerC
 
 ## Agent Class — GetMcpToolsAsync (AgentFramework)
 
-Based on Agent365-Samples PR #272 — no `tokenOverride` parameter:
+Based on Agent365-Samples — no `tokenOverride` parameter:
 
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
@@ -113,7 +134,7 @@ await _toolService.AddToolServersToAgentAsync(
     userAuthorization,
     authHandlerName,
     turnContext
-    // No tokenOverride — SDK handles internally (PR #272 pattern)
+    // No tokenOverride — SDK handles internally 
 ).ConfigureAwait(false);
 ```
 
@@ -129,8 +150,7 @@ await _toolService.AddToolServersToAgentAsync(
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "SKIP_TOOLING_ON_ERRORS": "true",
-        "BEARER_TOKEN_MCP_MAILTOOLS": "<from a365 develop get-token>",
-        "BEARER_TOKEN_MCP_CALENDARTOOLS": "<from a365 develop get-token>"
+        "BEARER_TOKEN_MCP_MAILTOOLS": "<from a365 develop get-token>"
       },
       "applicationUrl": "http://localhost:3978"
     }

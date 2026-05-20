@@ -453,7 +453,7 @@ prompt at `make-ai-teammate` Phase 9.6).
 | `/api/health` has no auth middleware | Health checks must pass without a valid JWT (used by ALB/ingress) |
 | Typing indicator loop at 4 s | Prevents Teams from timing out the typing indicator (5 s TTL) |
 | Dual `OnActivity` registrations for `isAgenticOnly: true/false` | A365 production uses agentic auth; AgentsPlayground uses OBO or no auth |
-| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
+| `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Absence is a valid completion state (user skipped WorkIQ at Phase 9.6). |
 
 ---
 
