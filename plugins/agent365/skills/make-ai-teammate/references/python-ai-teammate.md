@@ -1100,6 +1100,6 @@ class MyAgent(AgentInterface):
     async def cleanup(self) -> None:
         logger.info("Semantic Kernel agent cleaned up")
 ```
-| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
+| `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Pre-populating here would silently skip the WorkIQ offer at Phase 9.6. |
 | `/api/health` returns 200 without auth | Load balancers and A365 infrastructure require unauthenticated health probes |
 

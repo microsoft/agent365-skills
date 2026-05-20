@@ -432,30 +432,15 @@ namespace YourNamespace.Agent
 
 ---
 
-## ToolingManifest.json (pre-populated with Calendar + Mail WorkIQ servers)
+## ToolingManifest.json — NOT written by this skill
 
-```json
-{
-  "mcpServers": [
-    {
-      "mcpServerName": "mcp_CalendarTools",
-      "mcpServerUniqueName": "mcp_CalendarTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
-      "publisher": "Microsoft"
-    },
-    {
-      "mcpServerName": "mcp_MailTools",
-      "mcpServerUniqueName": "mcp_MailTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
-      "publisher": "Microsoft"
-    }
-  ]
-}
-```
+`ToolingManifest.json` is owned by `add-workiq-tools`. It writes the file via
+`a365 develop add-mcp-servers` using the live catalog from `a365 develop list-available`,
+so URLs / `audience` GUIDs / scopes stay authoritative. Do NOT hand-write or
+pre-populate this file in `make-ai-teammate`.
+
+If you want WorkIQ wired, run `/agent365:add-workiq-tools` (or accept the
+prompt at `make-ai-teammate` Phase 9.6).
 
 ---
 
@@ -468,7 +453,7 @@ namespace YourNamespace.Agent
 | `/api/health` has no auth middleware | Health checks must pass without a valid JWT (used by ALB/ingress) |
 | Typing indicator loop at 4 s | Prevents Teams from timing out the typing indicator (5 s TTL) |
 | Dual `OnActivity` registrations for `isAgenticOnly: true/false` | A365 production uses agentic auth; AgentsPlayground uses OBO or no auth |
-| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
+| `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Absence is a valid completion state (user skipped WorkIQ at Phase 9.6). |
 
 ---
 

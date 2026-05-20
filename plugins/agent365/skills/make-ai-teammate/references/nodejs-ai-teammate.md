@@ -642,32 +642,18 @@ class GoogleADKClient implements Client {
 
 ---
 
-## ToolingManifest.json — MCP Server Declaration (V2 schema)
+## ToolingManifest.json — NOT written by this skill
 
-```json
-{
-  "mcpServers": [
-    {
-      "mcpServerName": "mcp_CalendarTools",
-      "mcpServerUniqueName": "mcp_CalendarTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
-      "publisher": "Microsoft"
-    },
-    {
-      "mcpServerName": "mcp_MailTools",
-      "mcpServerUniqueName": "mcp_MailTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
-      "publisher": "Microsoft"
-    }
-  ]
-}
+`ToolingManifest.json` is owned by `add-workiq-tools` and is written by the CLI:
+
+```bash
+a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
 ```
 
-Use `a365 develop add-mcp-servers` to add more servers — never hand-edit this file.
+The CLI pulls the live `url`, `audience`, and `scope` from `a365 develop list-available`,
+so the manifest stays in sync with the published catalog. Do NOT hand-write or
+pre-populate this file. To wire WorkIQ tools, run `/agent365:add-workiq-tools`
+(or accept the prompt at `make-ai-teammate` Phase 9.6).
 
 ---
 
@@ -739,7 +725,7 @@ connectionsMap__0__connection=service_connection
 |------|-----|
 | `configDotenv()` first line of `index.ts` and `client.ts` | Env vars must be set before any import that reads `process.env` at load time |
 | `/api/health` before `authorizeJWT` | Azure health probes don't carry JWT tokens |
-| `ToolingManifest.json` created with Calendar + Mail servers | Add more servers with the `add-workiq-tools` skill |
+| `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Absence is a valid completion state (user skipped WorkIQ at Phase 9.6). |
 | `onAgentNotification` registered BEFORE `onActivity(Message)` | Notification routing must take priority |
 | `onAgentNotification` called with priority `1` and `[authHandlerName]` | Ensures agentic auth is required for notifications |
 | Side-effect import `import '@microsoft/agents-a365-notifications'` | Registers activity deserializers — omitting it silently breaks notification routing |

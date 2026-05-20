@@ -117,12 +117,12 @@ Key points:
 ```json
 {
   "mcpServers": [
-    {
-      "mcpServerName": "mcp_CalendarTools",
-      "mcpServerUniqueName": "mcp_CalendarTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
+{
+      "mcpServerName": "mcp_MailTools",
+      "mcpServerUniqueName": "mcp_MailTools",
+      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
       "scope": "Tools.ListInvoke.All",
-      "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
+      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
       "publisher": "Microsoft"
     }
   ]
@@ -131,7 +131,7 @@ Key points:
 
 Do not hand-edit this file. Key V2 fields:
 - `scope` — unified across all WorkIQ servers: `Tools.ListInvoke.All`
-- `audience` — V2 service principal GUID: `910333d2-47e9-43ca-981f-6df2f4531ef4`
+- `audience` — V2 service principal GUID: `16b1878d-62c7-4009-aa25-68989d63bbad`
 - `publisher` — always `"Microsoft"` for first-party WorkIQ servers
 
 ---
@@ -155,7 +155,7 @@ MCP_PLATFORM_AUTHENTICATION_SCOPE=
 NODE_ENV=development
 ```
 
-Token variable naming convention: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME_NO_UNDERSCORES_REMOVED>` — e.g. `mcp_CalendarTools` → `BEARER_TOKEN_MCP_CALENDARTOOLS`.
+Token variable naming convention: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME_NO_UNDERSCORES_REMOVED>` — e.g. `mcp_MailTools` → `BEARER_TOKEN_MCP_MAILTOOLS`.
 
 In production `NODE_ENV` is `production` (or `WEBSITE_SITE_NAME` is set by Azure App Service),
 and bearer token env vars are not used — token exchange happens per-audience via `authorization.exchangeToken()`.

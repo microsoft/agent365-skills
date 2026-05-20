@@ -60,19 +60,21 @@ if (hasCsproj) {
   language = 'nodejs';
 }
 
-// ── Validate: ToolingManifest.json (all languages) ──────────────────────────
+// ── Validate: ToolingManifest.json (optional — owned by add-workiq-tools) ───
+// make-ai-teammate no longer pre-populates this file. It only exists when the
+// user opted into WorkIQ (Phase 9.6 → add-workiq-tools) or carried it over
+// from a sample. Absence is a valid completion state.
+// We only validate shape IF the file exists.
 
 const manifestFile = path.join(cwd, 'ToolingManifest.json');
-if (!fs.existsSync(manifestFile)) {
-  issues.push('ToolingManifest.json not found — run add-workiq-tools skill to configure MCP servers');
-} else {
+if (fs.existsSync(manifestFile)) {
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
     if (!Array.isArray(manifest.mcpServers)) {
-      issues.push('ToolingManifest.json is missing mcpServers array');
+      issues.push('ToolingManifest.json is missing mcpServers array — re-run add-workiq-tools to rewrite via the CLI');
     }
   } catch {
-    issues.push('ToolingManifest.json exists but cannot be parsed as JSON');
+    issues.push('ToolingManifest.json exists but cannot be parsed as JSON — re-run add-workiq-tools or restore from a backup');
   }
 }
 
