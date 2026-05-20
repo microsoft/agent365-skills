@@ -348,7 +348,6 @@ AI Teammate scaffolding:
   • Hosting layer:    {hasHosting ? "✅" : "❌"}
   • Agent class:      {hasAgentApp ? "✅" : "❌"}
   • Notifications:    {hasNotifications ? "✅" : "❌"}
-  • ToolingManifest:  {hasManifest ? "✅" : "❌"}
 
 Agent 365 capabilities:
   • Observability:    {has_obs ? "✅ already wired" : "❌ will be added"}
@@ -374,7 +373,6 @@ TaskCreate: "Configure tsconfig.json for node16 module resolution"  [skip if alr
 TaskCreate: "Add src/index.ts — Express + CloudAdapter hosting"     [skip if hasHosting]
 TaskCreate: "Add src/agent.ts — AgentApplication class"             [skip if hasAgentApp]
 TaskCreate: "Add src/client.ts — LLM client factory"               [skip if exists]
-TaskCreate: "Add ToolingManifest.json"                              [skip if hasManifest]
 TaskCreate: "Update .env / .env.example with A365 variables"
 TaskCreate: "Validate build (npm run build)"
 TaskCreate: "Add Observability"
@@ -388,7 +386,6 @@ TaskCreate: "Add Microsoft.Agents.A365.* NuGet packages"
 TaskCreate: "Update Program.cs — A365 services + /api/messages + /api/health"  [skip if hasHosting]
 TaskCreate: "Add Agent/MyAgent.cs — AgentApplication subclass"                  [skip if hasAgentApp]
 TaskCreate: "Update appsettings.json with A365 auth and connection config"
-TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Validate build (dotnet build)"
 TaskCreate: "Add Observability"
 TaskCreate: "Add WorkIQ Tools (optional)"
@@ -401,7 +398,6 @@ TaskCreate: "Add microsoft_agents_a365_* to pyproject.toml"
 TaskCreate: "Add agent_interface.py"                                             [skip if exists]
 TaskCreate: "Add host_agent_server.py — aiohttp server + A365 routing"          [skip if hasHosting]
 TaskCreate: "Update agent.py — AgentInterface implementation"                   [skip if hasAgentApp]
-TaskCreate: "Add ToolingManifest.json"                                           [skip if hasManifest]
 TaskCreate: "Update .env / .env.template with A365 variables"
 TaskCreate: "Validate setup (uv sync or pip install)"
 TaskCreate: "Add Observability"
@@ -655,41 +651,17 @@ Agent calls `self._agent.run()` directly in `process_user_message()`. No changes
 
 ---
 
-## Phase 7 — Add ToolingManifest.json
+## Phase 7 — ToolingManifest.json (owned by `add-workiq-tools` — DO NOT write here)
 
-**Mark task in progress: "Add ToolingManifest.json"**
+**Do NOT create `ToolingManifest.json` in this skill.** The file is owned by `add-workiq-tools`, which writes it via `a365 develop add-mcp-servers` using authoritative server metadata pulled from `a365 develop list-available`. Pre-populating the manifest here would:
 
-**Glob** `ToolingManifest.json`. If it does not exist, **Write** it pre-populated with the Calendar and Mail WorkIQ servers:
+- Force Calendar + Mail on every user without asking.
+- Set `has_workiq = true` automatically, causing Phase 9.6's skip-gate to silently bypass `add-workiq-tools` so the user can never pick Teams / SharePoint / OneDrive / etc.
+- Hardcode `audience` GUIDs and URLs that go stale when Microsoft updates the catalog.
 
-```json
-{
-  "mcpServers": [
-    {
-      "mcpServerName": "mcp_CalendarTools",
-      "mcpServerUniqueName": "mcp_CalendarTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_CalendarTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "910333d2-47e9-43ca-981f-6df2f4531ef4",
-      "publisher": "Microsoft"
-    },
-    {
-      "mcpServerName": "mcp_MailTools",
-      "mcpServerUniqueName": "mcp_MailTools",
-      "url": "https://agent365.svc.cloud.microsoft/agents/servers/mcp_MailTools",
-      "scope": "Tools.ListInvoke.All",
-      "audience": "16b1878d-62c7-4009-aa25-68989d63bbad",
-      "publisher": "Microsoft"
-    }
-  ]
-}
-```
+If `ToolingManifest.json` already exists (the user ran `add-workiq-tools` earlier, or it was carried over from a sample clone), leave it alone — Phase 9.6's `has_workiq` detection picks it up.
 
-Tell the user:
-> "ToolingManifest.json created with Calendar and Mail WorkIQ servers. To add more WorkIQ tools or wire them into agent code, run the `add-workiq-tools` skill."
-
-If it already exists, leave it unchanged.
-
-**Mark task complete.**
+**Mark task complete: skipped — manifest creation is owned by `add-workiq-tools` at Phase 9.6.**
 
 ---
 
@@ -847,7 +819,9 @@ Your agent now has:
   • Hosting layer         (/api/health + /api/messages)
   • Agent routing         (message, notification, InstallationUpdate handlers)
   • Email notifications + install/uninstall lifecycle
-  • ToolingManifest.json  (pre-populated: Calendar + Mail WorkIQ servers)
+  • ToolingManifest.json  {has_workiq-at-entry || (user picked yes in Phase 9.6)
+                              ? "wired by add-workiq-tools (a365 develop add-mcp-servers)"
+                              : "not created — run /agent365:add-workiq-tools to wire WorkIQ tools"}
   • Blueprint              {has_setup-at-entry
                               ? "reused (Blueprint ID: " + existingBlueprintId + ")"
                               : "registered (a365 setup all --aiteammate --m365)"}

@@ -60,7 +60,7 @@ plugins/agent365/
 │   └── plugin.json               # Skill registry (skills directory path)
 ├── skills/
 │   ├── make-ai-teammate/
-│   │   ├── SKILL.md              # Hosting layer, agent class, notifications, pre-populated ToolingManifest.json
+│   │   ├── SKILL.md              # Hosting layer, agent class, notifications (does NOT write ToolingManifest.json — owned by add-workiq-tools)
 │   │   └── references/
 │   │       ├── nodejs-ai-teammate.md     # Complete hosting + agent + client patterns (Node.js LangChain/OpenAI/Claude)
 │   │       ├── nodejs-notifications.md  # Notification + lifecycle event patterns (Node.js)
