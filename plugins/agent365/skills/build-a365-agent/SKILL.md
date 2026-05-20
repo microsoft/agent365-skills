@@ -4,13 +4,14 @@ version: 1.0.0
 description: >
   Builds a brand-new Microsoft Agent 365 AI Teammate from scratch given a single user
   prompt. Drives the full greenfield flow — Azure login, A365 CLI install, MCP server
-  selection, language/framework/model-provider choice, project scaffolding (uses
-  make-ai-teammate references for boilerplate including notification handlers),
-  observability instrumentation (instrument-observability), WorkIQ tool wiring
-  (add-workiq-tools), local AgentsPlayground test (test-local), A365 setup with
-  blueprint (a365-setup), and the publish + devtunnel + Teams Developer Portal
-  hand-off. Does NOT copy from existing samples — scaffolds from reference markdown
-  only. Always provisions as AI Teammate (OBO).
+  selection, language/framework/model-provider choice, web research for current stable
+  package versions and docs of the chosen orchestration stack, project scaffolding
+  (uses make-ai-teammate references for boilerplate including notification handlers;
+  pins packages to the latest stable versions found, preferring newer versions when
+  resolving incompatibilities), observability instrumentation (instrument-observability),
+  WorkIQ tool wiring (add-workiq-tools), local AgentsPlayground test (test-local), A365
+  setup with blueprint (a365-setup), and the publish + devtunnel + Teams Developer
+  Portal hand-off. Always provisions as AI Teammate (OBO).
 compatibility:
   - claude-code
   - vscode-copilot
@@ -36,20 +37,29 @@ hooks:
         4. `a365 develop list-available` was shown to the user before MCP selection,
            and `a365 develop add-mcp-servers ...` produced a `ToolingManifest.json` in
            the working directory.
-        5. The agent project was scaffolded from scratch using the make-ai-teammate
+        5. Before scaffolding, the web was searched for official documentation
+           and current stable package versions for the chosen orchestration
+           framework + language (and model provider SDK), AND for the exact
+           env-var names the chosen model provider's SDK reads (required vs
+           optional). The latest stable package versions found were recorded
+           and used during scaffolding, preferring more-recent versions when
+           resolving any incompatibilities. The env files in step 7 use the
+           researched env-var names verbatim — no provider env-var names
+           invented from memory.
+        6. The agent project was scaffolded from scratch using the make-ai-teammate
            references (NOT copied from a sample). Notification handlers are wired.
-        6. Two environment files exist with matching keys:
+        7. Two environment files exist with matching keys:
            - .NET: appsettings.json + appsettings.Development.json
            - Node.js / Python: .env + .env.local
            and the user was told to add their model credentials to BOTH.
-        7. instrument-observability work was completed (AI Teammate + OBO assumed,
+        8. instrument-observability work was completed (AI Teammate + OBO assumed,
            tenant + user pulled from the Microsoft Agents SDK turn context — no
            extra questions asked).
-        8. add-workiq-tools work was completed using the MCP selection from step 4
+        9. add-workiq-tools work was completed using the MCP selection from step 4
            (no extra questions asked).
-        9. Build + local AgentsPlayground test ran AND the agent responded
-           successfully to at least one message before continuing past Phase 11.
-        10. `a365 setup all --aiteammate` (with blueprint) completed; user was then
+        10. Build + local AgentsPlayground test ran AND the agent responded
+            successfully to at least one message before continuing past Phase 11.
+        11. `a365 setup all --aiteammate` (with blueprint) completed; user was then
             walked through publish + devtunnel + Teams Dev Portal endpoint + create
             agent instance + devtunnel test.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
@@ -105,18 +115,20 @@ I'll build you a new Agent 365 AI Teammate from scratch. Here's the plan:
   2. Make sure the A365 CLI is installed
   3. Confirm what your agent should do, the MCP servers it needs, and your
      language / framework / model provider
-  4. Scaffold the agent project (with notification handlers, plus an
+  4. Look up the latest stable docs and package versions for that stack on
+     the web, so the scaffold uses current SDKs
+  5. Scaffold the agent project (with notification handlers, plus an
      AGENT_LIFECYCLE handler that introduces your AI Teammate to the user's
      manager via Microsoft Graph on first install) and create two env files
      for credentials
-  5. Pause so you can paste in your model credentials
-  6. Wire observability and WorkIQ MCP tools
-  7. Build, run locally, and verify it responds in AgentsPlayground
-  8. Run `a365 setup all --aiteammate`, then walk through publish, devtunnel,
+  6. Pause so you can paste in your model credentials
+  7. Wire observability and WorkIQ MCP tools
+  8. Build, run locally, and verify it responds in AgentsPlayground
+  9. Run `a365 setup all --aiteammate`, then walk through publish, devtunnel,
      and Teams Developer Portal endpoint setup
-  9. Iteratively test end-to-end through the devtunnel: crank up logging,
-     send Teams/email messages, monitor logs, and debug until the experience
-     is good
+  10. Iteratively test end-to-end through the devtunnel: crank up logging,
+      send Teams/email messages, monitor logs, and debug until the experience
+      is good
 
 Starting now.
 ```
@@ -318,9 +330,143 @@ correctly.Use this to pick the correct env-var names in
 Phase 8 (e.g. `AZURE_OPENAI_*`, `AWS_*` + `BEDROCK_*`, `ANTHROPIC_API_KEY`,
 `GOOGLE_APPLICATION_CREDENTIALS` + `VERTEX_*`).
 
+### Azure OpenAI — auth is fixed (do NOT prompt)
+
+When `modelProvider = Microsoft Azure` (Azure OpenAI / AI Foundry), **always
+default to API key + `.env`**. Do not ask the user to pick between Entra ID
+(`DefaultAzureCredential` / `AzureCliCredential` / Managed Identity) and API
+key — this question must not appear in the build flow. The scaffold uses
+`AzureKeyCredential` reading from `AZURE_OPENAI_API_KEY`. If the user later
+wants Entra-based auth, they can swap it in manually after the agent is
+running; the skill does not offer it.
+
+Concretely in Phase 8:
+- .NET — `new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey))`. Never `new DefaultAzureCredential()` or any other `TokenCredential` for the Azure OpenAI client.
+- Node.js — `new AzureOpenAI({ endpoint, apiKey, apiVersion, deployment })` from the `openai` SDK. Never `new DefaultAzureCredential()` (`@azure/identity`).
+- Python — `AzureOpenAI(azure_endpoint=..., api_key=os.environ["AZURE_OPENAI_API_KEY"], api_version=..., azure_deployment=...)`. Never `DefaultAzureCredential()` from `azure-identity`.
+- All three languages — load `.env` at startup (`DotNetEnv` in .NET, `dotenv` / `dotenvx` in Node.js, `python-dotenv` in Python) and read `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_DEPLOYMENT` / `AZURE_OPENAI_API_VERSION` from environment variables. Do NOT put the API key in `appsettings.json` / `appsettings.Development.json` / `config.yaml`.
+- Generate a `.env` file populated with the user-provided endpoint, deployment, and a `<<YOUR_API_KEY>>` placeholder, plus an `.env.example` with the same shape but blank values. Ensure `.env` is gitignored.
+
 ---
 
-## Phase 8 — Scaffold the agent project (from scratch)
+## Phase 7.5 — Research framework docs + latest package versions (web search)
+
+**Before scaffolding (Phase 8), search the web** for up-to-date documentation
+and current stable package versions for the chosen orchestration stack. Do
+this for **every** orchestration framework — including curated, "Other", and
+custom (`frameworkIsCustom = true`) selections. The reference markdown under
+`make-ai-teammate/references/` is the structural source of truth (project
+layout, hosting wiring, notification dispatch), but package version pins
+there may be stale; the web is the source of truth for versions.
+
+For each item below, run a web search and record the result before
+scaffolding:
+
+1. **Orchestration framework** (`framework` × `language`):
+   - Official docs URL (use the link from the Phase 6 table when present).
+   - Latest stable release / package version (skip pre-release / beta / RC
+     unless no stable release exists, in which case record `prerelease: true`
+     and note the version).
+   - A current "getting started" or quickstart example for the chosen
+     language so the scaffold reflects the framework's current idioms
+     (imports, builder pattern, agent run loop, tool-calling shape).
+2. **Microsoft Agents SDK** for the chosen language — latest stable version
+   of `Microsoft.Agents.*` (.NET) / `@microsoft/agents-*` (TypeScript) /
+   `microsoft-agents-*` (Python). These pin the hosting layer.
+3. **A365 observability distro** for the chosen language — latest stable
+   version of `Microsoft.OpenTelemetry` (.NET) / `@microsoft/opentelemetry`
+   (TypeScript) / `microsoft-opentelemetry` (Python). Used by Phase 9.
+4. **Model provider SDK + required environment variables** for the chosen
+   `modelProvider` (e.g. Azure OpenAI, Bedrock, Anthropic, Vertex / Gemini,
+   OpenAI direct). Search the provider's official docs / SDK readme and
+   record:
+   - latest stable client library version for the chosen language;
+   - the **exact env-var names** the SDK reads by default (e.g. Azure OpenAI
+     → `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`,
+     `AZURE_OPENAI_API_VERSION`; Bedrock → `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
+     `AWS_SECRET_ACCESS_KEY` (+ optional `AWS_SESSION_TOKEN`, `BEDROCK_*`);
+     Anthropic → `ANTHROPIC_API_KEY`; Gemini / Vertex →
+     `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
+     `GOOGLE_CLOUD_LOCATION`, `GEMINI_API_KEY`; OpenAI direct → `OPENAI_API_KEY`,
+     `OPENAI_BASE_URL`);
+   - which of those are **required** vs **optional**, and any default values
+     the SDK falls back to;
+   - the canonical model / deployment identifier shape the SDK expects (e.g.
+     deployment name vs model id vs ARN), so the scaffold can pre-fill a
+     sensible placeholder.
+
+   If `modelProviderIsCustom = true`, search for the provider's official SDK
+   docs and record the same fields. Do **not** invent env-var names from
+   memory — they must come from the live docs.
+5. **MCP client library** for the chosen language (if not bundled with the
+   orchestration framework) — latest stable version.
+
+Record everything as a structured note for Phase 8 (in-session state, not
+on disk):
+
+```
+researchedVersions:
+  framework:
+    name: <framework>
+    docsUrl: <url>
+    package: <package-name>
+    version: <x.y.z>
+    prerelease: <true|false>
+  agentsSdk:        { package: ..., version: ... }
+  observability:    { package: ..., version: ... }
+  modelProvider:
+    package: ...
+    version: ...
+    envVars:
+      required: [ ... ]   # e.g. [AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT]
+      optional: [ ... ]   # e.g. [AZURE_OPENAI_API_VERSION]
+      modelIdKey: ...     # which key holds the deployment / model id
+      docsUrl:   ...
+  mcp:              { package: ..., version: ... }   # if applicable
+```
+
+### Version selection rules
+
+- **Always prefer the latest stable release** found by web search over any
+  version pinned in the reference markdown.
+- If two packages have a known incompatibility (e.g. orchestration framework
+  requires an older OpenAI SDK, or Microsoft Agents SDK requires an older
+  OpenTelemetry), **prefer the more recent version** and adjust the other
+  package to its newest version that is compatible with that choice. Never
+  downgrade to an older version just to match a stale pin.
+- If a conflict can only be resolved by holding back one package (e.g. peer
+  dependency hard-pin), pick the combination that maximises the newest
+  *orchestration framework* version, then maximise the *Agents SDK* version,
+  then maximise the rest. Record the pin and the reason in the scaffold
+  README so the next developer can see why it was held back.
+- For pre-1.0 packages where the latest stable is the only choice, take it.
+  If only pre-release versions exist, take the newest pre-release and set
+  `prerelease: true` in the note above; surface this to the user verbatim:
+
+  > ⚠️ `${package}` has no stable release yet — using pre-release
+  > `${version}`. This may need updating later.
+
+- If the web search fails (network blocked, no result), tell the user:
+
+  > I couldn't reach the package registry / docs to confirm the latest
+  > version of `${package}`. I'll fall back to the version pinned in the
+  > reference markdown (`${fallbackVersion}`). Update it manually after
+  > scaffolding if a newer release exists.
+
+  …and use the reference-pinned version. Do **not** silently guess a
+  version string.
+
+### Where to search
+
+- Package registries: NuGet (nuget.org), npm (npmjs.com), PyPI (pypi.org).
+- Official framework docs (links in the Phase 6 table).
+- Official model-provider SDK docs / repos.
+
+Keep the research scoped — do not crawl unrelated pages. One search per
+package family is enough.
+
+---
+
 
 > **Reference (do not copy from samples):**
 > - `${AGENT365_SKILLS}/plugins/agent365/skills/make-ai-teammate/SKILL.md`
@@ -346,6 +492,22 @@ Required wiring (all stacks):
 5. `ToolingManifest.json` already present from Phase 4.
 6. All required `Microsoft.Agents.*` / `@microsoft/agents-*` /
    `microsoft_agents_*` packages added.
+
+### Package versions
+
+Use the `researchedVersions` table captured in Phase 7.5 as the authoritative
+source for every package pin written into `*.csproj`, `package.json`, or
+`pyproject.toml` / `requirements.txt`. Do **not** copy version numbers from
+the reference markdown when Phase 7.5 produced a newer stable value. When a
+package isn't covered by `researchedVersions` (e.g. small utility libraries),
+fall back to the reference markdown's pin.
+
+If during install / restore (`dotnet restore`, `npm install`, `pip install`)
+a version conflict appears, resolve it by **moving the conflicting package
+forward to a newer compatible version**, not by downgrading the package
+chosen in Phase 7.5. Re-run the install and confirm it succeeds before
+moving on.
+
 
 ### AGENT_LIFECYCLE handler (always include — AI Teammate default)
 
@@ -421,6 +583,11 @@ Create two environment files with matching keys:
 | TypeScript   | `.env` and `.env.local`                                |
 
 Populate keys for the chosen `modelProvider`, plus the standard A365 keys.
+**Use the env-var names captured in `researchedVersions.modelProvider.envVars`
+(Phase 7.5) as the source of truth** — do not hand-type provider env-var
+names from memory, and do not reuse stale names from older reference
+markdown. Required vars must be present in both files; optional vars only
+appear in the production file with a comment noting they're optional.
 Leave secret values blank or as `<<YOUR_API_KEY>>` placeholders. Add both
 files to `.gitignore` as appropriate (sample/template stays committed; secret
 file does not).
@@ -804,6 +971,16 @@ the loop on each round; don't bail after a single message.
 | Exporter `HTTP 401 ... Correlation ID: ...` | OBO token missing or wrong audience; OR `OtelWrite` role not granted to Agent Identity SP | Confirm per-turn `auth.exchange_token(scopes=get_observability_authentication_scope(), auth_handler_id=...)` runs and caches. If still 401, follow the `Agent365.Observability.OtelWrite` Global Admin grant from `instrument-observability/SKILL.md` "S2S Known Issues". |
 | Exporter `HTTP 400 ... TenantIdInvalid` | Wrong/empty `tenant_id` in `AgentDetails` | Confirm `tenant_id` comes from `recipient.tenant_id` (turn context), not env. |
 | Telemetry shows the wrong blueprint — every install gets a different blueprint id | Using `recipient.agentic_app_id` for `agent_blueprint_id` (per-install instance, not blueprint) | Read `AGENT365_BLUEPRINT_ID` from env (populated by `a365 setup all --aiteammate`). See Phase 9 "Identity sources" table. |
+| Exporter logs `invoke_agent` spans only — no sibling `inference` or `execute_tool` spans in the same trace (rule `store_publishing_scopes_present`) | LLM call or tool dispatch isn't wrapped in `InferenceScope` / `ExecuteToolScope` | `InvokeAgentScope` is present but no `InferenceScope` or `ExecuteToolScope` was found in the same trace. Both are required for store publishing — see `instrument-observability` Phase 5.5. |
+| S2S exporter posts succeed (`HTTP 200`) but nothing surfaces in the MAC portal; trace has no `microsoft.a365.caller.*` / `gen_ai.caller.*` attributes (rule `s2s_caller_details_required`) | `CallerDetails` not passed to `InvokeAgentScope.Start()` | S2S agents must populate `CallerDetails` on `InvokeAgentScope.Start()`; without it, traces reach the API (200) but stay invisible in the MAC portal. |
+| Exporter URL contains `/observability/` instead of `/observabilityService/` (rule `s2s_endpoint_path`) | S2S endpoint flag not set | S2S agent posted to `/observability/` instead of `/observabilityService/` — set `Agent365.Exporter.UseS2SEndpoint=true` (.NET) or `AGENT365_USE_S2S_ENDPOINT=true` (Node.js). |
+| Exported spans missing `service.name` resource attribute (rule `resource_service_name_present`) | Resource not configured at OTel init | `service.name` resource attribute is missing — set `SERVICE_NAME` (Node.js/Python) or `use_microsoft_opentelemetry(service_name=...)`. |
+| Log shows `Span has parentSpanId X but parent not found in trace` (rule `parent_span_resolution`) | Parent emit lost or parent context broken | Span has `parentSpanId` but no matching parent in the same trace's captures — likely the parent emit was lost or the agent broke the parent context. |
+| `gen_ai.conversation.id` differs across spans within the same trace (rule `conversation_id_consistency`) | Baggage propagation broken | `gen_ai.conversation.id` differs across spans within one trace — baggage propagation likely broken; check `BaggageBuilder` usage in the message handler. |
+| Non-root span missing `microsoft.a365.agent.id` / `microsoft.a365.tenant.id` baggage (rule `baggage_propagation`) | Baggage set on InvokeAgent but not propagated to children | Required baggage keys missing on a non-root span — baggage was set on the InvokeAgent but not propagated to children. Confirm `BaggageBuilder.run()` wraps the entire handler body. |
+| Exporter URL path contains `/otlp/` (rule `otlp_path_canonical`) | Known Node.js / .NET SDK bug | URL contains `/otlp/` — Node.js / .NET SDK bug. Status: pending SDK fix; no client-side workaround is correct. |
+| `microsoft.a365.exporter.token_aud` ≠ `api://9b975845-388f-4429-889e-eab1ef63949c/.default` (rule `fmi_token_audience`) | Wrong FMI token audience | FMI token audience does not match the Observability API scope — token may be rejected by the gateway. |
+| `inference` span start time precedes its parent `invoke_agent` start (rule `scope_ordering`) | Scope opened outside the parent's using-block, or clock skew | Child scope start time precedes its parent `InvokeAgent` start — likely a clock skew or the scope was opened outside the parent's using-block. |
 | `UnicodeEncodeError: 'charmap' codec can't encode character '\\U0001f527'` (Windows + Python only) | Default `cp1252` stdout can't render emoji in log messages | Run with `python -X utf8` (or set `PYTHONUTF8=1`). |
 | Agent crashes silently on start with no error in tunnel logs | stdout/stderr swallowed by detached host | Run the agent in the foreground for one round to capture the traceback, then re-detach once fixed. |
 
