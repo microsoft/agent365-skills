@@ -63,6 +63,10 @@ hooks:
 
 ## Phase 0 — Load Context
 
+> **Show the user a visible task checklist BEFORE Phase 1 work begins.** This skill has no per-phase `TaskCreate` calls in the body — derive the checklist from the phase headers (`## Phase 0 — Load Context`, `## Phase 1 — Collect Provisioning Inputs`, `## Phase 2 — Register with Agent 365`, etc.). Exactly one item in_progress at a time; complete before moving on.
+> - **Claude Code:** call `TaskCreate` once per phase header (already in `allowed-tools`); the list renders natively. Use `TaskUpdate` to flip statuses.
+> - **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — emit a markdown checklist directly in chat (`- [ ] Load context…`, `- [ ] Collect provisioning inputs…`, etc.) and edit items to `- [x]` as each phase completes.
+
 **Check for context passed from a365-setup.** If this skill was invoked by `a365-setup`,
 the session already has `capabilities`, `agentStack`, `programmingLanguage`, and
 `usesTeamsOrCopilot` set. Load those values directly.
@@ -167,42 +171,40 @@ Where will your agent run?
 
 **If Cloud (option 1):** Ask for the full HTTPS endpoint URL (e.g. `https://myagent.azurewebsites.net/api/messages`). Store as `messagingEndpoint`.
 
-**If Local / Dev Tunnel (option 2):** Guide the user through dev tunnel setup:
+**If Local / Dev Tunnel (option 2):** **auto-start the tunnel — do NOT ask the user to paste a URL.**
 
-#### Dev Tunnel Setup
+#### Dev Tunnel Setup (auto-start)
 
-```bash
-devtunnel --version
-```
+1. **Verify CLI is installed:** `devtunnel --version`. If it fails, install it and stop until the user confirms:
 
-If the command fails, install it:
+   | OS | Install command |
+   |----|-----------------|
+   | Windows | `winget install Microsoft.devtunnel` |
+   | macOS | `brew install --cask devtunnel` |
+   | Linux | `curl -sL https://aka.ms/DevTunnelCliInstall | bash` |
 
-| OS | Install command |
-|----|-----------------|
-| Windows | `winget install Microsoft.devtunnel` |
-| macOS | `brew install --cask devtunnel` |
-| Linux | `curl -sL https://aka.ms/DevTunnelCliInstall | bash` |
+2. **Verify login:** `devtunnel user show`. If it exits non-zero or prints "not logged in", run `devtunnel user login` (or `devtunnel user login --device-code` on headless machines), wait for the user to complete sign-in, then retry `devtunnel user show`.
 
-> Ask the user to confirm installation is complete before continuing.
+3. **Create the tunnel + port** (idempotent — treat "already exists" as success). The port is the agent's listening port — `3978` for Node.js / Python, the .NET project's launch port for .NET (default `5000`):
 
-```bash
-# Authenticate with dev tunnel
-devtunnel user login
+   ```bash
+   devtunnel create <agent-name>-tunnel --allow-anonymous
+   devtunnel port create <agent-name>-tunnel -p <port>
+   ```
 
-# Create a persistent named tunnel (reuse the same URL across restarts)
-devtunnel create <agent-name>-tunnel --allow-anonymous
+   Parse the **Tunnel ID** from the create output — format is `<id>.<cluster>` (e.g. `abc123xy.usw3`).
 
-# Start hosting the tunnel (leave this running in a separate terminal)
-devtunnel host <agent-name>-tunnel --port 3978
-```
+4. **Start hosting in the background** — this is a long-running process. Run with `run_in_background=true` so the tunnel keeps running while the skill continues; the user does NOT need a separate terminal:
 
-> Tell the user: "Start the tunnel in a separate terminal and copy the tunnel URL shown in the output (format: `https://<id>-3978.<region>.devtunnels.ms`). Paste it here."
+   ```bash
+   devtunnel host <agent-name>-tunnel
+   ```
 
-Wait for the user to paste the URL. Store as `tunnelUrl`.
-Set `messagingEndpoint = "${tunnelUrl}/api/messages"`.
+5. **Resolve the public URL deterministically** — it is `https://<id-without-cluster>-<port>.<cluster>.devtunnels.ms`. Example: tunnel ID `abc123xy.usw3` + port `3978` → `https://abc123xy-3978.usw3.devtunnels.ms`. Sanity-check with `devtunnel show <agent-name>-tunnel` and confirm the printed Access URL matches.
 
-> **Headless / no browser:** Use `devtunnel user login --device-code` for device-code auth instead.
-> **Tunnel not reachable:** Confirm `--allow-anonymous` flag was used; port firewall rules are not blocking 3978.
+6. **Store `tunnelUrl`** and set `messagingEndpoint = "${tunnelUrl}/api/messages"`. Tell the user verbatim: *"Dev tunnel started at `<URL>`. Hosting in the background — leave this session open. Using this endpoint for `a365 setup all`."*
+
+> **Tunnel not reachable:** confirm `--allow-anonymous` flag was used and the agent process is listening on the configured port.
 
 ---
 

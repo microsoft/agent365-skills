@@ -91,6 +91,10 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 
 ## Phase 0: Load Detection Cache and Validate
 
+> **Task-list display (applies throughout this skill).** This skill creates tasks **inline** via `**TaskCreate** — "..."` markers at the start of each phase, and marks them complete at phase end. The user must see this progress visibly. Each `TaskCreate` line corresponds to one checklist item; exactly one item in_progress at a time.
+> - **Claude Code:** `TaskCreate` is in `allowed-tools` — calling it renders a native checklist UI; subsequent `TaskUpdate` calls flip statuses.
+> - **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — before Phase 0.1, scan this SKILL.md for all `**TaskCreate** — "..."` lines and emit a markdown checklist in chat upfront (`- [ ] Load detection cache…`, `- [ ] Determine agent kind…`, etc.); flip items to `- [x]` as each phase completes.
+
 **TaskCreate** — "Load detection cache and validate with user"
 
 ### Step 0.1 — Triage the workspace

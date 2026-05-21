@@ -133,15 +133,54 @@ Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`
 
 Do **not** proceed to Phase 0C or any further phases. Mark all tasks cancelled and end the session.
 
+### Framework support guard
+
+WorkIQ extension adapters are only published by Microsoft for a subset of frameworks per language. Verified against `Agent365-{dotnet,python,nodejs}` on 2026-05-21. If the cache's `agentStack` falls on the ❌ row for the agent's `programmingLanguage`, hard-stop and end the session.
+
+| `programmingLanguage` | `agentStack` | Status |
+|----------------------|--------------|--------|
+| `DotNet` | `Agent Framework`, `Semantic Kernel` | ✅ Supported (verified samples) |
+| `DotNet` | `Azure AI Foundry` | ✅ Package exists; best-effort wiring (no published sample) |
+| `NodeJS` | `LangChain`, `OpenAI`, `Claude` | ✅ Supported (verified samples) |
+| `NodeJS` | `Semantic Kernel`, `Google ADK` | ❌ Hard-stop — no Microsoft package |
+| `Python` | `Agent Framework`, `OpenAI`, `Google ADK` | ✅ Supported (verified samples) |
+| `Python` | `Semantic Kernel`, `Azure AI Foundry` | ✅ Package exists; best-effort wiring (no published sample) |
+| `Python` | `LangChain` | ❌ Hard-stop — no package, no sample |
+| `Python` | `Claude`, `CrewAI` | ❌ Hard-stop in this skill — samples ship a local DIY scaffold (~165–600 lines), out of scope here |
+
+When hard-stopping, show this message (substitute the values and list the supported stacks for that language):
+
+```
+❌  WorkIQ tools do not have a Microsoft-published adapter for ({programmingLanguage}, {agentStack}).
+
+    Supported in {programmingLanguage}:
+      <list the ✅ agentStacks from the matrix above for that language>
+
+    Options:
+      1. Switch the agent to a supported framework via /agent365:make-ai-teammate.
+      2. (Advanced) Author your own MCP wrapper modeled on the Claude SDK sample's DIY scaffold:
+         https://github.com/microsoft/Agent365-Samples/blob/main/python/claude/sample-agent/mcp_tool_registration_service.py
+         — out of scope for this skill.
+```
+
+Mark all tasks cancelled and end the session. Do **not** proceed to Phase 0C.
+
 ---
 
-## Phase 0C — Create Task List
+## Phase 0C — Create and Display Task List
+
+**Show this checklist to the user BEFORE running Phase 1.** Use whichever mechanism the runtime supports — the user must see the list before any CLI command or code edit happens, and items must be updated as work progresses:
+
+- **Claude Code:** call `TaskCreate` for each item below; it's already in `allowed-tools` and renders natively as a checklist with status icons. Use `TaskUpdate` to mark in_progress / completed.
+- **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — emit a markdown checklist directly in chat (`- [ ] Detect agent type…`) and edit the list to flip items to `- [x]` as each phase completes.
+
+**Either way: exactly one task in_progress at a time; complete it before moving on.**
 
 ```
 TaskCreate: "Detect agent type and check prerequisites"
 TaskCreate: "Show available WorkIQ tools catalog"
 TaskCreate: "Add WorkIQ MCP servers via CLI"
-TaskCreate: "Wire GetMcpToolsAsync in agent code"
+TaskCreate: "Wire MCP tool service in agent code"
 TaskCreate: "Guide permissions handoff"
 TaskCreate: "Set up dev token for testing"
 TaskCreate: "Validate build"
@@ -272,163 +311,160 @@ If a server was already configured, that is expected — the CLI is idempotent.
 
 ---
 
-## Phase 4 — Wire GetMcpToolsAsync in Agent Code
+## Phase 4 — Wire MCP Tool Service in Agent Code
 
-**Mark task in progress: "Wire GetMcpToolsAsync in agent code"**
+**Mark task in progress: "Wire MCP tool service in agent code"**
 
-Follow the patterns in the reference doc for the detected agent type.
+The wiring pattern depends on **both** `programmingLanguage` and `agentStack` from the detection cache (loaded in Phase 0A Step 2; framework support guard in Phase 0B has already hard-stopped any unsupported pair). Pick the branch from the routing table:
 
-### For .NET AgentFramework
+| `programmingLanguage` | `agentStack` | Branch |
+|----------------------|--------------|--------|
+| `DotNet` | `Agent Framework` | §4.1 — .NET Agent Framework |
+| `DotNet` | `Semantic Kernel` | §4.2 — .NET Semantic Kernel |
+| `DotNet` | `Azure AI Foundry` | §4.3 — .NET Azure AI Foundry (best-effort; no published sample) |
+| `NodeJS` | `LangChain` | §4.4 — Node.js LangChain |
+| `NodeJS` | `OpenAI` | §4.5 — Node.js OpenAI |
+| `NodeJS` | `Claude` | §4.6 — Node.js Claude SDK |
+| `Python` | `Agent Framework` | §4.7 — Python Agent Framework |
+| `Python` | `OpenAI` | §4.8 — Python OpenAI |
+| `Python` | `Google ADK` | §4.9 — Python Google ADK |
+| `Python` | `Semantic Kernel` | §4.10 — Python Semantic Kernel (best-effort; no published sample) |
+| `Python` | `Azure AI Foundry` | §4.11 — Python Azure AI Foundry (best-effort; no published sample) |
 
-#### 4A — Install tooling package (if not present)
+> Detailed code patterns for each branch live in the language-specific reference docs:
+> - .NET: `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/dotnet-workiq.md`
+> - Node.js: `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md`
+> - Python: `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/python-workiq.md`
 
-Check `.csproj` for `Microsoft.Agents.A365.Tooling`:
+For every branch:
+1. Mark new code with `// A365 WorkIQ — added by add-workiq-tools skill` (.NET / Node.js) or `# A365 WorkIQ — added by add-workiq-tools skill` (Python). For **best-effort** branches use `… best-effort wiring (verify against SDK source before production)` instead.
+2. **Grep** for the framework's wiring symbol (`GetMcpToolsAsync` / `AddToolServersToAgentAsync` / `addToolServersToAgent` / `add_tool_servers_to_agent` / `McpToolRegistrationService`) before editing — skip the wiring step if already present.
 
-**Grep** `Microsoft.Agents.A365.Tooling` in `**/*.csproj`
+---
 
-If missing, install core + the adapter for the detected framework:
-```bash
-dotnet add package Microsoft.Agents.A365.Tooling
-dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
-# or for Semantic Kernel:
-# dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel
-```
+### §4.1 .NET Agent Framework
 
-#### 4B — Register services in Program.cs
+1. **Grep** `Microsoft.Agents.A365.Tooling` in `**/*.csproj`. If missing:
+   ```bash
+   dotnet add package Microsoft.Agents.A365.Tooling
+   dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
+   ```
+2. **Read** `dotnet-workiq.md` — sections "Program.cs — Service Registration" and "Agent Class — GetMcpToolsAsync (Agent Framework)".
+3. **Edit** `Program.cs`: add `builder.Services.AddMcpServices();` (preferred one-liner) or the two-line `AddSingleton` form (matches the sample). Skip if already present.
+4. **Edit** the `AgentApplication` subclass: add the `GetMcpToolsAsync` call inside **`OnMessageAsync`** (Agent Framework's per-turn handler) — **not** `OnMessageActivityAsync` (older docs in this repo had that wrong; the verified sample uses `OnMessageAsync`).
 
-**Read** `Program.cs`. **Grep** for `IMcpToolRegistrationService`.
+### §4.2 .NET Semantic Kernel
 
-If not registered, **Edit** `Program.cs`:
-```csharp
-// A365 WorkIQ — added by add-workiq-tools skill
-builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
-builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
-```
+> **SK API differs from AF.** SK uses `AddToolServersToAgentAsync` (mutates `Kernel`, void return), called **during agent initialization** — not per-message. Do not copy the AF pattern.
 
-#### 4C — Call GetMcpToolsAsync in the agent class
+1. Install:
+   ```bash
+   dotnet add package Microsoft.Agents.A365.Tooling
+   dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel
+   ```
+2. **Read** `dotnet-workiq.md` — section "Agent Class — AddToolServersToAgentAsync (Semantic Kernel)".
+3. **Edit** the agent-initialization code: call `AddToolServersToAgentAsync(kernel, userAuthorization, authHandlerName, turnContext, bearerToken?)` after the `Kernel` is built and before the first run.
 
-**Glob** `**/*.cs` and find the AgentApplication subclass (the message handler).
-**Grep** `GetMcpToolsAsync` — if already present, skip this step.
+### §4.3 .NET Azure AI Foundry (BEST-EFFORT — no published sample)
 
-If missing, **Edit** the agent class to add inside `OnMessageActivityAsync` (or equivalent):
-```csharp
-// A365 WorkIQ — added by add-workiq-tools skill
-// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-var workIQTools = await _toolService.GetMcpToolsAsync(
-    agentId,
-    UserAuthorization,  // "AGENTIC" handler for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
-    handlerForMcp,
-    context
-).ConfigureAwait(false);
-// Pass workIQTools to your AI chat client / function calling pipeline
-```
+Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling.Extensions.AzureAIFoundry` package but no sample exists for it. Skill installs the package and stops — wire the call manually after reading the SDK source."*
 
-Do NOT pass a `tokenOverride` parameter — the SDK resolves tokens automatically.
+1. Install:
+   ```bash
+   dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AzureAIFoundry
+   ```
+2. Direct the user to the SDK source: https://github.com/microsoft/Agent365-dotnet/tree/main/src/Tooling/Extensions/AzureAIFoundry
+3. Do **not** generate wiring code. Mark this branch complete with a best-effort note in the final summary.
 
-Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
+### §4.4 Node.js LangChain
 
-### For Node.js LangChain
+1. **Grep** `agents-a365-tooling` in `**/package.json`. If missing:
+   ```bash
+   npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-langchain
+   ```
+2. **Read** `nodejs-workiq.md` — section "LangChain — Wiring (VERIFIED)".
+3. **Edit** `src/client.ts` (or wherever the `getClient` factory lives). Add module-level `toolService = new McpToolRegistrationService()` singleton and the per-turn call inside `getClient`. **Capture the return value** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
 
-#### 4A — Install tooling packages (if not present)
+### §4.5 Node.js OpenAI
 
-**Grep** `agents-a365-tooling` in `**/package.json`. If missing, install core + the adapter for the detected framework:
-```bash
-npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-langchain
-# or for OpenAI:
-# npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-openai
-# or for Semantic Kernel:
-# npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-semantic-kernel
-```
+1. Install:
+   ```bash
+   npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-openai
+   ```
+2. **Read** `nodejs-workiq.md` — section "OpenAI Agents SDK — Wiring (VERIFIED)".
+3. **Edit** the `getClient` factory. OpenAI extension **mutates `agent.mcpServers` in place** — do not assign the return to a new variable (that's the LangChain pattern). Sample uses variable name `agent`, not `personalizedAgent`.
 
-#### 4B — Wire McpToolRegistrationService in client.ts
+### §4.6 Node.js Claude SDK
 
-**Read** `src/client.ts` (or the file containing the LangChain `getClient` factory).
-**Grep** `McpToolRegistrationService` — if already present, skip.
+1. Install:
+   ```bash
+   npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extensions-claude
+   ```
+2. **Read** `nodejs-workiq.md` — section "Claude SDK — Wiring (VERIFIED)".
+3. **Edit** the `getClient` factory. First arg to `addToolServersToAgent` is the `Options` object from `@anthropic-ai/claude-agent-sdk`, **not** an Agent. Mutates `options.allowedTools` and `options.mcpServers`; return type is `Promise<void>`.
 
-If missing, **Edit** the client file to add:
+### §4.7 Python Agent Framework
 
-1. Module-level singleton (outside any function, at the top of the file):
-```typescript
-// A365 WorkIQ — added by add-workiq-tools skill
-import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';
-const toolService = new McpToolRegistrationService();
-```
+1. **Grep** `microsoft-agents-a365-tooling` in `requirements.txt` / `pyproject.toml`. If missing:
+   ```bash
+   pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agentframework 2>/dev/null \
+     || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agentframework
+   ```
+   **Edit** `requirements.txt` or `[project.dependencies]` in `pyproject.toml` to add both package names — `pip install` alone does NOT update either file, and the validator requires their presence.
 
-2. Inside the per-turn `getClient()` factory, after creating the base agent and before
-   returning the client:
-```typescript
-// A365 WorkIQ — added by add-workiq-tools skill
-// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-let agentWithTools = personalizedAgent;
-try {
-  agentWithTools = await toolService.addToolServersToAgent(
-    personalizedAgent,
-    authorization,
-    authHandlerName,  // "AGENTIC" for all authMode values; identity (obo / s2s / agentic-user) is determined by Azure AD
-    turnContext,
-    process.env.BEARER_TOKEN ?? '',
-  );
-} catch (error) {
-  console.error('Error adding MCP tool servers:', error);
-  // falls back to agent without tools
-}
-```
+   > Package suffix is **`agentframework`** (single word, no internal dash). `…-agent-framework` is not a valid PyPI name and will fail `pip install`.
+2. **Read** `python-workiq.md` — section "Python Agent Framework — Wiring (VERIFIED)".
+3. **Edit** `agent.py` to add the `tool_service` singleton, `mcp_servers_initialized` flag, the `setup_mcp_servers` method, and the call from `process_user_message`. **AF kwarg is `turn_context=`**, not `context=`. **`initial_tools=[]` is required** (positional, no default).
 
-Mark all new lines: `// A365 WorkIQ — added by add-workiq-tools skill`
+### §4.8 Python OpenAI
 
-### For Python
+1. Install:
+   ```bash
+   pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-openai 2>/dev/null \
+     || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-openai
+   ```
+   Edit `requirements.txt` / `pyproject.toml` to add both package names.
+2. **Read** `python-workiq.md` — section "Python OpenAI Agents SDK — Wiring (VERIFIED)".
+3. **Edit** `agent.py` with the sample's 3-priority ladder (USE_AGENTIC_AUTH → bearer-token → handler-only). Kwarg is `context=` (not `turn_context=`). No `agentic_app_id`, no `initial_tools` (OpenAI extension doesn't require it).
 
-#### 4A — Install tooling packages (if not present)
+### §4.9 Python Google ADK
 
-**Grep** `microsoft-agents-a365-tooling` in `requirements.txt` or `pyproject.toml`. If missing:
-```bash
-pip3 install microsoft-agents-a365-tooling 2>/dev/null || pip install microsoft-agents-a365-tooling
-```
+1. Install:
+   ```bash
+   pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-googleadk 2>/dev/null \
+     || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-googleadk
+   ```
+   Edit `requirements.txt` / `pyproject.toml`.
+2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED)".
+3. **Edit** `agent.py` to wrap the call in `asyncio.wait_for(timeout=10.0)` and pass `agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123")`. Pre-skip if neither bearer token nor auth handler is available (Playground scenario).
 
-Then install the extension for the detected framework:
-```bash
-# AgentFramework
-pip3 install microsoft-agents-a365-tooling-extensions-agent-framework 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-agent-framework
-# LangChain
-pip3 install microsoft-agents-a365-tooling-extensions-langchain 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-langchain
-# OpenAI Agents SDK
-pip3 install microsoft-agents-a365-tooling-extensions-openai 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-openai
-# Semantic Kernel
-pip3 install microsoft-agents-a365-tooling-extensions-semantic-kernel 2>/dev/null || pip install microsoft-agents-a365-tooling-extensions-semantic-kernel
-```
+### §4.10 Python Semantic Kernel (BEST-EFFORT — no published sample)
 
-Update `requirements.txt` or `pyproject.toml` to record the installed packages.
+Tell the user verbatim: *"No Microsoft sample exists for Python Semantic Kernel. Wiring shape is inferred from the SDK signature — verify against the SDK source before production deployment."*
 
-#### 4B — Wire McpToolRegistrationService in agent code
+1. Install:
+   ```bash
+   pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-semantickernel 2>/dev/null \
+     || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-semantickernel
+   ```
+   Edit `requirements.txt` / `pyproject.toml`.
+2. **Read** `python-workiq.md` — section "Python Semantic Kernel — Wiring (BEST-EFFORT — no published sample)".
+3. **Edit** the agent code with the best-effort call shown there. Mark every new line with `# A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
 
-**Grep** `McpToolRegistrationService` or `get_mcp_tools_async` — if already present, skip.
+### §4.11 Python Azure AI Foundry (BEST-EFFORT — no published sample)
 
-Follow the pattern for the detected framework in `python-workiq.md`:
+Tell the user verbatim: *"No Microsoft sample exists for Python Azure AI Foundry. The exact import path is not independently verified. Skill installs the package and stops — wire the call manually after reading the SDK source."*
 
-**AgentFramework** — add a module-level singleton and call `get_mcp_tools_async` inside the message handler:
-```python
-# A365 WorkIQ — added by add-workiq-tools skill
-from microsoft_agents_a365.tooling.extensions.agent_framework import McpToolRegistrationService
+1. Install:
+   ```bash
+   pip3 install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-azureaifoundry 2>/dev/null \
+     || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-azureaifoundry
+   ```
+   Edit `requirements.txt` / `pyproject.toml`.
+2. Direct the user to the SDK source: https://github.com/microsoft/Agent365-python/tree/main/libraries/microsoft-agents-a365-tooling-extensions-azureaifoundry
+3. Do **not** generate wiring code. Mark this branch complete with a best-effort note.
 
-_tool_service = McpToolRegistrationService()
-
-# Inside on_message_activity (or equivalent):
-# A365 WorkIQ — added by add-workiq-tools skill
-# A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
-work_iq_tools = await _tool_service.get_mcp_tools_async(
-    agent_id,
-    turn_context.activity.caller_id,  # "AGENTIC" handler for all authMode values
-    "AGENTIC",
-    turn_context
-)
-# Pass work_iq_tools to your LLM/function-calling pipeline
-```
-
-**LangChain / other frameworks** — see `python-workiq.md` for the `add_tool_servers_to_agent` pattern. Always catch exceptions and fall back gracefully.
-
-Mark all new lines: `# A365 WorkIQ — added by add-workiq-tools skill`
-
-**Mark task complete: "Wire GetMcpToolsAsync in agent code"**
+**Mark task complete: "Wire MCP tool service in agent code"**
 
 ---
 

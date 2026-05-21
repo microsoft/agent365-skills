@@ -114,14 +114,33 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 - "add work iq calendar"
 
 **Summary of what this skill does:**
-1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.local.json` so subsequent skills skip re-asking
+1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.local.json` so subsequent skills skip re-asking.
    - **S2S block:** if `authMode = s2s`, the skill exits immediately — WorkIQ is not available for S2S agents (requires a delegated OBO token at runtime). "Autonomous" agents can run on either OBO or S2S; this block applies specifically to S2S, not to "autonomous" as a whole.
-2. Runs `a365 develop list-available` to show the MCP server catalog
-3. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`)
-4. Wires `McpToolRegistrationService` in the agent code (.NET, Node.js, or Python)
-5. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; supports V1/V2 mixed manifests, use `--remove-legacy-scopes` for V2 migration)
+   - **Framework support guard (Phase 0B):** verified against Agent365-{dotnet,python,nodejs} SDK source on 2026-05-21. Hard-stops on `(programmingLanguage, agentStack)` pairs that have no Microsoft-published adapter — see support matrix below. Hard-stop fires **before** any CLI command runs and ends the session with a message pointing at supported framework alternatives.
+2. Displays a visible TODO checklist to the user **before** Phase 1 (Claude Code uses `TaskCreate`; Copilot / Copilot CLI must emit a markdown checklist — `- [ ] Detect agent type…` — and update items to `- [x]` as phases complete).
+3. Runs `a365 develop list-available` to show the MCP server catalog.
+4. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`).
+5. **Phase 4 is framework-aware** — branches on the cached `agentStack` into 11 sub-sections (§4.1 .NET Agent Framework, §4.2 .NET Semantic Kernel, §4.3 .NET Azure AI Foundry best-effort, §4.4 Node.js LangChain, §4.5 Node.js OpenAI, §4.6 Node.js Claude SDK, §4.7 Python Agent Framework, §4.8 Python OpenAI, §4.9 Python Google ADK, §4.10 Python Semantic Kernel best-effort, §4.11 Python Azure AI Foundry best-effort). The wiring symbol differs per stack: .NET AF uses `GetMcpToolsAsync`; .NET SK uses `AddToolServersToAgentAsync` (different namespace, mutates `Kernel`, void return); Node.js LangChain captures the returned new agent; Node.js OpenAI/Claude mutate in place; Python all use `add_tool_servers_to_agent` but with different kwargs (`turn_context=` for AF, `context=` for OpenAI/SK/ADK). **Do not cross-paste between sections** — kwarg name and parameter shape vary.
+6. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; supports V1/V2 mixed manifests, use `--remove-legacy-scopes` for V2 migration).
+
+**Verified support matrix:**
+
+| Lang | Stack | Status |
+|------|-------|--------|
+| .NET | Agent Framework, Semantic Kernel | ✅ Supported (verified samples) |
+| .NET | Azure AI Foundry | ✅ Package; best-effort wiring (no published sample) |
+| Node.js | LangChain, OpenAI Agents SDK, Claude SDK | ✅ Supported (verified samples) |
+| Node.js | Semantic Kernel, Google ADK | ❌ Hard-stop — no Microsoft package |
+| Python | Agent Framework, OpenAI Agents SDK, Google ADK | ✅ Supported (verified samples) |
+| Python | Semantic Kernel, Azure AI Foundry | ✅ Package; best-effort wiring (no published sample) |
+| Python | LangChain | ❌ Hard-stop — no package, no sample |
+| Python | Claude SDK, CrewAI | ❌ Hard-stop in this skill — samples ship a local DIY `mcp_tool_registration_service.py` scaffold (~165–600 lines), out of scope |
 
 **Prerequisite:** `a365-setup` must be run first. Reads `.a365-workspace-detection.local.json` to skip re-detection.
+
+**Generated code marker conventions:**
+- Verified branches: `// A365 WorkIQ — added by add-workiq-tools skill` (.NET / Node.js) or `# A365 WorkIQ — added by add-workiq-tools skill` (Python)
+- Best-effort branches (Python SK, Python/.NET Azure AI Foundry): `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)` (or `#` prefix for Python)
 
 **Reference patterns:**
 - .NET: [plugins/agent365/skills/add-workiq-tools/references/dotnet-workiq.md](../plugins/agent365/skills/add-workiq-tools/references/dotnet-workiq.md)

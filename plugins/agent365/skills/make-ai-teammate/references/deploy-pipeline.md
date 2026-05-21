@@ -168,20 +168,22 @@ How is your agent hosted?
 
 Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-workspace-detection.local.json`.
 
-- **`runTargetHosting = "devtunnel"`:** if no `https://...devtunnels.ms` URL is present in `a365.generated.config.json`, walk the user through the canonical Dev Tunnel setup ([reference](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels)):
+- **`runTargetHosting = "devtunnel"`:** **auto-start the tunnel — do NOT ask the user to paste a URL.** Use the agent name from session context (or cache) as the tunnel name so the URL is stable across restarts ([reference](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels)):
 
-  ```bash
-  # 1. Sign in
-  devtunnel user login
-  # 2. Create a persistent tunnel — returns a tunnel ID
-  devtunnel create --allow-anonymous
-  # 3. Configure the tunnel port (3978 for Python/Node.js, 5000 for .NET if used)
-  devtunnel port create <tunnel-id> -p 3978
-  # 4. Start hosting (leave running in a separate terminal)
-  devtunnel host <tunnel-id>
-  ```
-
-  The host command prints a tunnel URL like `https://abc123xyz.devtunnels.ms:3978`. Ask the user to paste it. Append `/api/messages` and store as `chosenEndpoint`. Verify the tunnel is active by running `devtunnel list` and confirming **Host Connections** is `>0`.
+  1. **Verify CLI is installed:** `devtunnel --version`. If it fails, install with `winget install Microsoft.devtunnel` (Windows), `brew install --cask devtunnel` (macOS), or `curl -sL https://aka.ms/DevTunnelCliInstall | bash` (Linux), and stop until the user confirms install is complete.
+  2. **Verify login:** `devtunnel user show`. If it exits non-zero or prints "not logged in", run `devtunnel user login` (or `devtunnel user login --device-code` on headless machines), wait for the user to complete sign-in, then retry `devtunnel user show`.
+  3. **Create the tunnel** (idempotent — treat "already exists" as success). Pick the port from `programmingLanguage` in `.a365-workspace-detection.local.json`: `3978` for Node.js / Python, the .NET project's launch port for .NET (default `5000`).
+     ```bash
+     devtunnel create <agent-name>-tunnel --allow-anonymous
+     devtunnel port create <agent-name>-tunnel -p <port>
+     ```
+     Parse the **Tunnel ID** from the create output — format is `<id>.<cluster>` (e.g. `abc123xy.usw3`).
+  4. **Start hosting in the background** — this is a long-running process, run with `run_in_background=true` so the tunnel keeps running while the skill continues. The user does NOT need to open a separate terminal.
+     ```bash
+     devtunnel host <agent-name>-tunnel
+     ```
+  5. **Resolve the public URL deterministically** — it is `https://<id-without-cluster>-<port>.<cluster>.devtunnels.ms`. Example: tunnel ID `abc123xy.usw3` + port `3978` → `https://abc123xy-3978.usw3.devtunnels.ms`. Sanity-check by running `devtunnel show <agent-name>-tunnel` and confirming the printed Access URL matches.
+  6. **Store `chosenEndpoint`** = `<tunnel URL>/api/messages`. Tell the user verbatim: *"Dev tunnel started at `<URL>`. Hosting in the background — leave this session open. Using this endpoint for the rest of the flow."*
 
 - **`runTargetHosting = "cloud"`:** ask the user for the full messaging endpoint URL (must be HTTPS and end in `/api/messages`). If they don't have one yet, point them at the appropriate deploy guide above for their chosen platform. Store as `chosenEndpoint`.
 
