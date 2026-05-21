@@ -5,7 +5,16 @@
  * validate-add-workiq-tools.js
  *
  * Stop hook validator for the add-workiq-tools skill.
- * Checks that WorkIQ MCP servers were added via the a365 CLI and wired in agent code.
+ * Verifies that WorkIQ MCP servers were added via the a365 CLI and that the agent code
+ * uses the framework-specific symbols expected by the (programmingLanguage, agentStack)
+ * pair recorded in .a365-workspace-detection.local.json.
+ *
+ * Hard-stop framework pairs (Python LangChain / Claude / CrewAI; Node.js Semantic Kernel /
+ * Google ADK) early-exit clean — the skill aborted at Phase 0B framework support guard
+ * and no MCP wiring is expected.
+ *
+ * If the cache is missing or the stack is unrecognized, falls back to a loose
+ * language-only check (no regression vs the earlier framework-blind validator).
  *
  * Exit codes:
  *   0  → ok: true  (session may end)
@@ -21,8 +30,51 @@ function runCmd(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 8000 }); } catch { return ''; }
 }
 
+// Normalize agentStack labels: "Agent Framework" → "agentframework",
+// "Google ADK" → "googleadk", "Azure AI Foundry" → "azureaifoundry", etc.
+function normalizeStack(s) {
+  return (s || '').toLowerCase().replace(/[\s_-]/g, '');
+}
+
+function normalizeLanguage(s) {
+  return (s || '').toLowerCase();
+}
+
 const cwd  = process.cwd();
 const issues = [];
+
+// ── Read detection cache for agentStack + programmingLanguage ────────────────
+
+let agentStack = '';
+let cachedLanguage = '';
+try {
+  const cachePath = path.join(cwd, '.a365-workspace-detection.local.json');
+  if (fs.existsSync(cachePath)) {
+    const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    agentStack     = normalizeStack(cache.agentStack);
+    cachedLanguage = normalizeLanguage(cache.programmingLanguage);
+  }
+} catch {
+  // Cache unreadable — fall through to loose detection
+}
+
+// ── Hard-stop pairs: skill exited at Phase 0B; no MCP wiring expected ───────
+
+const HARD_STOP_PAIRS = new Set([
+  'python:langchain',
+  'python:claude',
+  'python:crewai',
+  'nodejs:semantickernel',
+  'nodejs:googleadk',
+]);
+
+if (HARD_STOP_PAIRS.has(`${cachedLanguage}:${agentStack}`)) {
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    note: `Skill exited at Phase 0B framework support guard — (${cachedLanguage}, ${agentStack}) has no Microsoft adapter; no MCP wiring expected.`,
+  }));
+  process.exit(0);
+}
 
 // ── Check 1: ToolingManifest.json exists and contains a WorkIQ server ───────
 
@@ -49,75 +101,158 @@ if (fs.existsSync(manifestPath)) {
   issues.push('ToolingManifest.json not found — run: a365 develop add-mcp-servers "Work IQ Mail" (or other servers)');
 }
 
-// ── Detect project type ─────────────────────────────────────────────────────
-// Single walk; bucket by extension/name afterwards.
+// ── Detect project type (kept for fallback when cache missing) ──────────────
 
-const allFiles    = scanProject(cwd);
-const csprojFiles = filterByName(allFiles, '.csproj');
-const tsFiles     = filterByName(allFiles, '.ts', '.js');
+const allFiles     = scanProject(cwd);
+const csprojFiles  = filterByName(allFiles, '.csproj');
+const tsFiles      = filterByName(allFiles, '.ts', '.js');
 const pkgJsonFiles = filterByName(allFiles, 'package.json');
-const pyFiles     = filterByName(allFiles, '.py');
-const reqFiles    = filterByName(allFiles, 'requirements.txt', 'pyproject.toml');
+const pyFiles      = filterByName(allFiles, '.py');
+const reqFiles     = filterByName(allFiles, 'requirements.txt', 'pyproject.toml');
 
-const isDotnet  = csprojFiles.length > 0;
-const isNodejs  = !isDotnet && pkgJsonFiles.length > 0 && tsFiles.length > 0;
-const isPython  = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
+const isDotnet = csprojFiles.length > 0;
+const isNodejs = !isDotnet && pkgJsonFiles.length > 0 && tsFiles.length > 0;
+const isPython = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
 
-// ── Check 2: Agent code is wired to load MCP servers ──────────────────────────
+// ── Check 2: Agent code wiring — framework-scoped when cache present ────────
 
-if (isDotnet) {
+function checkDotnet() {
   const csFiles = filterByName(allFiles, '.cs');
+  let expectedSymbols;
+  let symbolDescription;
+  let expectedPackage;
 
-  const hasMcpWiring = csFiles.some(f =>
-    fileContains(f, 'GetMcpToolsAsync') ||
-    fileContains(f, 'AddToolServersToAgentAsync') ||
-    fileContains(f, 'IMcpToolRegistrationService')
-  );
-  if (!hasMcpWiring) {
-    issues.push('.NET: No .cs file calls GetMcpToolsAsync, AddToolServersToAgentAsync, or registers IMcpToolRegistrationService');
+  if (agentStack === 'semantickernel') {
+    expectedSymbols   = ['AddToolServersToAgentAsync'];
+    symbolDescription = 'AddToolServersToAgentAsync (Semantic Kernel — Kernel-mutating call, void return)';
+    expectedPackage   = 'Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel';
+  } else if (agentStack === 'azureaifoundry') {
+    expectedSymbols   = ['IMcpToolRegistrationService', 'GetMcpToolsAsync', 'AddToolServersToAgent'];
+    symbolDescription = 'IMcpToolRegistrationService reference (best-effort — no published Foundry sample)';
+    expectedPackage   = 'Microsoft.Agents.A365.Tooling.Extensions.AzureAIFoundry';
+  } else {
+    // Default = Agent Framework (also covers "no cached stack" — preserves current behavior)
+    expectedSymbols   = ['GetMcpToolsAsync', 'AddToolServersToAgent', 'IMcpToolRegistrationService'];
+    symbolDescription = 'GetMcpToolsAsync or AddToolServersToAgent (Agent Framework)';
+    expectedPackage   = 'Microsoft.Agents.A365.Tooling.Extensions.AgentFramework';
   }
 
-  const hasToolingPkg = csprojFiles.some(f => fileContains(f, 'Microsoft.Agents.A365.Tooling'));
+  const hasMcpWiring = csFiles.some(f => expectedSymbols.some(sym => fileContains(f, sym)));
+  if (!hasMcpWiring) {
+    const stackLabel = agentStack ? `.NET ${agentStack}` : '.NET';
+    issues.push(`${stackLabel}: No .cs file references ${symbolDescription}`);
+  }
+
+  const hasToolingPkg = csprojFiles.some(f => fileContains(f, expectedPackage));
   if (!hasToolingPkg) {
-    issues.push('.NET: Microsoft.Agents.A365.Tooling package is not referenced in any .csproj — run: dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework');
+    issues.push(`.NET: ${expectedPackage} not referenced in any .csproj — run: dotnet add package ${expectedPackage}`);
   }
 }
 
-if (isNodejs) {
+function checkNodejs() {
+  let extensionImport;
+  let stackLabel;
+
+  if (agentStack === 'openai') {
+    extensionImport = '@microsoft/agents-a365-tooling-extensions-openai';
+    stackLabel = 'Node.js OpenAI';
+  } else if (agentStack === 'claude') {
+    extensionImport = '@microsoft/agents-a365-tooling-extensions-claude';
+    stackLabel = 'Node.js Claude';
+  } else if (agentStack === 'langchain') {
+    extensionImport = '@microsoft/agents-a365-tooling-extensions-langchain';
+    stackLabel = 'Node.js LangChain';
+  } else {
+    // No cached stack or unrecognized — loose check (current behavior, any extension)
+    extensionImport = '@microsoft/agents-a365-tooling-extensions-';
+    stackLabel = 'Node.js';
+  }
+
   const hasMcpClient = tsFiles.some(f =>
-    fileContains(f, 'A365McpToolClient') ||
-    fileContains(f, 'getToolsAsync') ||
     fileContains(f, 'addToolServersToAgent') ||
-    fileContains(f, 'agents-a365-tooling') ||
     fileContains(f, 'McpToolRegistrationService')
   );
   if (!hasMcpClient) {
-    issues.push('Node.js: No TypeScript/JS file uses McpToolRegistrationService, A365McpToolClient, or imports agents-a365-tooling');
+    issues.push(`${stackLabel}: No TS/JS file calls addToolServersToAgent or imports McpToolRegistrationService`);
   }
 
-  const hasToolingPkg = pkgJsonFiles.some(f => fileContains(f, 'agents-a365-tooling'));
-  if (!hasToolingPkg) {
-    issues.push('Node.js: @microsoft/agents-a365-tooling is not in package.json — run: npm install @microsoft/agents-a365-tooling');
+  const hasExtensionPkg = pkgJsonFiles.some(f => fileContains(f, extensionImport));
+  if (!hasExtensionPkg) {
+    issues.push(`${stackLabel}: ${extensionImport} package not in package.json — run: npm install ${extensionImport}`);
+  }
+
+  // Core package is always required regardless of framework
+  const hasCorePkg = pkgJsonFiles.some(f => fileContains(f, '@microsoft/agents-a365-tooling"'));
+  if (!hasCorePkg) {
+    issues.push('Node.js: @microsoft/agents-a365-tooling (core) not in package.json — run: npm install @microsoft/agents-a365-tooling');
   }
 }
 
-if (isPython) {
-  const hasMcpWiring = pyFiles.some(f =>
-    fileContains(f, 'get_mcp_tools_async') ||
-    fileContains(f, 'add_tool_servers_to_agent') ||
-    fileContains(f, 'McpToolRegistrationService')
+function checkPython() {
+  // Symbol is the same (add_tool_servers_to_agent) across all Python extensions —
+  // the difference is the extension package name. SK and Foundry are best-effort
+  // (no published sample) so use looser symbol checks.
+  let expectedPackage;
+  let stackLabel;
+  let looseSymbolOnly = false;
+
+  if (agentStack === 'agentframework') {
+    expectedPackage = 'microsoft-agents-a365-tooling-extensions-agentframework';
+    stackLabel = 'Python Agent Framework';
+  } else if (agentStack === 'openai') {
+    expectedPackage = 'microsoft-agents-a365-tooling-extensions-openai';
+    stackLabel = 'Python OpenAI';
+  } else if (agentStack === 'googleadk') {
+    expectedPackage = 'microsoft-agents-a365-tooling-extensions-googleadk';
+    stackLabel = 'Python Google ADK';
+  } else if (agentStack === 'semantickernel') {
+    expectedPackage = 'microsoft-agents-a365-tooling-extensions-semantickernel';
+    stackLabel = 'Python Semantic Kernel (best-effort)';
+    looseSymbolOnly = true;
+  } else if (agentStack === 'azureaifoundry') {
+    expectedPackage = 'microsoft-agents-a365-tooling-extensions-azureaifoundry';
+    stackLabel = 'Python Azure AI Foundry (best-effort)';
+    looseSymbolOnly = true;
+  } else {
+    // No cached stack — preserve current loose behavior: just check core tooling
+    expectedPackage = 'microsoft-agents-a365-tooling';
+    stackLabel = 'Python';
+    looseSymbolOnly = true;
+  }
+
+  if (!looseSymbolOnly) {
+    const hasMcpWiring = pyFiles.some(f =>
+      fileContains(f, 'add_tool_servers_to_agent') ||
+      fileContains(f, 'McpToolRegistrationService')
+    );
+    if (!hasMcpWiring) {
+      issues.push(`${stackLabel}: No .py file calls add_tool_servers_to_agent or imports McpToolRegistrationService`);
+    }
+  } else {
+    // Best-effort: at least require some tooling reference
+    const hasAnyToolingRef = pyFiles.some(f =>
+      fileContains(f, 'microsoft_agents_a365') ||
+      fileContains(f, 'McpToolRegistrationService') ||
+      fileContains(f, 'add_tool_servers_to_agent')
+    );
+    if (!hasAnyToolingRef) {
+      issues.push(`${stackLabel}: No .py file references microsoft_agents_a365.tooling or McpToolRegistrationService`);
+    }
+  }
+
+  const expectedPackageUnderscore = expectedPackage.replace(/-/g, '_');
+  const hasExtensionPkg = reqFiles.some(f =>
+    fileContains(f, expectedPackage) ||
+    fileContains(f, expectedPackageUnderscore)
   );
-  if (!hasMcpWiring) {
-    issues.push('Python: No .py file calls get_mcp_tools_async, add_tool_servers_to_agent, or imports McpToolRegistrationService');
-  }
-
-  const hasToolingPkg = reqFiles.some(f =>
-    fileContains(f, 'microsoft-agents-a365-tooling') ||
-    fileContains(f, 'microsoft_agents_a365_tooling'));
-  if (!hasToolingPkg) {
-    issues.push('Python: microsoft-agents-a365-tooling is not in requirements.txt or pyproject.toml — run: pip install microsoft-agents-a365-tooling');
+  if (!hasExtensionPkg) {
+    issues.push(`${stackLabel}: ${expectedPackage} not in requirements.txt or pyproject.toml — append it (pip install does NOT update those files)`);
   }
 }
+
+if (isDotnet) checkDotnet();
+if (isNodejs) checkNodejs();
+if (isPython) checkPython();
 
 // ── Check 3: a365 develop list-configured shows WorkIQ servers ──────────────
 // (best-effort — skip if a365 CLI not installed or not authenticated)
@@ -133,7 +268,6 @@ if (a365Version) {
                            configured.toLowerCase().includes('teams') ||
                            configured.toLowerCase().includes('sharepoint');
     if (!hasWorkIQInCli && !issues.some(i => i.includes('ToolingManifest'))) {
-      // Only flag if manifest check also failed
       console.warn('[validate-add-workiq-tools] Warning: a365 develop list-configured did not show WorkIQ servers');
     }
   }
