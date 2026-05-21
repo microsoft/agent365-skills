@@ -688,45 +688,105 @@ as the blueprint id — produces wrong telemetry attribution:
 Make sure the scaffolded `turn_context_utils` (or language equivalent)
 reads `agent_blueprint_id` from the env var, **not** from `recipient`.
 
-### Prefer manual instrumentation (default) — opt-in to auto-instrumentation
+### ⚠️ AI Teammates: OBO only — S2S is BLOCKED
 
-**Default path: SDK-native manual instrumentation.** Do **not** use the
-unified OpenTelemetry distro (`use_microsoft_opentelemetry` / `useMicrosoftOpenTelemetry` /
-`UseMicrosoftOpenTelemetry`) unless the user explicitly requests
-auto-instrumentation. Instead, wire the A365 SDK directly:
+For AI Teammates, **only the OBO per-turn token path works**. S2S
+`client_credentials` is blocked by Entra's agentic app constraints
+(AADSTS82001 / AADSTS82005). Do NOT attempt the FMI 3-hop chain or any
+service-principal-based token acquisition for AI Teammate observability —
+it will fail at runtime with an Entra error that cannot be resolved by
+configuration. The skill always uses `authMode = obo` for this reason.
 
-| Language     | Manual setup call (replace the distro's `use_*` call)                                                  |
-|--------------|--------------------------------------------------------------------------------------------------------|
-| Python       | `from microsoft_agents_a365.observability.core.config import configure` → `configure(service_name=..., service_namespace=..., token_resolver=...)` once at startup |
-| Node.js      | Use `ObservabilityManager` from `@microsoft/agents-a365-observability` directly (skip `@microsoft/opentelemetry`) |
-| C# / .NET    | `builder.Services.AddAgenticTracingExporter()` + `builder.AddA365Tracing()` (skip `UseMicrosoftOpenTelemetry`) |
+### Use the unified distro (`@microsoft/opentelemetry` / `useMicrosoftOpenTelemetry`)
 
-Pass a `token_resolver` that reads from your in-memory token cache (the
-per-turn `auth.exchange_token` call populates it).
+The legacy individual packages (`@microsoft/agents-a365-observability`,
+`ObservabilityManager`, `@microsoft/agents-a365-observability-hosting`,
+`@microsoft/agents-a365-runtime`) are **deprecated**. Always use the unified
+distro for new agents:
 
-**Manual scopes are the contract.** Wrap the message handler explicitly:
-- `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` — the parent for the whole agent invocation. Pass `CallerDetails` (signed-in user for OBO; Blueprint sponsor for S2S/autonomous) — **required** for traces to appear in the MAC portal.
+| Language     | Setup call                                                                 |
+|--------------|---------------------------------------------------------------------------|
+| Python       | `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)` |
+| Node.js      | `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, tokenResolver } })` from `@microsoft/opentelemetry` |
+| C# / .NET    | `builder.UseMicrosoftOpenTelemetry(o => ...)` (auto-registers `IExporterTokenCache<AgenticTokenStruct>` in DI) |
+
+### Implementation pattern (TypeScript — critical order)
+
+The OTel distro must initialize **before** any other imports so it can patch
+target libraries (OpenAI, LangChain, etc.). The correct pattern:
+
+1. **`src/observability.ts`** — a side-effect module that calls
+   `useMicrosoftOpenTelemetry(...)` at module scope. This file imports `dotenv`
+   first, then `@microsoft/opentelemetry`. It exports nothing used by other
+   modules — its purpose is the side effect of OTel initialization.
+
+2. **`index.ts` first line** — `import './observability.js';` (note `.js`
+   extension for ESM). This ensures the OTel SDK is configured before Express,
+   the Agents SDK, LangChain, or any other module loads.
+
+3. **`configureA365Hosting(adapter)`** — called after the `CloudAdapter` is
+   created. Registers `BaggageMiddleware` automatically (populates baggage
+   from `TurnContext` on every request). Replace any manual
+   `adapter.use(new BaggageMiddleware())` with this one-liner:
+   ```typescript
+   import { configureA365Hosting } from '@microsoft/opentelemetry';
+   configureA365Hosting(adapter, { enableBaggage: true, enableOutputLogging: true });
+   ```
+
+4. **Per-turn token refresh** — in the message handler, call
+   `AgenticTokenCacheInstance.refreshObservabilityToken()` using
+   `recipient.agenticAppId` (the **per-install instance ID**, not the blueprint
+   ID):
+   ```typescript
+   import { AgenticTokenCacheInstance } from '@microsoft/opentelemetry';
+
+   async function preloadObservabilityToken(turnContext: TurnContext): Promise<void> {
+     const agentId = turnContext.activity?.recipient?.agenticAppId ?? '';
+     const tenantId = turnContext.activity?.recipient?.tenantId ?? '';
+     await AgenticTokenCacheInstance.refreshObservabilityToken(
+       agentId,
+       tenantId,
+       turnContext as any,
+       agentApplication.authorization as any,
+     );
+   }
+   ```
+
+5. **`as any` casts are required everywhere** — the GA `@microsoft/opentelemetry`
+   types (`TurnContextLike`, `AuthorizationLike`) are stricter than the
+   `@microsoft/agents-hosting` runtime types. Without `as any`, TypeScript
+   will error on `refreshObservabilityToken`, `BaggageBuilderUtils.fromTurnContext`,
+   and similar call sites. This is expected and documented in the reference.
+
+### Manual scopes (still required for store publishing)
+
+The unified distro handles export plumbing, but you still wrap the handler
+explicitly with scopes:
+
+- `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` — the parent for the whole agent invocation. Pass `CallerDetails` (signed-in user identity) — **required** for traces to appear in the MAC portal.
 - `InferenceScope.start(request, inference_details, agent_details)` — wraps each LLM call (model, provider, optional token counts).
 - `ExecuteToolScope.start(request, tool_details, agent_details)` — wraps each tool call.
 - All three scopes are **required for store publishing**. Use `.start()` factories (context-managers) — not constructors.
 
 For helper utilities that extract identity from `TurnContext` and build
-`AgentDetails` / `CallerDetails` / `Request` objects, scaffold a small
-`turn_context_utils.py` (or language equivalent) so the message handler is
+`AgentDetails` / `CallerDetails` / `A365Request` objects, scaffold a small
+`turn_context_utils.ts` (or language equivalent) so the message handler is
 not cluttered with boilerplate.
 
-**Auto-instrumentation (only on explicit request).** If the user asks for
-auto-instrumentation by name (e.g. "use the OpenTelemetry distro" / "wire up
-auto-instrumentation"), follow the reference's "Unified Distro" sections
-instead. Auto-instrumentation buys broader framework coverage at the cost of
-an extra dependency and an extra magic layer.
+### tokenResolver for the distro
 
-Apply the rest of the reference for the chosen path (packages, BaggageBuilder
-or BaggageMiddleware, per-turn agentic-token refresh, env vars). Mark each
-instrumented block with the comment:
+The `tokenResolver` passed to `useMicrosoftOpenTelemetry` reads from
+`AgenticTokenCacheInstance` (which is populated per-turn by step 4 above):
+
+```typescript
+tokenResolver: (agentId, tenantId) =>
+  AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
+```
+
+Mark each instrumented block with the comment:
 
 ```
-// A365 Observability — best-effort instrumentation
+// A365 Observability — best-effort instrumentation (verify against official sample)
 ```
 
 **Defaults for the env file (Python / Node.js samples):** scaffold the
@@ -752,6 +812,18 @@ exporter is wired in code via `ExportTarget.Agent365` and log levels live in
 > `Microsoft.Agents.A365.Observability` (.NET) logger reads its level from
 > `A365_OBSERVABILITY_LOG_LEVEL`. Hardcoding to `ERROR` makes "is observability
 > working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.
+
+### Dead-ends to avoid (AI Teammate)
+
+Do NOT attempt any of these for AI Teammate observability:
+- **S2S / FMI token chain** — AADSTS82001/82005: Entra blocks `client_credentials`
+  for agentic app registrations. The Agentic User identity is not a service
+  principal and cannot acquire tokens via client-secret or MSI flows.
+- **`ObservabilityManager`** / legacy individual packages — deprecated; the unified
+  distro supersedes them and they will be removed.
+- **Manual `Agent365Exporter` + `spanProcessors` array** — the old S2S workaround
+  from 0.x. `useS2SEndpoint` is now a first-class option in 1.0+ but is
+  irrelevant for AI Teammates (OBO only).
 
 Build at the end to confirm no compile errors.
 
