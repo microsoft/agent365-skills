@@ -493,6 +493,17 @@ Required wiring (all stacks):
 6. All required `Microsoft.Agents.*` / `@microsoft/agents-*` /
    `microsoft_agents_*` packages added.
 
+### Activity validation guard (all stacks)
+
+Wrap the activity processing entry point (`adapter.process()` in Node.js,
+the equivalent in Python/.NET) in a try/catch (or language-appropriate error
+handler). The Agents SDK validates inbound activities using strict schemas —
+malformed payloads (e.g. missing `type` field) will throw an unhandled
+exception and crash the process. The guard should:
+- Catch validation errors and return HTTP 400 with a descriptive message.
+- Log a warning (not an error — invalid input is not an app fault).
+- Never crash or exit the process on bad input.
+
 ### Package versions
 
 Use the `researchedVersions` table captured in Phase 7.5 as the authoritative
@@ -507,6 +518,13 @@ a version conflict appears, resolve it by **moving the conflicting package
 forward to a newer compatible version**, not by downgrading the package
 chosen in Phase 7.5. Re-run the install and confirm it succeeds before
 moving on.
+
+> **Common peer-dep trap (LangChain + TypeScript/Python):** `@langchain/core`
+> must satisfy peer requirements from both `langchain` and any
+> `@langchain/<integration>` packages (e.g. `@langchain/openai`,
+> `@langchain/mcp-adapters`). When in doubt, align the entire `@langchain/*`
+> family to the **same major version** (e.g. all `^1.0.0`). Mixing 0.x and
+> 1.x will produce unresolvable peer conflicts.
 
 
 ### AGENT_LIFECYCLE handler (always include — AI Teammate default)
@@ -769,6 +787,11 @@ already been added to `ToolingManifest.json`, so this phase is mostly about
 wiring the `McpToolRegistrationService` (or language equivalent) into the
 agent code per the reference.
 
+> **API note:** The correct method is `addToolServersToAgent()` (or language
+> equivalent). There is no `getTools()` method on `McpToolRegistrationService`.
+> Always verify the actual API surface from the reference docs — do not guess
+> method names.
+
 Inform the user about the permissions hand-off (`a365 setup permissions mcp`
 or `a365 setup all`) and how to fetch a dev token (`a365 develop get-token`).
 Do not run those — they will be run as part of Phase 12.
@@ -840,6 +863,32 @@ is present. Show the Setup Summary table verbatim.
 
 After setup completes, walk the user through these steps **in order**, asking
 them to confirm each before continuing:
+
+### 13.0 — Switch to production auth mode (CRITICAL for devtunnel)
+
+Before publishing or starting the devtunnel, the agent **must** run with
+production auth enabled. The scaffolded code gates auth loading and network
+binding behind an environment flag — in development mode, auth is disabled
+(agent has no identity) and the server may bind only to localhost (unreachable
+by devtunnel).
+
+Set the production environment flag in the local override env file:
+- **Node.js / TypeScript:** `NODE_ENV=production` in `.env.local`
+- **Python:** `PYTHON_ENVIRONMENT=production` (or equivalent) in `.env.local`
+- **.NET:** `ASPNETCORE_ENVIRONMENT=Production` in `appsettings.Development.json` or launch profile
+
+After setting this, **restart the agent** and verify the startup banner shows:
+1. ✅ The agent's `appId` / `clientId` matches the blueprint ID (NOT `undefined` / empty)
+2. ✅ Server binds to `0.0.0.0` (NOT `127.0.0.1` — devtunnel cannot reach localhost-only)
+3. ✅ Auth handler active (NOT "running anonymous")
+
+If `appId` is undefined/empty: the service connection env vars are missing or
+the local override file has empty `KEY=` lines shadowing the production values
+(see the dotenv load-order pitfall in Phase 8). Fix before continuing.
+
+Do NOT proceed to the devtunnel steps until all three checks pass.
+
+---
 
 1. **Publish the agent**
 
@@ -925,8 +974,13 @@ LOG_LEVEL=DEBUG                           # or PYTHON_ENVIRONMENT=development
 If this is a fresh devtunnel session and the agent process is still running
 from Phase 11/13, **restart it** so the new env vars take effect. Confirm
 startup banner contains:
+- ✅ `appId` / `clientId` shows the blueprint ID (NOT `undefined` / empty)
+- ✅ Bound to `0.0.0.0` (NOT `127.0.0.1` — devtunnel can't reach localhost-only)
 - ✅ A365 observability configured (SDK-native or distro)
 - 🔐 Auth handler in use (e.g. `AGENTIC`) — NOT "running anonymous"
+
+If `appId` is undefined or the server binds to localhost only, revisit Phase
+13.0 — production auth mode is not active.
 
 ### 14.1 — Sanity checks
 
