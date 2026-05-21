@@ -670,23 +670,33 @@ as the blueprint id — produces wrong telemetry attribution:
 Make sure the scaffolded `turn_context_utils` (or language equivalent)
 reads `agent_blueprint_id` from the env var, **not** from `recipient`.
 
-### Prefer manual instrumentation (default) — opt-in to auto-instrumentation
+### Prefer the unified distro (default) — opt-out to SDK-native instrumentation
 
-**Default path: SDK-native manual instrumentation.** Do **not** use the
-unified OpenTelemetry distro (`use_microsoft_opentelemetry` / `useMicrosoftOpenTelemetry` /
-`UseMicrosoftOpenTelemetry`) unless the user explicitly requests
-auto-instrumentation. Instead, wire the A365 SDK directly:
+**Default path: Unified OpenTelemetry distro.** Use the single `Microsoft.OpenTelemetry`
+(.NET) / `@microsoft/opentelemetry` (Node.js) / `microsoft-opentelemetry` (Python)
+package — it re-exports all the A365 observability types (`BaggageBuilder`,
+`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `IExporterTokenCache`,
+`AgentDetails`, `CallerDetails`, etc.) plus configures the OTel pipeline and the
+A365 exporter in one call. Auto-instrumentation for AspNetCore, HttpClient,
+SemanticKernel, OpenAI, AgentFramework, etc. is built in (all default `true`).
 
-| Language     | Manual setup call (replace the distro's `use_*` call)                                                  |
-|--------------|--------------------------------------------------------------------------------------------------------|
-| Python       | `from microsoft_agents_a365.observability.core.config import configure` → `configure(service_name=..., service_namespace=..., token_resolver=...)` once at startup |
-| Node.js      | Use `ObservabilityManager` from `@microsoft/agents-a365-observability` directly (skip `@microsoft/opentelemetry`) |
-| C# / .NET    | `builder.Services.AddAgenticTracingExporter()` + `builder.AddA365Tracing()` (skip `UseMicrosoftOpenTelemetry`) |
+> **⚠️ Do NOT mix the distro with the legacy SDK packages.** Adding
+> `Microsoft.Agents.A365.Observability.Runtime` / `…Hosting` (or their
+> Node.js / Python equivalents) alongside the distro causes CS0433 duplicate-type
+> errors. The distro re-exports those types transitively — let them flow through.
 
-Pass a `token_resolver` that reads from your in-memory token cache (the
-per-turn `auth.exchange_token` call populates it).
+| Language     | Default setup call (distro)                                                                                       |
+|--------------|-------------------------------------------------------------------------------------------------------------------|
+| C# / .NET    | `builder.UseMicrosoftOpenTelemetry(o => { o.Exporters = ExportTarget.Agent365 \| ExportTarget.Console; })` (OBO path — distro auto-registers `IExporterTokenCache<AgenticTokenStruct>`; no separate `AddAgenticTracingExporter()` / `AddA365Tracing()` call needed). For S2S, also set `o.Agent365.Exporter.UseS2SEndpoint = true` and supply `o.Agent365.Exporter.TokenResolver`. |
+| Node.js      | `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, tokenResolver } })` from `@microsoft/opentelemetry`. For S2S, also set `useS2SEndpoint: true`. |
+| Python       | `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)` from `microsoft_opentelemetry`. For S2S, also pass `a365_use_s2s_endpoint=True`. |
 
-**Manual scopes are the contract.** Wrap the message handler explicitly:
+Also wire `.UseOpenTelemetry()` on the `IChatClient` (.NET) / equivalent on the
+chosen AI SDK — that's what makes the SDK emit `gen_ai.inference` / `gen_ai.tool`
+spans for `InvokeAgentScope` to anchor as children.
+
+**Manual scopes are still the contract.** Even with the distro, wrap the message
+handler explicitly:
 - `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` — the parent for the whole agent invocation. Pass `CallerDetails` (signed-in user for OBO; Blueprint sponsor for S2S/autonomous) — **required** for traces to appear in the MAC portal.
 - `InferenceScope.start(request, inference_details, agent_details)` — wraps each LLM call (model, provider, optional token counts).
 - `ExecuteToolScope.start(request, tool_details, agent_details)` — wraps each tool call.
@@ -697,11 +707,20 @@ For helper utilities that extract identity from `TurnContext` and build
 `turn_context_utils.py` (or language equivalent) so the message handler is
 not cluttered with boilerplate.
 
-**Auto-instrumentation (only on explicit request).** If the user asks for
-auto-instrumentation by name (e.g. "use the OpenTelemetry distro" / "wire up
-auto-instrumentation"), follow the reference's "Unified Distro" sections
-instead. Auto-instrumentation buys broader framework coverage at the cost of
-an extra dependency and an extra magic layer.
+**Opt-out: SDK-native manual instrumentation.** Only fall back to the legacy
+A365 SDK packages if the user explicitly asks (e.g. "use the SDK directly" /
+"skip the OpenTelemetry distro" / "manual instrumentation only"). In that
+case, swap the distro call for these:
+
+| Language     | Manual setup call (replace the distro's call) |
+|--------------|------------------------------------------------|
+| C# / .NET    | Install `Microsoft.Agents.A365.Observability.Runtime` + `…Hosting`; then `builder.Services.AddAgenticTracingExporter()` + `builder.AddA365Tracing()` (skip `UseMicrosoftOpenTelemetry`) |
+| Node.js      | Use `ObservabilityManager` from `@microsoft/agents-a365-observability` directly (skip `@microsoft/opentelemetry`) |
+| Python       | `from microsoft_agents_a365.observability.core.config import configure` → `configure(service_name=..., service_namespace=..., token_resolver=...)` once at startup |
+
+The SDK-native path buys finer control at the cost of losing built-in
+auto-instrumentation for AspNetCore / HttpClient / SemanticKernel / OpenAI /
+AgentFramework — you have to install and wire each extension package yourself.
 
 Apply the rest of the reference for the chosen path (packages, BaggageBuilder
 or BaggageMiddleware, per-turn agentic-token refresh, env vars). Mark each
@@ -729,11 +748,12 @@ exporter is wired in code via `ExportTarget.Agent365` and log levels live in
 `appsettings.json`.)
 
 > **Don't pin the observability logger below the env var.** Wire your host so
-> that the `microsoft_agents_a365.observability` (Python) /
-> `@microsoft/agents-a365-observability` (Node.js) /
-> `Microsoft.Agents.A365.Observability` (.NET) logger reads its level from
-> `A365_OBSERVABILITY_LOG_LEVEL`. Hardcoding to `ERROR` makes "is observability
-> working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.
+> that the observability logger reads its level from `A365_OBSERVABILITY_LOG_LEVEL`.
+> Logger categories depend on which path you chose:
+> - **Distro (default):** `microsoft_opentelemetry` (Python) / `@microsoft/opentelemetry` (Node.js) / `Microsoft.OpenTelemetry` (.NET)
+> - **SDK-native (opt-out):** `microsoft_agents_a365.observability` (Python) / `@microsoft/agents-a365-observability` (Node.js) / `Microsoft.Agents.A365.Observability` (.NET)
+>
+> Hardcoding to `ERROR` makes "is observability working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.
 
 Build at the end to confirm no compile errors.
 
