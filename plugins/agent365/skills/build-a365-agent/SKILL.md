@@ -773,6 +773,33 @@ exporter is wired in code via `ExportTarget.Agent365` and log levels live in
 >
 > Hardcoding to `ERROR` makes "is observability working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.
 
+### AI Teammate OTel debugging
+
+1. **S2S is BLOCKED for AI Teammates** — AADSTS82001/82005. Entra blocks
+   `client_credentials` for agentic app registrations. Only the OBO per-turn
+   token path works. Do NOT attempt the FMI 3-hop chain.
+
+2. **Init order is critical** — the OTel distro must initialize **before** any
+   LLM / orchestration framework imports so it can patch target libraries.
+   Create a dedicated side-effect module that calls the distro setup at module
+   scope, then import it as the very first line of your entry point.
+
+3. **`configureA365Hosting(adapter)`** — call after adapter creation to
+   register `BaggageMiddleware` automatically (populates baggage from
+   `TurnContext` on every request). Replaces any manual middleware wiring.
+
+4. **Per-turn token refresh uses the per-install instance ID** — pass
+   `recipient.agenticAppId` (Node.js/Python) or
+   `activity.GetAgenticInstanceId()` (.NET) as the `agentId` argument to the
+   token refresh call. Do NOT pass the blueprint ID here — that's a different
+   identifier.
+
+5. **Type casts may be required** — the GA distro's interface types can be
+   stricter than the Agents SDK's runtime types (e.g. `TurnContextLike` vs
+   the actual `TurnContext`). Use language-appropriate casts (`as any` in
+   TypeScript, explicit interface implementations in .NET) when the compiler
+   complains at token-refresh or baggage-builder call sites.
+
 Build at the end to confirm no compile errors.
 
 ---
