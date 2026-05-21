@@ -1,0 +1,35 @@
+{
+  "agent": {
+    "path": "C:\\src\\Repos\\Agent365-Samples\\dotnet\\agent-framework\\sample-agent",
+    "language": "dotnet"
+  },
+  "tiers": {
+    "structural": {
+      "checks": [
+        { "name": "config-exists",    "ok": true },
+        { "name": "config-format",    "ok": true },
+        { "name": "config-schema",    "ok": true },
+        { "name": "tooling-manifest", "ok": true, "message": "1 MCP server(s) configured" }
+      ],
+      "ok": true
+    },
+    "build": {
+      "log": "  AgentFrameworkSampleAgent -> C:\\src\\Repos\\Agent365-Samples\\dotnet\\agent-framework\\sample-agent\\bin\\Debug\\net8.0\\AgentFrameworkSampleAgent.dll\r\n\r\nBuild succeeded.\r\n    0 Warning(s)\r\n    0 Error(s)\r\n\r\nTime Elapsed 00:00:01.12",
+      "exitCode": 0,
+      "ok": true
+    },
+    "boot": {
+      "port": 5000,
+      "bootMs": 1639,
+      "ok": true
+    },
+    "conversation": { "skipped": true, "reason": "not yet implemented" },
+    "telemetry":    { "skipped": true, "reason": "not yet implemented" },
+    "blueprint":    { "skipped": true, "reason": "not yet implemented" },
+    "mac":          { "skipped": true, "reason": "not yet implemented" },
+    "m365":         { "skipped": true, "reason": "not yet implemented" },
+    "judge":        { "skipped": true, "reason": "not yet implemented" }
+  },
+  "repair":  { "skipped": true, "reason": "not yet implemented" },
+  "summary": { "ok": true }
+}

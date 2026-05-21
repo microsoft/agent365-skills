@@ -9,7 +9,7 @@ description: >
   (uses make-ai-teammate references for boilerplate including notification handlers;
   pins packages to the latest stable versions found, preferring newer versions when
   resolving incompatibilities), observability instrumentation (instrument-observability),
-  WorkIQ tool wiring (add-workiq-tools), local AgentsPlayground test (test-local), A365
+  WorkIQ tool wiring (add-workiq-tools), local validation via `a365 validate`, A365
   setup with blueprint (a365-setup), and the publish + devtunnel + Teams Developer
   Portal hand-off. Always provisions as AI Teammate (OBO).
 compatibility:
@@ -57,11 +57,22 @@ hooks:
            extra questions asked).
         9. add-workiq-tools work was completed using the MCP selection from step 4
            (no extra questions asked).
-        10. Build + local AgentsPlayground test ran AND the agent responded
-            successfully to at least one message before continuing past Phase 11.
-        11. `a365 setup all --aiteammate` (with blueprint) completed; user was then
-            walked through publish + devtunnel + Teams Dev Portal endpoint + create
-            agent instance + devtunnel test.
+        10. `a365 setup all --aiteammate` (with blueprint) completed and
+            `agentBlueprintId` is present in `a365.generated.config.json`.
+        11. `a365 validate` was run locally; the resulting validate report
+            (shape: `references/validate-report.example.json`) had
+            `summary.ok = true` (with any non-`ok` tier explicitly
+            `skipped`). Fixes were applied and `a365 validate` re-run until
+            it passed.
+        12. The user was walked through: `a365 publish`, devtunnel setup,
+            uploading the manifest zip to MAC, setting the messaging
+            endpoint in Teams Dev Portal to the devtunnel URL, and creating
+            an agent instance via Teams; the user explicitly confirmed all
+            four manual steps are done before tenant validation began.
+        13. `a365 validate --with-tenant` was run and produced
+            `summary.ok = true`. Fixes were applied and the tenant-validate
+            command was re-run until it passed, then the user confirmed
+            they are ready for deployment.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         Otherwise return {"ok": true}.
       timeout: 45000
@@ -82,7 +93,7 @@ hooks:
 > **What this skill does:** Takes you from an empty directory + a one-line prompt
 > to a fully-wired, locally-tested, Teams-publish-ready Agent 365 AI Teammate.
 > It orchestrates five sibling skills as references — `make-ai-teammate`,
-> `instrument-observability`, `add-workiq-tools`, `test-local`, and `a365-setup` —
+> `instrument-observability`, `add-workiq-tools`, and `a365-setup` —
 > but always assumes **AI Teammate (OBO)** and reuses the answers it collects
 > up front so it never re-asks the user.
 
@@ -123,12 +134,16 @@ I'll build you a new Agent 365 AI Teammate from scratch. Here's the plan:
      for credentials
   6. Pause so you can paste in your model credentials
   7. Wire observability and WorkIQ MCP tools
-  8. Build, run locally, and verify it responds in AgentsPlayground
-  9. Run `a365 setup all --aiteammate`, then walk through publish, devtunnel,
-     and Teams Developer Portal endpoint setup
-  10. Iteratively test end-to-end through the devtunnel: crank up logging,
-      send Teams/email messages, monitor logs, and debug until the experience
-      is good
+  8. Run `a365 setup all --aiteammate` to register the blueprint
+  9. Run `a365 validate` locally and iteratively fix any issues it reports
+     (this builds, boots, and tests the agent locally) until it passes
+  10. Set up a devtunnel, run `a365 publish`, then walk through the manual
+      steps (upload manifest to MAC, set the messaging endpoint in Teams
+      Dev Portal to the devtunnel, create an agent instance via Teams) —
+      pause for your confirmation
+  11. Run `a365 validate --with-tenant` to exercise live Teams + email
+      traffic via the devtunnel; iteratively fix any issues until it
+      passes, then confirm you're ready for deployment
 
 Starting now.
 ```
@@ -192,7 +207,7 @@ scaffold in Phase 8 will automatically include a dedicated `AGENT_LIFECYCLE`
 handler that introduces the teammate to the user's manager via Microsoft
 Graph (1:1 Teams chat) on first install. No question needed — the required
 Graph scopes (`Chat.ReadWrite`, `User.Read.All`) are already consented for
-AI Teammates by `a365 setup all --aiteammate` in Phase 12.
+AI Teammates by `a365 setup all --aiteammate` in Phase 11.
 
 ---
 
@@ -751,55 +766,17 @@ agent code per the reference.
 
 Inform the user about the permissions hand-off (`a365 setup permissions mcp`
 or `a365 setup all`) and how to fetch a dev token (`a365 develop get-token`).
-Do not run those — they will be run as part of Phase 12.
+Do not run those — they will be run as part of Phase 11.
 
 Build to confirm the wiring compiles.
 
 ---
 
-## Phase 11 — Build + local test (HARD GATE)
-
-> **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/test-local/SKILL.md`
-
-**Do NOT enter this phase until Phases 8, 9, AND 10 are all complete.**
-
-1. Verify `agentsplayground` is installed; install if missing per the
-   reference.
-2. Build the agent (`dotnet build` / `npm run build` / `pip install -e .`).
-3. Start the agent in the background.
-4. Launch AgentsPlayground pointed at the local `/api/messages` endpoint.
-5. Send a test message and **wait for a successful response**.
-
-### Failure handling
-
-If the agent does not respond, debug using the agent + playground output:
-
-- Compile / import errors → fix the code, rebuild, retry.
-- LLM client errors → re-check env-var values; remind the user to confirm
-  credentials in **both** files from Phase 8.
-- Tool registration errors → re-check `ToolingManifest.json` and Phase 10
-  wiring.
-- **JWT / auth middleware errors during local testing** are acceptable to
-  bypass for local dev. Set the appropriate flag in the **dev** env file:
-
-  | Language     | Variable to set in dev file                              |
-  |--------------|----------------------------------------------------------|
-  | C#           | `"TokenValidation": { "Enabled": false }` in `appsettings.Development.json` |
-  | Python       | `BYPASS_AUTH=true` in `.env.local`                       |
-  | TypeScript   | `BYPASS_AUTH=true` in `.env.local`                       |
-
-  Then read the env var in the host startup and skip the JWT middleware when
-  it's set. **This bypass is local-only — never set it in the production
-  env file.**
-
-**HARD GATE:** Do not move to Phase 12 until the user confirms the agent has
-responded to a message in AgentsPlayground.
-
----
-
-## Phase 12 — A365 setup (AI Teammate + blueprint)
+## Phase 11 — A365 setup (AI Teammate + blueprint)
 
 > **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/a365-setup/SKILL.md`
+
+**Do NOT enter this phase until Phases 8, 9, AND 10 are all complete.**
 
 **Skip the detection and prerequisite-checking phases** — assume:
 - `agentType` = AI Teammate
@@ -812,14 +789,90 @@ a365 setup all --aiteammate
 ```
 
 When complete, read `a365.generated.config.json` and confirm `agentBlueprintId`
-is present. Show the Setup Summary table verbatim.
+is present. Show the Setup Summary table verbatim. The blueprint must exist
+before `a365 validate` (Phase 12) can authenticate observability exports.
 
 ---
 
-## Phase 13 — Publish + devtunnel + Teams Developer Portal
+## Phase 12 — Local validation loop (`a365 validate`)
 
-After setup completes, walk the user through these steps **in order**, asking
-them to confirm each before continuing:
+> **Validate report reference:** [`references/validate-report.example.json`](./references/validate-report.example.json)
+
+This phase replaces the old build-and-poke-AgentsPlayground step. The
+`a365 validate` command builds, boots, and locally exercises the agent in
+one shot and returns a structured JSON report describing every tier that
+ran.
+
+### 12.1 — Run validate
+
+From the agent project root:
+
+```bash
+a365 validate
+```
+
+Capture the JSON written to `validate-report.json`. Its shape matches
+[`references/validate-report.example.json`](./references/validate-report.example.json):
+
+```jsonc
+{
+  "agent":   { "path": "...", "language": "dotnet | python | typescript" },
+  "tiers": {
+    "structural":   { "checks": [ { "name": "...", "ok": true, "message": "..." } ], "ok": true },
+    "build":        { "log": "...", "exitCode": 0, "ok": true },
+    "boot":         { "port": 5000, "bootMs": 1639, "ok": true },
+    "conversation": { "skipped": true, "reason": "..." } | { "ok": true | false, ... },
+    "telemetry":    { ... },
+    "blueprint":    { ... },
+    "mac":          { ... },
+    "m365":         { ... },
+    "judge":        { ... }
+  },
+  "repair":  { ... },
+  "summary": { "ok": true | false }
+}
+```
+
+**Pass condition:** `summary.ok = true` AND every tier is either `ok = true`
+or explicitly `skipped: true` with a known reason. A `skipped` tier is not
+a failure — Phase 12 only requires local tiers (`structural`, `build`,
+`boot`, and `conversation` when present) to be passing.
+
+### 12.2 — Iterative fix loop
+
+If `summary.ok = false`, walk `tiers` in order and address the **first**
+tier where `ok = false`:
+
+- `tiers.structural.ok = false` → inspect `checks[]` for the failing
+  `name` (e.g. `config-exists`, `config-format`, `config-schema`,
+  `tooling-manifest`); fix the named file or wiring.
+- `tiers.build.ok = false` → inspect `tiers.build.log` for the compiler /
+  package-manager error; fix the code or `*.csproj` / `package.json` /
+  `pyproject.toml`. Cross-reference against
+  `researchedVersions` (Phase 7.5) if a package version is the cause.
+- `tiers.boot.ok = false` → check the port matches the language default
+  (`5000` for .NET, `3978` for Node.js / Python); inspect agent stdout
+  for startup exceptions; confirm env vars from Phase 8 (names from
+  `researchedVersions.modelProvider.envVars`) are set in both env files.
+- `tiers.conversation.ok = false` → if reachable, the issue is in the
+  message handler or LLM client; consult the **diagnostic pattern table
+  in Phase 14.3** for log-symptom-to-fix mappings.
+
+After applying a fix, re-run `a365 validate` and re-evaluate the report.
+**Do not skip ahead** — stay in this loop until `summary.ok = true`.
+
+### 12.3 — HARD GATE
+
+Do not move to Phase 13 until `a365 validate` returns `summary.ok = true`
+with no unexplained `ok: false` tiers.
+
+---
+
+## Phase 13 — Publish + devtunnel + Teams Developer Portal (manual hand-off)
+
+Once Phase 12 passes locally, prepare the agent for live tenant traffic.
+Walk the user through these steps **in order**, asking them to confirm
+each before continuing:
 
 1. **Publish the agent**
 
@@ -827,8 +880,10 @@ them to confirm each before continuing:
    a365 publish
    ```
 
-   If publish fails on auth, offer the sideload fallback documented in the
-   `make-ai-teammate` reference.
+   This packages `manifest.zip` (or `appPackage.zip` for Teams Toolkit).
+   `publish` does NOT upload to MAC and does NOT touch the bot endpoint —
+   both are manual steps below. If publish fails on auth, offer the
+   sideload fallback documented in the `make-ai-teammate` reference.
 
 2. **Create a devtunnel**
 
@@ -840,10 +895,18 @@ them to confirm each before continuing:
 
    Capture the public HTTPS URL.
 
-3. **Set the messaging endpoint in Teams Developer Portal**
+3. **Upload the manifest zip to the Microsoft Admin Center (MAC)**
 
-   Read `agentBlueprintId` from `a365.generated.config.json` and construct the
-   direct configuration URL:
+   Tell the user (manual step in MAC — the CLI does NOT do this):
+
+   > Open the [Microsoft 365 Admin Center](https://admin.cloud.microsoft) →
+   > **Integrated apps** → **Upload custom apps** → upload the
+   > `manifest.zip` produced by `a365 publish`.
+
+4. **Set the messaging endpoint in Teams Developer Portal**
+
+   Read `agentBlueprintId` from `a365.generated.config.json` and construct
+   the direct configuration URL:
 
    ```
    https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration
@@ -851,33 +914,52 @@ them to confirm each before continuing:
 
    Tell the user:
 
-   > Open the link above (it deep-links straight to your agent blueprint's
-   > **Configuration** page) → set **Endpoint address** to
-   > `<devtunnel-url>/api/messages` and save.
+   > Open the link above (deep-links straight to your agent blueprint's
+   > **Configuration** page) → set **Agent Type** to **API Based** →
+   > set **Notification URL** / **Endpoint address** to
+   > `<devtunnel-url>/api/messages` and save. This is required for Teams
+   > to deliver messages to your agent.
 
-4. **Create an agent instance through the Teams store**
+5. **Create an agent instance through Teams**
 
-   > In the Microsoft 365 / Teams store, find your published agent and add
-   > it to your account so it shows up as an installable AI Teammate.
+   > In Microsoft Teams → **Apps** → find your published agent → add it
+   > to your account. If admin approval is required, request it from the
+   > Teams Apps page and wait for an admin to approve in
+   > [admin.cloud.microsoft](https://admin.cloud.microsoft).
 
-When all four steps are confirmed, **proceed to Phase 14** for end-to-end
-testing and iterative debugging via the live devtunnel.
+### 13.x — WAIT FOR USER CONFIRMATION
+
+After listing the five steps, **stop and explicitly ask** the user to
+confirm:
+
+> Have you completed all five steps above (publish, devtunnel host,
+> MAC upload, Teams Dev Portal endpoint set to `<devtunnel-url>/api/messages`,
+> and agent instance created/approved in Teams)?
+
+**Do NOT proceed to Phase 14 until the user answers "yes" to all of them.**
+If they say no, ask which steps are pending and wait. The next phase
+(`a365 validate --with-tenant`) requires the agent to be reachable from
+Teams via the devtunnel, so these manual steps are a hard prerequisite.
+
+Before triggering Phase 14, restart the agent + devtunnel host (still in
+the foreground) so the agent is live on the URL the user just configured
+in the Dev Portal.
 
 ---
 
-## Phase 14 — Devtunnel testing + iterative debug loop
+## Phase 14 — Tenant validation loop (`a365 validate --with-tenant`)
 
-By this point: agent is published, devtunnel is hosting, the messaging
-endpoint is set in the Teams Developer Portal, and the AI Teammate has been
-hired in Teams. Now drive a tight feedback loop using live traffic.
+By this point the agent is published, MAC-uploaded, devtunnel-hosted, the
+Teams Dev Portal endpoint matches the devtunnel URL, and the agent
+instance exists in Teams. Now exercise it against the real tenant.
 
 ### 14.0 — Crank up logging
 
-Make every signal visible before the first test message. Update the
+Make every signal visible before tenant validation starts. Update the
 **production** env file (`.env` for Python/Node.js, `appsettings.json` for .NET)
 to the values below. These are intentionally noisy — they're for debugging,
-not steady-state operation. Tell the user we'll quiet them back down when
-the agent is verified.
+not steady-state operation. They'll be quieted in Phase 14.4 once
+validation passes.
 
 **Python / Node.js (`.env`):**
 ```
@@ -902,15 +984,14 @@ LOG_LEVEL=DEBUG                           # or PYTHON_ENVIRONMENT=development
 }
 ```
 
-If this is a fresh devtunnel session and the agent process is still running
-from Phase 11/13, **restart it** so the new env vars take effect. Confirm
-startup banner contains:
+Restart the agent so the new env vars take effect. Confirm the startup
+banner contains:
 - ✅ A365 observability configured (SDK-native or distro)
 - 🔐 Auth handler in use (e.g. `AGENTIC`) — NOT "running anonymous"
 
-### 14.1 — Sanity checks
+### 14.1 — Sanity checks (before invoking tenant validate)
 
-Before involving Teams, verify the local agent and the tunnel:
+Before running the tenant-validate command, confirm the tunnel is live:
 
 ```powershell
 # Agent should respond on health
@@ -924,40 +1005,31 @@ Invoke-WebRequest -Method POST -Uri http://localhost:3978/api/messages -Body '{}
 # → 401 expected
 ```
 
-If any of these fail, do NOT ask the user to send messages yet — fix the
-plumbing first.
+If any of these fail, fix the plumbing before continuing — do not invoke
+`a365 validate --with-tenant` against a broken endpoint.
 
-### 14.2 — Iterative test loop
+### 14.2 — Run tenant validate
 
-Run the loop below until the user confirms the experience is good. Stay in
-the loop on each round; don't bail after a single message.
+```bash
+a365 validate --with-tenant
+```
 
-1. **Prompt the user** for ONE specific test action, e.g.:
-   - "Send a message in Teams: `hey` (verifies basic round-trip)"
-   - "Send a message that needs a tool: `summarize my latest email` (verifies MCP)"
-   - "Send yourself an email (verifies AGENT_LIFECYCLE / EMAIL_NOTIFICATION)"
-   - "Uninstall + reinstall the agent (verifies onboarding greeting fires)"
+This exercises the agent with real Teams + email traffic via the
+devtunnel. The output JSON has the same shape as Phase 12 but with the
+tenant-dependent tiers (`conversation`, `telemetry`, `blueprint`, `mac`,
+`m365`, `judge`) actually executed rather than `skipped`.
 
-2. **Wait** for the user to confirm they've sent it.
-
-3. **Tail the agent log.** Pull the last ~100 lines, filter out the noise
-   (`Acquir`/`Attempting`/`Retrieving` MSAL chatter, `Replying to activity`
-   typing indicators, `aiohttp.access` health pings) and look for:
-   - `📨 <message>` — confirms the user's text actually reached the handler
-   - `Turn from user — DisplayName: ...` — confirms `process_user_message`
-     was entered
-   - `httpx: HTTP Request: POST https://<your-llm>... HTTP/1.1 200 OK` — LLM call
-   - `Token resolved successfully for agent <agentId>` — observability auth
-   - `HTTP 200 success on attempt 1` (or any 4xx/5xx with correlation id)
-     from the A365 exporter
-   - `Reply to conversation/activity: <id>, <id>` — final reply emitted
-
-4. **Diagnose using the patterns below.**
-
-5. **Apply a fix**, restart the agent, then return to step 1 with a message
-   targeted at the same scenario.
+**Pass condition:** `summary.ok = true` with `tiers.conversation.ok`,
+`tiers.telemetry.ok`, `tiers.m365.ok` (and any other non-`skipped` tier)
+all `true`.
 
 ### 14.3 — Common failure patterns and fixes
+
+When a tenant-validate tier fails, cross-reference the agent's tail log
+with the table below to identify the root cause, then apply the fix and
+re-run `a365 validate --with-tenant`. This table is also the right
+reference for Phase 12 `tiers.conversation.ok = false` failures when the
+local conversation tier is exercised.
 
 | Symptom in log | Likely cause | Fix |
 |---|---|---|
@@ -983,11 +1055,24 @@ the loop on each round; don't bail after a single message.
 | `inference` span start time precedes its parent `invoke_agent` start (rule `scope_ordering`) | Scope opened outside the parent's using-block, or clock skew | Child scope start time precedes its parent `InvokeAgent` start — likely a clock skew or the scope was opened outside the parent's using-block. |
 | `UnicodeEncodeError: 'charmap' codec can't encode character '\\U0001f527'` (Windows + Python only) | Default `cp1252` stdout can't render emoji in log messages | Run with `python -X utf8` (or set `PYTHONUTF8=1`). |
 | Agent crashes silently on start with no error in tunnel logs | stdout/stderr swallowed by detached host | Run the agent in the foreground for one round to capture the traceback, then re-detach once fixed. |
+| JWT / auth middleware errors when invoking the agent from Teams | Real tenant validation requires real auth — bypassing it is wrong here | Do **not** set `BYPASS_AUTH=true` for tenant validation; that's a local-only escape hatch. Confirm `AUTH_HANDLER_NAME=AGENTIC`, `CLIENT_ID`, `TENANT_ID`, `CLIENT_SECRET` are populated in `.env`, and re-run `a365 validate --with-tenant`. |
+
+### 14.3a — Tenant validate loop
+
+After applying a fix from 14.3, **restart the agent** so the change takes
+effect, then re-run:
+
+```bash
+a365 validate --with-tenant
+```
+
+Stay in this loop — fix the first failing tier, restart, re-validate —
+until `summary.ok = true`. Do not bail after a single round.
 
 ### 14.4 — Quiet things back down
 
-Once the user confirms the experience is good (round-trip works, observability
-spans visible, manager onboarding greeting received), restore quieter levels:
+Once `a365 validate --with-tenant` returns `summary.ok = true`, restore
+quieter log levels for steady-state operation:
 
 ```
 A365_OBSERVABILITY_LOG_LEVEL=warn
@@ -998,15 +1083,21 @@ LOG_LEVEL=INFO
 Leave `ENABLE_A365_OBSERVABILITY_EXPORTER=true` and (Python only)
 `ENABLE_A365_OBSERVABILITY=true` — those are correct for production.
 
-### 14.5 — Final summary
+### 14.5 — Final confirmation + summary
 
-Output a final summary listing:
+Explicitly ask the user:
+
+> `a365 validate --with-tenant` is passing end-to-end. Are you ready
+> to deploy this agent to production?
+
+When they confirm, output a final summary listing:
 - agent name, language, framework, model provider
 - MCP servers wired
 - blueprint ID
-- devtunnel URL
+- devtunnel URL (and a reminder to swap for a real cloud endpoint when deploying)
 - Teams Dev Portal endpoint
-- which Phase 14 scenarios were verified (round-trip, MCP, EMAIL_NOTIFICATION,
-  onboarding greeting)
+- which tiers `a365 validate --with-tenant` exercised (`conversation`,
+  `telemetry`, `m365`, etc.)
 
 …then end the skill.
+
