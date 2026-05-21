@@ -312,6 +312,10 @@ You are an AI coding agent with access to execute shell commands, read the Agent
 
 ## Step 1: Install and Verify All Prerequisites
 
+> **Show the user a visible task checklist BEFORE Step 1 work begins.** This skill has no explicit `TaskCreate` calls in the body — derive the checklist from the Step headers (`## Step 1: Install and Verify All Prerequisites`, `## Step 2: ...`, etc.) so the user can track progress. Exactly one item in_progress at a time; complete before moving on.
+> - **Claude Code:** call `TaskCreate` once per Step header (already in `allowed-tools`); the list renders natively. Use `TaskUpdate` to flip statuses.
+> - **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — emit a markdown checklist directly in chat (`- [ ] Install and verify prerequisites…`, etc.) and edit items to `- [x]` as each step completes.
+
 > **DO NOT SKIP THIS STEP.** Run all checks even on a machine that seems configured — a fresh laptop may be missing several tools. Mark this todo in-progress now.
 
 ### Quick scan — run all version checks in one pass

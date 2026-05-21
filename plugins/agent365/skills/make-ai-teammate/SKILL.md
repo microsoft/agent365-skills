@@ -339,6 +339,10 @@ These three flags (`has_obs`, `has_workiq`, `has_setup`) drive the 8-row state m
 
 ## Phase 0B — Confirm and Create Task List
 
+> **Show the user the upcoming task list visibly BEFORE Phase 1.** Exactly one task in_progress at a time; complete before moving on. Use whichever mechanism the runtime supports:
+> - **Claude Code:** call `TaskCreate` for each item below (already in `allowed-tools`); the list renders natively. Use `TaskUpdate` to flip statuses.
+> - **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — emit a markdown checklist directly in chat (`- [ ] Install required packages…`) and edit items to `- [x]` as each phase completes.
+
 Present all detections in one message:
 
 ```

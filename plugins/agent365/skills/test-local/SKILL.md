@@ -73,7 +73,11 @@ All actions are **read-only against your codebase** — no code is modified.
 
 ---
 
-## Phase 0 — Create Task List
+## Phase 0 — Create and Display Task List
+
+> **Show the user this checklist BEFORE Phase 1.** Exactly one task in_progress at a time; complete before moving on. Use whichever mechanism the runtime supports:
+> - **Claude Code:** call `TaskCreate` for each item below (already in `allowed-tools`); the list renders natively. Use `TaskUpdate` to flip statuses.
+> - **VS Code Copilot Chat / GitHub Copilot CLI:** `allowed-tools` is ignored — emit a markdown checklist directly in chat (`- [ ] Detect agent type…`) and edit items to `- [x]` as each phase completes.
 
 ```
 TaskCreate: "Detect agent type and verify build tools"
