@@ -73,8 +73,13 @@ Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME>` — e.g. `m
 | Package | Purpose | Install |
 |---------|---------|---------|
 | `Microsoft.Agents.A365.Tooling` | Core MCP tooling runtime | `dotnet add package Microsoft.Agents.A365.Tooling` |
-| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | AgentFramework adapter — `IMcpToolRegistrationService` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` |
-| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` |
+| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | Agent Framework adapter — `IMcpToolRegistrationService.GetMcpToolsAsync` returns `IList<AITool>` | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` |
+| `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` | Semantic Kernel adapter — `IMcpToolRegistrationService.AddToolServersToAgentAsync` mutates `Kernel`, returns `Task` (void). **Different API surface from AgentFramework.** | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel` |
+| `Microsoft.Agents.A365.Tooling.Extensions.AzureAIFoundry` | Azure AI Foundry adapter | `dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AzureAIFoundry` |
+
+> **AF vs SK API divergence.** Although both extensions ship an `IMcpToolRegistrationService` interface, they live in different namespaces and have different methods. AF has `GetMcpToolsAsync` (returns a tool list for the caller to attach to an `AIAgent`); SK has `AddToolServersToAgentAsync` (mutates the `Kernel` in place, returns `Task`). Calling `GetMcpToolsAsync` on the SK service does not compile. Sources:
+> - AF: https://github.com/microsoft/Agent365-dotnet/blob/main/src/Tooling/Extensions/AgentFramework/Services/IMcpToolRegistrationService.cs
+> - SK: https://github.com/microsoft/Agent365-dotnet/blob/main/src/Tooling/Extensions/SemanticKernel/Services/IMcpToolRegistrationService.cs
 
 Install core + the adapter for your framework. Example for AgentFramework:
 ```bash
@@ -86,57 +91,94 @@ dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 
 ## Program.cs — Service Registration
 
+Both AF and SK extensions ship an `AddMcpServices()` extension method that registers both interfaces as **Scoped** in one line. The official samples currently use the two-line `AddSingleton` form below (both work); the one-liner is the canonical option going forward.
+
+**Recommended (one-liner):**
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
 using Microsoft.Agents.A365.Tooling;
 
+// Registers IMcpToolServerConfigurationService + IMcpToolRegistrationService as Scoped.
+// SK variant additionally registers an HttpClient.
+builder.Services.AddMcpServices();
+```
+
+**Alternative (matches the official samples):**
+```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
+using Microsoft.Agents.A365.Tooling;
+
 builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
 builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
 ```
 
+> **Lifetime note:** `AddMcpServices()` uses `Scoped` registrations; the sample pattern uses `Singleton`. Both work for the standard request-scoped agent host. If you change to a long-lived background worker, prefer `Scoped` to keep the `IMcpToolServerConfigurationService` aligned with per-request lifetime.
+
 ---
 
-## Agent Class — GetMcpToolsAsync (AgentFramework)
+## Agent Class — GetMcpToolsAsync (Agent Framework)
 
-Based on Agent365-Samples — no `tokenOverride` parameter:
+Sample: https://github.com/microsoft/Agent365-Samples/blob/main/dotnet/agent-framework/sample-agent/Agent/MyAgent.cs
+
+The verified sample calls `GetMcpToolsAsync` inside **`OnMessageAsync`** (Agent Framework's newer base method) — **not** `OnMessageActivityAsync` (which earlier revisions of this reference claimed). The call sits inside the `GetClientAgent()` helper invoked per turn:
 
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
-using Microsoft.Agents.A365.Tooling;
+using Microsoft.Agents.A365.Tooling.Extensions.AgentFramework.Services;
 
-// Inside OnMessageActivityAsync or equivalent:
+// Inside OnMessageAsync (Agent Framework's per-turn handler — sample uses OnMessageAsync,
+// not OnMessageActivityAsync):
 
 // A365 WorkIQ — added by add-workiq-tools skill
-var workIQTools = await _toolService.GetMcpToolsAsync(
-    agentId,           // from a365.generated.config.json → agentBlueprintId
-    UserAuthorization, // from ITurnContext
-    handlerForMcp,     // auth handler name from appsettings ("AgenticBotAuth")
-    context            // ITurnContext
+var a365Tools = await _toolService.GetMcpToolsAsync(
+    agentId,            // resolved agent identity — from a365.generated.config.json
+    UserAuthorization,  // AgentApplication.UserAuthorization (typed instance, NOT a string)
+    handlerForMcp,      // string handler name — sample picks OboAuthHandlerName or
+                        // AgenticAuthHandlerName based on turnContext.IsAgenticRequest()
+    context             // ITurnContext
+    // tokenOverride: optional 5th param — null in production; pass a bearer for local dev
 ).ConfigureAwait(false);
 
 // A365 WorkIQ — added by add-workiq-tools skill
-var chatOptions = new ChatOptions { Tools = [.. workIQTools] };
+var chatOptions = new ChatOptions { Tools = [.. a365Tools] };
 ```
 
 The SDK resolves tokens automatically:
-- **Dev**: reads `BEARER_TOKEN_<SERVER_NAME>` env var (e.g. `BEARER_TOKEN_MCP_MAILTOOLS`)
-- **Production**: performs per-audience OBO exchange using the user's access token
+- **Dev** (`IHostEnvironment.IsDevelopment()`): reads `BEARER_TOKEN_<SERVER_NAME>` env var (e.g. `BEARER_TOKEN_MCP_MAILTOOLS`), or uses the optional `tokenOverride` parameter.
+- **Production**: performs per-audience OBO exchange using the user's access token.
 
 ---
 
-## Agent Class — AddToolServersToAgentAsync (Semantic Kernel variant)
+## Agent Class — AddToolServersToAgentAsync (Semantic Kernel)
 
+Sample: https://github.com/microsoft/Agent365-Samples/blob/main/dotnet/semantic-kernel/sample-agent/Agents/Agent365Agent.cs
+
+> **SK API differs from AF.** SK has **no** `GetMcpToolsAsync` — instead it exposes `AddToolServersToAgentAsync` which **mutates the `Kernel` in place** (returns `Task`, not a tool list). Called during agent initialization (after `Kernel` is built), **not per-message**.
+
+Verified signature (from `Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel.Services.IMcpToolRegistrationService`):
+```csharp
+Task AddToolServersToAgentAsync(
+    Kernel kernel,
+    UserAuthorization userAuthorization,
+    string authHandlerName,
+    ITurnContext turnContext,
+    string? authToken = null);
+```
+
+Sample call (dev path with bearer; prod path omits the bearer):
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
-await _toolService.AddToolServersToAgentAsync(
-    kernel,
-    userAuthorization,
-    authHandlerName,
-    turnContext
-    // No tokenOverride — SDK handles internally 
-).ConfigureAwait(false);
+using Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel.Services;
+
+if (TryGetBearerTokenForDevelopment(out var bearerToken))
+    await _toolService.AddToolServersToAgentAsync(
+        kernel, userAuthorization, authHandlerName, turnContext, bearerToken);
+else
+    await _toolService.AddToolServersToAgentAsync(
+        kernel, userAuthorization, authHandlerName, turnContext);
 ```
+
+The Kernel is mutated — no value to capture or reassign. After the call, the Kernel's plugin collection includes the WorkIQ MCP tools.
 
 ---
 

@@ -1,10 +1,14 @@
-# Node.js LangChain — WorkIQ MCP Tool Patterns
+# Node.js — WorkIQ MCP Tool Patterns
 
 Reference for the `add-workiq-tools` skill. Workflow is CLI-driven:
 `a365 develop list-available` → `a365 develop add-mcp-servers` → wire `McpToolRegistrationService`.
 
-Official sample:
-`https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain`
+Microsoft publishes three Node.js extensions: **LangChain**, **OpenAI Agents SDK**, **Claude SDK**. No Semantic Kernel or Google ADK packages exist for Node.js — those stacks are unsupported by this skill.
+
+Official samples:
+- LangChain: https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/langchain/sample-agent
+- OpenAI: https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/openai/sample-agent
+- Claude: https://github.com/microsoft/Agent365-Samples/tree/main/nodejs/claude/sample-agent
 
 ---
 
@@ -52,9 +56,18 @@ a365 develop get-token --resource mcp -o raw
 | Package | Purpose | Install |
 |---------|---------|---------|
 | `@microsoft/agents-a365-tooling` | Core MCP tooling runtime | `npm install @microsoft/agents-a365-tooling` |
-| `@microsoft/agents-a365-tooling-extensions-langchain` | LangChain adapter — `McpToolRegistrationService` | `npm install @microsoft/agents-a365-tooling-extensions-langchain` |
-| `@microsoft/agents-a365-tooling-extensions-openai` | OpenAI Agents SDK adapter | `npm install @microsoft/agents-a365-tooling-extensions-openai` |
-| `@microsoft/agents-a365-tooling-extensions-semantic-kernel` | Semantic Kernel adapter | `npm install @microsoft/agents-a365-tooling-extensions-semantic-kernel` |
+| `@microsoft/agents-a365-tooling-extensions-langchain` | LangChain adapter — `addToolServersToAgent` returns a **new** `ReactAgent`; caller MUST capture | `npm install @microsoft/agents-a365-tooling-extensions-langchain` |
+| `@microsoft/agents-a365-tooling-extensions-openai` | OpenAI Agents SDK adapter — `addToolServersToAgent` **mutates `agent.mcpServers` in place**; return ignored | `npm install @microsoft/agents-a365-tooling-extensions-openai` |
+| `@microsoft/agents-a365-tooling-extensions-claude` | Claude SDK adapter — `addToolServersToAgent` first param is `Options` from `@anthropic-ai/claude-agent-sdk`; **mutates `agentOptions.allowedTools` and `.mcpServers`**, returns `Promise<void>` | `npm install @microsoft/agents-a365-tooling-extensions-claude` |
+
+> **Return-value semantics differ per framework.**
+> - **LangChain** returns a NEW agent (tools are immutable on `createAgent`). Caller **must** reassign: `agentWithTools = await toolService.addToolServersToAgent(...)`. Ignoring the return = no tools attached.
+> - **OpenAI** mutates `agent.mcpServers` in place and returns the same agent. Reassigning is harmless but unnecessary.
+> - **Claude** mutates `agentOptions.allowedTools` and `agentOptions.mcpServers` in place; return type is `Promise<void>`. Cross-pasting LangChain's "capture return" pattern into Claude will write `void` into the variable.
+
+**Frameworks without a Microsoft Node.js extension** (this skill hard-stops for these):
+- Semantic Kernel — no package
+- Google ADK — no package
 
 Install core + the adapter for your framework. Example for LangChain:
 ```bash
@@ -63,10 +76,11 @@ npm install @microsoft/agents-a365-tooling @microsoft/agents-a365-tooling-extens
 
 ---
 
-## client.ts — Loading WorkIQ Tools per Turn
+## LangChain — Wiring (VERIFIED)
 
-Create a single `McpToolRegistrationService` instance at module level, then call
-`addToolServersToAgent()` inside the per-turn `getClient()` factory.
+Sample: https://github.com/microsoft/Agent365-Samples/blob/main/nodejs/langchain/sample-agent/src/client.ts
+
+Create a single `McpToolRegistrationService` instance at module level, then call `addToolServersToAgent()` inside the per-turn `getClient()` factory. **Capture the return** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
 
 ```typescript
 import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';
@@ -80,33 +94,138 @@ export async function getClient(
   authHandlerName: string,
   turnContext: TurnContext,
 ): Promise<Client> {
-  // Create the base LangChain agent first (without tools)
-  const agent = createAgent({ model, name: agentName, systemPrompt: '...' });
+  // Build the personalized agent without tools
+  const personalizedAgent = createAgent({ model, name: agentName, systemPrompt: `...${displayName}...` });
 
-  // Attach MCP tool servers for this turn
-  let agentWithTools = agent;
+  // A365 WorkIQ — added by add-workiq-tools skill
+  // Capture the return — LangChain extension returns a NEW agent with tools attached.
+  let agentWithMcpTools = undefined;
   try {
-    agentWithTools = await toolService.addToolServersToAgent(
-      agent,
+    agentWithMcpTools = await toolService.addToolServersToAgent(
+      personalizedAgent,
       authorization,
-      authHandlerName,   // e.g. 'agentic'
+      authHandlerName,
       turnContext,
-      process.env.BEARER_TOKEN ?? '',  // dev only — empty in production
+      process.env.BEARER_TOKEN || '',  // dev only — empty in production
     );
   } catch (error) {
     console.error('Error adding MCP tool servers:', error);
     // falls back to agent without tools
   }
 
-  return new LangChainClient(agentWithTools, turnContext);
+  return new LangChainClient(agentWithMcpTools || personalizedAgent, turnContext);
 }
 ```
 
-Key points:
-- `McpToolRegistrationService` reads `ToolingManifest.json` when `NODE_ENV=development`
-- In production, tool server URLs come from the provisioned blueprint config
-- `BEARER_TOKEN` is only used in dev; production uses the `authorization` context for OBO exchange
-- Errors are caught and the agent falls back gracefully — never block the turn
+---
+
+## OpenAI Agents SDK — Wiring (VERIFIED)
+
+Sample: https://github.com/microsoft/Agent365-Samples/blob/main/nodejs/openai/sample-agent/src/client.ts
+
+OpenAI extension mutates `agent.mcpServers` **in place** — return value is the same agent. Variable name in the sample is `agent` (not `personalizedAgent`). After registration, the `OpenAIClient` calls `server.connect()` / `server.close()` per turn around `run(agent, prompt)`.
+
+```typescript
+import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-openai';
+import { Agent } from '@openai/agents';
+import { Authorization, TurnContext } from '@microsoft/agents-hosting';
+
+// Module-level singleton
+const toolService = new McpToolRegistrationService();
+
+export async function getClient(
+  authorization: Authorization,
+  authHandlerName: string,
+  turnContext: TurnContext,
+): Promise<Client> {
+  const agent = new Agent({
+    name: 'OpenAI Agent',
+    model: modelName,
+    instructions: `...${displayName}...`,
+  });
+
+  // A365 WorkIQ — added by add-workiq-tools skill
+  // Mutates agent.mcpServers in place — return value ignored.
+  try {
+    await toolService.addToolServersToAgent(
+      agent,
+      authorization,
+      authHandlerName,
+      turnContext,
+      process.env.BEARER_TOKEN || '',
+    );
+  } catch (error) {
+    console.warn('Failed to register MCP tool servers:', error);
+  }
+
+  return new OpenAIClient(agent, turnContext);
+}
+```
+
+---
+
+## Claude SDK — Wiring (VERIFIED)
+
+Sample: https://github.com/microsoft/Agent365-Samples/blob/main/nodejs/claude/sample-agent/src/client.ts
+
+Claude extension's first parameter is `Options` from `@anthropic-ai/claude-agent-sdk`, **not** an Agent. The call mutates `agentOptions.allowedTools` and `agentOptions.mcpServers` in place and returns `Promise<void>`. The Options object is then passed to the Claude SDK client per turn.
+
+Verified signature:
+```typescript
+async addToolServersToAgent(
+  agentOptions: Options,
+  authorization: Authorization,
+  authHandlerName: string,
+  turnContext: TurnContext,
+  authToken: string,
+): Promise<void>
+```
+
+Wiring pattern (mirrors OpenAI shape — `Options` instead of `Agent`, no return capture):
+```typescript
+import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-claude';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { Authorization, TurnContext } from '@microsoft/agents-hosting';
+
+// Module-level singleton
+const toolService = new McpToolRegistrationService();
+
+export async function getClient(
+  authorization: Authorization,
+  authHandlerName: string,
+  turnContext: TurnContext,
+): Promise<Client> {
+  const agentOptions: Options = {
+    systemPrompt: `...${displayName}...`,
+    // ...other Claude SDK Options fields...
+  };
+
+  // A365 WorkIQ — added by add-workiq-tools skill
+  // Mutates agentOptions.allowedTools and .mcpServers in place — returns void.
+  try {
+    await toolService.addToolServersToAgent(
+      agentOptions,
+      authorization,
+      authHandlerName,
+      turnContext,
+      process.env.BEARER_TOKEN || '',
+    );
+  } catch (error) {
+    console.error('Failed to register MCP tool servers:', error);
+  }
+
+  return new ClaudeClient(agentOptions, turnContext);
+}
+```
+
+---
+
+## Shared behavior across all three frameworks
+
+- `McpToolRegistrationService` reads `ToolingManifest.json` when `NODE_ENV=development` (case-insensitive). Source: `RuntimeConfiguration.isNodeEnvDevelopment` in `@microsoft/agents-a365-runtime`.
+- In production, tool server URLs come from the provisioned blueprint config via the MCP gateway.
+- `BEARER_TOKEN` is only used in dev. In production the `authorization` context performs per-audience OBO exchange automatically (`AgenticAuthenticationService.GetAgenticUserToken`).
+- Always wrap the call in try/catch — never let a tool-discovery failure block the turn.
 
 ---
 
