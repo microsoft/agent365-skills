@@ -773,7 +773,9 @@ exporter is wired in code via `ExportTarget.Agent365` and log levels live in
 >
 > Hardcoding to `ERROR` makes "is observability working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.
 
-### AI Teammate OTel debugging
+### AI Teammate OTel gotchas
+
+Hard-won lessons specific to AI Teammate + OBO observability:
 
 1. **S2S is BLOCKED for AI Teammates** — AADSTS82001/82005. Entra blocks
    `client_credentials` for agentic app registrations. Only the OBO per-turn
