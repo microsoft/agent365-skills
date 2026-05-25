@@ -10,6 +10,7 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
 argument-hint: "Optional: agent project path"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
@@ -146,8 +147,8 @@ Ask both questions in a single message:
 ```
 To provision your agent with Agent 365, I need two things:
 
-  1. Agent Name — short, unique identifier for your tenant (e.g. "contoso-hr-agent" or "SunilsAgent1")
-     Rules: letters, numbers, hyphens only. Start with a letter. 3–20 chars.
+  1. Agent Name — short, unique identifier for your tenant (e.g. "contoso-hr-agent" or "FabrikamHelpdesk")
+     Rules: letters, numbers, hyphens only. Start with a letter. 3–20 chars (the CLI appends " Blueprint" to derive the Teams manifest `name.short`, capped at 30).
      This derives the Blueprint name. Pass the name exactly as you type it — do NOT normalize case.
      Type "default" to use the name "developer".
 

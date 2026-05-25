@@ -10,6 +10,7 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
 argument-hint: "Optional: agent project path"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
@@ -262,7 +263,7 @@ After the capabilities question is answered (and the detection/confirmation abov
    - `isAITeammate = false` → `agentType: "system-agent"`
    - Write `authMode` as collected (`"obo"` or `"s2s"` for non-AI Teammate; `"agentic-user"` for AI Teammate).
    - Write the three primary state flags from Phase 1A Step 5: `has_aiteammate_structure` (`1`/`0`), `has_obs` (`1`/`0`), `has_workiq` (`1`/`0`). **Do NOT write `hasAITeammateChanges`** — it is derived inline (`has_aiteammate_structure && has_obs`) at read sites.
-   - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above.
+   - Write `hasBlueprintConfig`, `existingBlueprintId`, and `reuseBlueprint` as determined above. **These are point-in-time snapshots from this skill's run** — downstream skills (make-ai-teammate, instrument-observability) re-derive `disk_blueprint_present` from `a365.generated.config.json` at read-time, and require session-level verification (Step 9.7.1a in make-ai-teammate's three-way prompt) before treating the blueprint claim as authoritative. The cached values exist for debugging and this skill's own end-of-run summary — they will go stale if the user runs `a365 setup all` or `a365 cleanup` between skill invocations.
 
 3. Derive `registrationType` from Phase 1A signals (do not ask the user):
    - `registrationType = 1` if `usesTeamsOrCopilot = 1` (CEA — Entra app ID path)
@@ -792,7 +793,7 @@ Blueprint-only and permissions subcommands:
 
 ```bash
 a365 setup blueprint --agent-name <name>                              # create blueprint + endpoint
-a365 setup blueprint --agent-name <name> --update-endpoint <new-url>  # replace messaging endpoint
+a365 setup blueprint --agent-name <name> --update-endpoint <new-url>  # replace messaging endpoint (add --m365 for M365 agents — else Teams Graph re-registration is skipped silently)
 a365 setup blueprint --agent-name <name> --show-secret                # print stored client secret
                                                                        # (Windows: same machine + user that created it)
 a365 setup permissions mcp                                            # MCP grants — always first
@@ -843,7 +844,7 @@ For detailed guidance, refer to:
 | Dev tunnel CLI not found | Restart terminal or add install directory to PATH |
 | Auth failure in headless env | `devtunnel user login --device-code` |
 | Tunnel not receiving messages | Verify tunnel is running, correct port, `--allow-anonymous` was used |
-| Tunnel URL changed | `a365 setup blueprint --update-endpoint https://<new-url>/api/messages` |
+| Tunnel URL changed | `a365 setup blueprint --update-endpoint https://<new-url>/api/messages --m365` (omit `--m365` only for non-M365 agents — Teams reachability via tunnel implies M365) |
 | Port already in use | Delete old port, create new: `devtunnel port delete/create` |
 | Cannot access from Teams | Ensure `--allow-anonymous`; firewall allows `*.devtunnels.ms`; path includes `/api/messages` |
 

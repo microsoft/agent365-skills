@@ -16,8 +16,9 @@ Reference for the `add-workiq-tools` skill. The CLI workflow (`list-available` �
 # See all available MCP servers in the catalog
 a365 develop list-available
 
-# Add selected WorkIQ servers (updates ToolingManifest.json only — no permissions yet)
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+# Add selected WorkIQ servers — names MUST match exact mcpServerName from list-available.
+# V2 catalog names shown; pull current values from your `a365 develop list-available` output.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"
 
 # Verify what is now configured
 a365 develop list-configured
@@ -33,18 +34,20 @@ a365 develop get-token --resource mcp -o raw
 
 ---
 
-## Available WorkIQ Servers (from a365 develop list-available)
+## Available WorkIQ Capabilities
 
-| Display Name | Category |
+Run `a365 develop list-available` for the live catalog — these are capability categories, not the exact CLI argument names (V2 names look like `mcp_MailTools`, `mcp_CalendarTools`, etc.).
+
+| Capability | Category |
 |---|---|
-| Work IQ Mail | Email |
-| Work IQ Calendar | Calendar |
-| Work IQ Teams | Teams chat |
-| Work IQ SharePoint | Documents |
-| Work IQ OneDrive | File storage |
-| Work IQ Word | Documents |
-| Work IQ User | Profile / presence |
-| Work IQ Copilot | M365 Copilot |
+| Mail | Email |
+| Calendar | Calendar |
+| Teams | Teams chat |
+| SharePoint | Documents |
+| OneDrive | File storage |
+| Word | Documents |
+| User / Presence | Profile / presence |
+| Copilot | M365 Copilot |
 | Dataverse and Dynamics 365 | Business data |
 
 ---
@@ -441,19 +444,7 @@ The GA must run `a365 setup permissions mcp` from the project directory (where `
 
 ### Permissions per server
 
-All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level.
-
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes |
-|---------------|-------|------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` |
-| Work IQ Word | V2 | `Files.ReadWrite.All` |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) |
+All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the per-server Graph scopes are granted at the Entra app level by `a365 setup permissions mcp`, which reads them from the live catalog. Run `a365 develop list-available` to see the current scopes required per server — we don't reproduce them here because the catalog evolves.
 
 ---
 

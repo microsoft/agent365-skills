@@ -12,6 +12,7 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
 argument-hint: "Optional: path to agent project, or framework hint (dotnet|nodejs|python)"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
@@ -136,7 +137,11 @@ Reply **yes** to confirm, or describe any corrections.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
-If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session OR pre-populated by a parent skill like make-ai-teammate), the confirmation behavior depends on `agentType`:
+- **`agentType = "ai-teammate"`** — skip the confirmation prompt entirely. The AI Teammate identity model is unambiguous (`authMode = agentic-user`, no obo/s2s decision exists), so a confirm prompt adds friction without catching drift. Proceed silently.
+- **`agentType = "system-agent"`** — confirm the cached values with the user before proceeding, since the obo/s2s choice is meaningful and a stale value would silently route to the wrong token path.
+
+Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
 Store `agentType` (`ai-teammate` = AI Teammate, or `system-agent` = Agent (Non AI Teammate)) and `authMode`:
 - **AI Teammate:** `agentic-user` (agent's own M365 identity — not the caller's token; auto-set, no question needed)

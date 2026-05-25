@@ -98,7 +98,7 @@ if (fs.existsSync(manifestPath)) {
     issues.push('ToolingManifest.json does not contain any WorkIQ MCP server entries — run: a365 develop add-mcp-servers');
   }
 } else {
-  issues.push('ToolingManifest.json not found — run: a365 develop add-mcp-servers "Work IQ Mail" (or other servers)');
+  issues.push('ToolingManifest.json not found — run: a365 develop list-available to see the catalog, then a365 develop add-mcp-servers "<mcpServerName>" (e.g. "mcp_MailTools")');
 }
 
 // ── Detect project type (kept for fallback when cache missing) ──────────────

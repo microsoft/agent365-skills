@@ -11,6 +11,7 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
 argument-hint: "Optional: language/framework override (langchain | openai | claude | semantickernel | googleadk | dotnet | dotnet-sk | python)"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
@@ -30,17 +31,17 @@ hooks:
         are validated by validate-make-ai-teammate.js. This prompt covers only
         the deploy-pipeline checks the JS validator can't see.
 
-        Read .a365-workspace-detection.local.json for runTarget, has_setup, has_obs,
+        Read .a365-workspace-detection.local.json for runTarget, disk_blueprint_present, has_obs,
         has_workiq. Treat a skip-gated step as satisfied when its flag was
         already true at session entry.
 
         Verify ALL that apply:
-        1. Phase 9.7.1 — a365 setup all --aiteammate ran, OR has_setup was true.
+        1. Phase 9.7.1 — a365 setup all --aiteammate ran, OR disk_blueprint_present was true.
            a365.generated.config.json has a non-empty agentBlueprintId.
         2. Phase 9.7.2 — runTarget is recorded ("prod" or "local"). For prod,
            runTargetHosting ("devtunnel" or "cloud") and chosenEndpoint are
            recorded, and messagingEndpoint was reconciled to chosenEndpoint
-           via a365 setup blueprint --update-endpoint when they differed.
+           via a365 setup blueprint --update-endpoint --m365 when they differed.
         3. Phase 9.7.2d — required env vars present in .env / appsettings.json.
            For prod: completed=true AND resourceConsents non-empty (else GA
            handoff message shown), cloud-platform env vars set, platform state
@@ -63,7 +64,7 @@ hooks:
            a valid completion state.
         8. Smoke test was completed.
 
-        Row 8 (has_obs && has_workiq && has_setup): if user chose "Verify only"
+        Row 8 (has_obs && has_workiq && disk_blueprint_present): if user chose "Verify only"
         in Phase 0C, all Phase 9.x checks collapse to verified. If they chose
         "Re-publish", checks 2, 6, 8 still apply.
 
@@ -330,10 +331,13 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 
 **Skill-state signals** (language-agnostic):
 
-- **`has_workiq`** — `ToolingManifest.json` exists AND its top-level `mcpServers` array (or `servers` in legacy v1 schema) is non-empty. Parse the file; if the array contains at least one entry, `has_workiq = true`.
-- **`has_setup`** — read from `.a365-workspace-detection.local.json` field `hasBlueprintConfig` (set by `a365-setup`). Equivalently: `a365.generated.config.json` exists with a non-empty `agentBlueprintId`.
+- **`has_workiq`** — `ToolingManifest.json` exists AND its top-level `mcpServers` array (or `servers` in legacy v1 schema) is non-empty. Computed at read-time from disk.
+- **`disk_blueprint_present`** — `a365.generated.config.json` exists on disk AND has a non-empty `agentBlueprintId`. Computed at read-time from disk, never from the cache. **This is a disk signal, not a truth claim** — the file can be stale (blueprint deleted in Entra, file copied from another project, agent-name mismatch). For advisory display only (matrix view, summary).
+- **`blueprint_verified_for_session`** — set to `true` ONLY after the user has gone through Step 9.7.1a's three-way prompt in this session and explicitly chose Reuse (or Re-run / Fresh completed successfully). Until then, treat as `false` regardless of `disk_blueprint_present`. This is the gate that downstream logic must consult before treating the blueprint claim as authoritative.
 
-These three flags (`has_obs`, `has_workiq`, `has_setup`) drive the 8-row state matrix in Phase 0C.
+**Cache discipline:** `.a365-workspace-detection.local.json` stores STATIC detection data (language, framework, programming language, agentType, authMode). It does NOT track `disk_blueprint_present` or `blueprint_verified_for_session` — both are derived at read-time. The CLI can mutate blueprint state between sessions (cleanup, fresh setup-all) without updating the cache, and even disk state can lie about tenant state.
+
+These flags (`has_obs`, `has_workiq`, `disk_blueprint_present`) drive the 8-row state matrix in Phase 0C — but for the blueprint dimension the matrix is advisory only (see Step 9.7.1a verification gate).
 
 ---
 
@@ -356,7 +360,7 @@ AI Teammate scaffolding:
 Agent 365 capabilities:
   • Observability:    {has_obs ? "✅ already wired" : "❌ will be added"}
   • WorkIQ tools:     {has_workiq ? "✅ already wired" : "❌ will be offered"}
-  • Blueprint setup:  {has_setup ? "✅ registered (Blueprint ID: " + existingBlueprintId + ")" : "❌ will run a365 setup all"}
+  • Blueprint setup:  {disk_blueprint_present ? "✅ registered (Blueprint ID: " + existingBlueprintId + ")" : "❌ will run a365 setup all"}
 
 Reply **yes** to confirm, or describe corrections.
 ```
@@ -413,9 +417,9 @@ TaskCreate: "Register, publish, and deploy"
 
 ## Phase 0C — Resolve State and Route
 
-The 8-row state matrix below decides what runs vs skips vs short-circuits based on `(has_obs, has_workiq, has_setup)`. Compute the row, print the resolved plan to the user, and route accordingly.
+The 8-row state matrix below decides what runs vs skips vs short-circuits based on `(has_obs, has_workiq, disk_blueprint_present)`. Compute the row, print the resolved plan to the user, and route accordingly.
 
-> **Note on `setup`:** the matrix's "skip setup" rows (5–8) are **advisory only**. Step 9.7.1 always re-checks `a365.generated.config.json` on disk and asks the user explicitly (reuse / re-run / fresh) when a blueprint exists — the user always sees the choice. The matrix's `~~setup~~` cells mean *the default suggestion is reuse*, not that setup-all is silently skipped.
+> **Note on `setup` — disk presence is not verification:** the matrix's "skip setup" rows (5–8) are **advisory only**. Step 9.7.1a is the canonical verification gate — it reads `a365.generated.config.json`, shows the blueprint ID + agent name to the user, and asks **Reuse / Re-run / Fresh** explicitly. Only that interaction sets `blueprint_verified_for_session = true`. The matrix's `~~setup~~` cells mean *the default suggestion is reuse*, not that setup-all is silently skipped. This handles the cases where disk lies about tenant state: blueprint deleted in Entra, file copied from another project, agent-name mismatch.
 
 | # | Obs | WorkIQ | Setup | What runs | Note |
 |---|-----|--------|-------|-----------|------|
@@ -431,7 +435,7 @@ The 8-row state matrix below decides what runs vs skips vs short-circuits based 
 **Print the resolved state to the user**, verbatim, before any work runs:
 
 ```
-Resolved state (row {N}): has_obs={T/F}, has_workiq={T/F}, has_setup={T/F}
+Resolved state (row {N}): has_obs={T/F}, has_workiq={T/F}, disk_blueprint_present={T/F}
 
 Plan:
   • Observability:   {run | skip — already wired}
@@ -476,6 +480,16 @@ What would you like to do?
 - **NodeJS** — `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/nodejs-ai-teammate.md` (see "Required Packages" for the `{agentStack}` variant, and "Dev dependencies")
 - **.NET** — `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/dotnet-ai-teammate.md` (see "Required NuGet Packages")
 - **Python** — `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/references/python-ai-teammate.md` (see "Required Dependencies")
+
+### Node.js LangChain — `@langchain/core` version pre-flight (skip for OpenAI Agents SDK / Claude SDK / Semantic Kernel / Google ADK)
+
+Before running the install, **Read** `package.json` and check the `@langchain/core` version. If the existing range is `^0.3.*` or `~0.3.*`, the install will force a major-version upgrade to v1 (peer dep of `@langchain/mcp-adapters@^1.0.0`). Warn the user verbatim:
+
+> "Your project depends on `@langchain/core@0.3.x`. Installing the MCP adapter requires `@langchain/core@^1.0.0` — a breaking upgrade. Known compile-break spots in v1: `bindTools` return type changed (you may need to migrate or add `as never` casts on the model arg), and `ToolMessage` `content` shape changed. Proceed with the upgrade and fix-forward? (yes / no)"
+
+If `yes`, install and continue to Phase 9 (build validation) — fix-forward any type errors there. If `no`, stop and tell the user the AI Teammate MCP wiring requires v1; they can either upgrade or skip WorkIQ tools at Phase 9.6.
+
+If `@langchain/core` is not in `package.json` or is already `^1.0.0`, no warning needed — install directly.
 
 **Mark task complete.**
 
@@ -675,8 +689,31 @@ If `ToolingManifest.json` already exists (the user ran `add-workiq-tools` earlie
 
 ### NodeJS — Update .env / .env.example
 
-**Read** `.env.example` or `.env`. **Read** the `.env` template section from `nodejs-ai-teammate.md`.
-Append only the missing variables (LLM vars + A365 connection vars + agentic auth vars).
+**Read** `.env.example` or `.env`. **Read** the `.env — Complete Template` section from `nodejs-ai-teammate.md` for the canonical key list and the "What reads what" table.
+
+**Additive rule:** Append only the keys missing from the current `.env`. Do NOT delete existing keys the user has set (even if they're dead — e.g. `USE_AGENTIC_AUTH`, `agentic_connectionName`, `agent365Observability__agentBlueprintId`/`__clientId`/`__clientSecret`/`__sponsorUser*`). The reference file's "What's NOT in this template" section documents which keys are inert; the skill flags them at the end of Phase 8 so the user can clean up if they want, but it does not auto-delete.
+
+**Run-target rewrite (the one exception to additive-only):** Read `runTarget` and `runTargetHosting` from `.a365-workspace-detection.local.json` and rewrite these two keys in `.env` to match:
+
+| Run target | `NODE_ENV` | `ENABLE_A365_OBSERVABILITY_EXPORTER` |
+|---|---|---|
+| `runTarget=prod` AND `runTargetHosting ∈ {devtunnel, cloud}` | `production` | `true` |
+| `runTarget=local` (AgentsPlayground) | `development` | `false` |
+
+If the user has hand-set `NODE_ENV` or `ENABLE_A365_OBSERVABILITY_EXPORTER` to a non-conforming value for the chosen `runTarget`, tell them verbatim: *"Updating `NODE_ENV=<new>` and `ENABLE_A365_OBSERVABILITY_EXPORTER=<new>` to match your `runTarget` choice (was `<old>`). If this is wrong, change `runTarget` in `.a365-workspace-detection.local.json` instead of hand-editing `.env`."* Then update both keys.
+
+**Populate prod / dev-tunnel keys from `a365.generated.config.json`** when they're empty:
+- `connections__service_connection__settings__clientId` ← `agentBlueprintId`
+- `connections__service_connection__settings__clientSecret` ← `agentBlueprintClientSecret`
+- `connections__service_connection__settings__tenantId` ← `tenantId`
+- `agent365Observability__agentId` ← `agentBlueprintId`
+- `agent365Observability__tenantId` ← `tenantId`
+- `agent365Observability__agentName` ← `agentBlueprintDisplayName` (if available)
+- `agent365Observability__agentDescription` ← `agentDescription` (if available)
+
+For `runTarget=local`, leave the above empty — they're inert in the AgentsPlayground path. Do not populate.
+
+After Phase 8 completes, surface a one-line summary: *"Updated .env for runTarget=`<value>`. NODE_ENV=`<value>`, ENABLE_A365_OBSERVABILITY_EXPORTER=`<value>`. Found N dead/stray keys (see reference doc — safe to delete)."*
 
 ### .NET — Update appsettings.json
 
@@ -746,7 +783,9 @@ Do NOT revert changes on build failure — fix forward.
 **Skip-gate (from Phase 0C `has_obs`):**
 
 - **If `has_obs = true`** (rows 2, 4, 6, 8): tell the user verbatim *"Observability already wired — skipping. Run `/agent365:instrument-observability` to reconfigure."* and mark the task complete. Do NOT invoke the sub-skill.
-- **If `has_obs = false`** (rows 1, 3, 5, 7): **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it now. Observability is part of the AI Teammate package — do not ask whether to add it.
+- **If `has_obs = false`** (rows 1, 3, 5, 7):
+  1. **Pre-populate the detection cache** so the sub-skill skips its agent-kind / auth-mode wizard. **Read** `.a365-workspace-detection.local.json`, merge `{ "agentType": "ai-teammate", "authMode": "agentic-user" }` into it, and **Write** it back. AI Teammate always uses the agentic-user identity — there's no obo/s2s decision to make.
+  2. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/SKILL.md` and follow it now. Observability is part of the AI Teammate package — do not ask whether to add it. The sub-skill's Phase 0.5 will see the pre-populated cache and skip the confirmation prompt automatically.
 
 **Mark task complete: "Add Observability"**
 
@@ -816,7 +855,7 @@ Phase 10.
 ```
 ✅ AI Teammate flow complete!
 
-Resolved state at entry: has_obs={T/F}, has_workiq={T/F}, has_setup={T/F}
+Resolved state at entry: has_obs={T/F}, has_workiq={T/F}, disk_blueprint_present={T/F}
 Run Target: {prod | local}{runTarget = "prod" ? " — hosting: " + runTargetHosting + " (" + chosenEndpoint + ")" : ""}
 
 Your agent now has:
@@ -826,7 +865,7 @@ Your agent now has:
   • ToolingManifest.json  {has_workiq-at-entry || (user picked yes in Phase 9.6)
                               ? "wired by add-workiq-tools (a365 develop add-mcp-servers)"
                               : "not created — run /agent365:add-workiq-tools to wire WorkIQ tools"}
-  • Blueprint              {has_setup-at-entry
+  • Blueprint              {disk_blueprint_present-at-entry
                               ? "reused (Blueprint ID: " + existingBlueprintId + ")"
                               : "registered (a365 setup all --aiteammate --m365)"}
   • Observability          {has_obs-at-entry
@@ -871,7 +910,7 @@ Next steps:
 
   • has_obs:       true (Observability is wired)
   • has_workiq:    true (WorkIQ is wired)
-  • has_setup:     true (Blueprint ID: {existingBlueprintId})
+  • disk_blueprint_present:     true (Blueprint ID: {existingBlueprintId})
 
 If you want to push a code change, re-run /agent365:make-ai-teammate and pick "Re-publish" at the row 8 sub-question.
 ```

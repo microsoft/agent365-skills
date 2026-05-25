@@ -306,7 +306,7 @@
     {
       "id": 16,
       "prompt": "Set up A365 for this agent",
-      "description": "Row F/F/T at a365-setup — blueprint exists (has_setup=true), no observability or workiq yet; capabilities menu shows Register, Observability, WorkIQ, AI Teammate (no flags trigger hiding)",
+      "description": "Row F/F/T at a365-setup — blueprint exists on disk (disk_blueprint_present=true), no observability or workiq yet; capabilities menu shows Register, Observability, WorkIQ, AI Teammate (no flags trigger hiding)",
       "expected_output": "Phase 1A Step 5 detects has_aiteammate_structure=false, has_obs=false, has_workiq=false; Phase 1A Step 4 detects hasBlueprintConfig=1 (blueprint already provisioned). Phase 1B presents the full 4-option capabilities menu — none are hidden. Blueprint question is asked (reuse vs fresh). Cache writer stores the three primary flags and hasBlueprintConfig; not hasAITeammateChanges.",
       "files": [],
       "expectations": [

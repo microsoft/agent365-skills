@@ -39,7 +39,7 @@ This phase runs the full AI Teammate registration and publishing pipeline:
 
 ### Step 9.7.1a — Re-check blueprint state from disk and ask the user
 
-**Do NOT trust `has_setup` from the cache alone** — `a365.generated.config.json` may have been created or deleted since the cache was last refreshed. Re-check now:
+**Do NOT trust `disk_blueprint_present` from the cache alone** — `a365.generated.config.json` may have been created or deleted since the cache was last refreshed. Re-check now:
 
 ```bash
 ls a365.generated.config.json 2>/dev/null && \
@@ -74,17 +74,27 @@ What would you like to do?
      approved — instance request must be redone after fresh provisioning.
 ```
 
-Branch on the answer:
+Branch on the answer. **All three branches set `blueprint_verified_for_session = true` on completion** — this is the session-level gate that downstream phases consult before treating the blueprint as authoritative. Disk presence alone is never enough.
 
-- **1 (Reuse):** Skip the rest of Step 9.7.1 entirely. Read `agentBlueprintId` and `messagingEndpoint` from `a365.generated.config.json` and jump to Step 9.7.2. Update the detection cache field `has_setup = true` if it wasn't already.
-- **2 (Re-run):** Continue with the setup-all flow below (Step 9.7.1b). The CLI will detect the existing blueprint and reuse the ID.
-- **3 (Fresh):** Run `a365 cleanup --agent-name <name>` first with an explicit *"Type yes to confirm destructive cleanup"* gate. Only after cleanup succeeds, continue with the setup-all flow below.
+- **1 (Reuse):** Skip the rest of Step 9.7.1 entirely. Read `agentBlueprintId` and `messagingEndpoint` from `a365.generated.config.json` and jump to Step 9.7.2. Set `blueprint_verified_for_session = true` (user explicitly confirmed this is the right blueprint for this agent).
+- **2 (Re-run):** Continue with the setup-all flow below (Step 9.7.1b). The CLI will detect the existing blueprint and reuse the ID. Set `blueprint_verified_for_session = true` after setup-all completes.
+- **3 (Fresh):** Run `a365 cleanup --agent-name <name>` first with an explicit *"Type yes to confirm destructive cleanup"* gate. Only after cleanup succeeds, continue with the setup-all flow below. Set `blueprint_verified_for_session = true` after setup-all completes.
 
 **Otherwise** (no `a365.generated.config.json` on disk, or `agentBlueprintId` empty) → no existing blueprint, continue with the setup-all flow below.
 
 ### Step 9.7.1b — Run setup-all (when reached from 9.7.1a paths 2, 3, or "no blueprint")
 
-Ask the user for the **agent name** (reuse from session context if available, otherwise ask). Then show a dry-run first:
+Ask the user for the **agent name** (reuse from session context if available, otherwise ask).
+
+**Pre-flight check — STOP if it fails:** `a365 setup all --agent-name <name>` derives `AgentBlueprintDisplayName = "<name> Blueprint"` ([AllSubcommand.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Commands/SetupSubcommands/AllSubcommand.cs)), and `a365 publish` stamps that string verbatim into `manifest.json#name.short`, which the Teams app manifest schema caps at 30 chars. Enforce **`length(agent-name) ≤ 20`** (i.e. `length(agent-name) + len(" Blueprint") ≤ 30`) before invoking the CLI.
+
+If the supplied name is longer than 20 chars (whether typed now or reused from session context / `a365.generated.config.json`), STOP and tell the user verbatim:
+
+> "Your agent name is N chars; the CLI appends ' Blueprint' to derive the Teams manifest's `name.short` (capped at 30). Please supply a name ≤ 20 chars. The CLI's own warning fires only at publish time, after the blueprint and Azure resources are already provisioned — easier to fix now."
+
+Wait for a corrected name. Re-run the pre-flight check on the new value.
+
+Then show a dry-run first:
 
 ```bash
 # Dry-run preview (required before applying)
@@ -195,8 +205,10 @@ Compare `chosenEndpoint` against the `messagingEndpoint` recorded in `a365.gener
 - **If they differ:** the blueprint's messaging endpoint must be updated to the chosen one — this is also what the Dev Portal Notification URL will be set to in Step 9.7.5:
 
   ```bash
-  a365 setup blueprint --update-endpoint <chosenEndpoint>
+  a365 setup blueprint --update-endpoint <chosenEndpoint> --m365
   ```
+
+  **`--m365` is required.** Per [BlueprintSubcommand.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Commands/SetupSubcommands/BlueprintSubcommand.cs), without it `--update-endpoint` silently skips the Teams Graph API re-registration step, leaving Teams routing pointed at the old endpoint. AI Teammate is always M365-integrated — pass `--m365` every time.
 
   Run it, then re-read `a365.generated.config.json` and confirm `messagingEndpoint` now equals `chosenEndpoint`.
 
@@ -210,19 +222,25 @@ Before continuing to publish (prod) or AgentsPlayground (local), verify the proj
 
 | Concern | Python `.env` | Node.js `.env` | .NET `appsettings.json` |
 |---|---|---|---|
-| Agentic auth flag | `USE_AGENTIC_AUTH=true` | `USE_AGENTIC_AUTH=true` | (built-in via `AgentApplication`) |
 | Blueprint client ID | `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=<agentBlueprintId>` | `connections__service_connection__settings__clientId=<agentBlueprintId>` | `AgentBluePrint.Settings.ClientId` |
 | Blueprint client secret | `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=<agentBlueprintClientSecret>` | `connections__service_connection__settings__clientSecret=<agentBlueprintClientSecret>` | `AgentBluePrint.Settings.ClientSecret` |
 | Tenant ID | `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=<tenantId>` | `connections__service_connection__settings__tenantId=<tenantId>` | `AgentBluePrint.Settings.TenantId` |
 | Auth handler type | `AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__TYPE=AgenticUserAuthorization` | `agentic_type=agentic` | `AgentApplication.UserAuthorization.Handlers.agentic.Type=AgenticUserAuthorization` |
-| Auth handler scopes | `AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__SCOPES=https://graph.microsoft.com/.default` | `agentic_scopes=https://graph.microsoft.com/.default` | `AgentApplication.UserAuthorization.Handlers.agentic.Settings.Scopes` |
+| Auth handler scopes | `AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__SCOPES=https://graph.microsoft.com/.default` | `agentic_scopes=https://graph.microsoft.com/.default` (or the MCP platform SP scope `ea9ffc3e-…/.default` if the agent uses WorkIQ MCP servers) | `AgentApplication.UserAuthorization.Handlers.agentic.Settings.Scopes` |
 | Connection map | `CONNECTIONSMAP_0_SERVICEURL=*` + `CONNECTIONSMAP_0_CONNECTION=SERVICE_CONNECTION` | `connectionsMap__0__serviceUrl=*` + `connectionsMap__0__connection=service_connection` | `ConnectionsMap[0]` |
 | LLM (one of) | `OPENAI_API_KEY=...` OR `AZURE_OPENAI_API_KEY=` + `AZURE_OPENAI_ENDPOINT=` + `AZURE_OPENAI_DEPLOYMENT=` + `AZURE_OPENAI_API_VERSION=` | (same) | `AIServices.OpenAI.*` OR `AIServices.AzureOpenAI.*` + `AIServices.UseAzureOpenAI` |
-| MCP endpoint | `MCP_PLATFORM_ENDPOINT=` (optional; defaults to prod) | (same) | `MCP_PLATFORM_ENDPOINT` in `launchSettings.json` env vars |
-| Observability | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` + `A365_OBSERVABILITY_LOG_LEVEL=info` | (same) | (same in `appsettings.json`) |
+| Observability exporter — value depends on run target | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` for prod / dev tunnel; `=false` for local AgentsPlayground (console-only traces) | (same) — the only env var `@microsoft/opentelemetry` reads; see [A365Configuration.ts](https://github.com/microsoft/opentelemetry-distro-javascript/blob/main/src/a365/configuration/A365Configuration.ts) | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (prod) / `=false` (local) in app-service env vars or `Logging.OpenTelemetry` |
+| Observability agent metadata (stamped by `a365 setup all`; read by AgentDetails wiring → MAC portal grouping) | `agent365Observability__agentId=<agentBlueprintId>` + `__tenantId=<tenantId>` + (optional) `__agentName=` + `__agentDescription=` | (same — case-insensitive env keys; see [ProjectSettingsSyncHelper.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Helpers/ProjectSettingsSyncHelper.cs)) | `Agent365Observability.AgentId` + `.TenantId` + `.AgentName` + `.AgentDescription` |
 | Server port | `PORT=3978` | `PORT=3978` | `applicationUrl` in `launchSettings.json` (e.g. `https://localhost:64896;http://localhost:64897`) |
 
 Pull `<agentBlueprintId>`, `<agentBlueprintClientSecret>`, `<tenantId>` from `a365.generated.config.json` (set by Step 9.7.1). For .NET, blueprint client secret is sensitive — prefer `dotnet user-secrets` over committing to `appsettings.json`.
+
+> **Not in this table (and why)** — the following Node.js keys appeared in older skill versions but are NOT consumed by `@microsoft/Agents-for-js` or `@microsoft/opentelemetry`, so the skill must NOT write them as required vars:
+> - `USE_AGENTIC_AUTH` — handler selection is in code (`MyAgent.authHandlerName = 'agentic'`); env var is informational only.
+> - `agentic_connectionName` — invalid key for the agentic handler (only `type`, `scopes`, `altBlueprintConnectionName` are recognized; `connectionName` is an Azure-Bot-handler legacy alias).
+> - `agent365Observability__agentBlueprintId` — CLI writes `__agentId`, not `__agentBlueprintId`. Stray.
+> - `agent365Observability__clientId` / `__clientSecret` — never written by the CLI and never read by the distro. Stray.
+> - `agent365Observability__sponsorUserId` / `__sponsorUserName` / `__sponsorUserEmail` — S2S-only. For AI Teammate (always `agentic-user`), `CallerDetails` come from the turn context — these env vars are inert.
 
 **For `runTarget = "prod"` — additional verification:**
 
@@ -236,9 +254,9 @@ Pull `<agentBlueprintId>`, `<agentBlueprintClientSecret>`, `<tenantId>` from `a3
    | Concern | Python `.env` | Node.js `.env` | .NET `appsettings.json` |
    |---|---|---|---|
    | Active auth handler — must point at agentic in prod | `AUTH_HANDLER_NAME=AGENTIC` (under `# A365 Authentication`). The Python code reads this env var to pick a handler at runtime; empty leaves the agent with no handler and every Teams message fails token exchange. | Not env-driven — `MyAgent.authHandlerName = 'agentic'` is set in code. Verify the constant matches the registered auth handler in `agentic_type=agentic`. | Not env-driven — `AgentApplication:AgenticAuthHandlerName=agentic` lives in `appsettings.json`. Verify the value is `agentic`. |
-   | A365 observability exporter — must be true in prod (false would mean console-only / no traces in Agent 365 portal or Defender) | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (or `a365.enableObservabilityExporter: true` in code) | `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in app-service env vars (or `Logging.OpenTelemetry` config wiring) |
+   | Node.js production mode — required for ANY Teams-reachable hosting (cloud OR dev tunnel) | n/a | `NODE_ENV=production`. Without it, `index.ts` short-circuits to `authConfig = {}` (per the `isProduction ? loadAuthConfigFromEnv() : {}` gate). `authorizeJWT` then no-ops in dev, but `CloudAdapter.process` still needs `authConfig.clientId` to verify Teams' signed activity and authenticate outbound replies — surfacing as silent 401s / audience-mismatch errors. **Smoke signal: boot log reads `for appId undefined`.** This is the most common silent-failure mode for Node.js dev-tunnel projects, because Teams sends real signed activities even when you're running locally. | n/a — .NET uses `IHostEnvironment` + `appsettings.{Environment}.json` |
 
-   If any value is wrong or missing, fix it before continuing to Step 9.7.3.
+   For Node.js + `runTargetHosting ∈ {devtunnel, cloud}`: open `.env` and confirm `NODE_ENV=production` is present. If missing or set to `development`, update it before continuing. Confirm `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (the common table's value-by-run-target rule applies). If any other value above is wrong or missing, fix it before continuing to Step 9.7.3.
 
 3. **Environment variables are set at the cloud platform, not just locally.** Local `.env` files do NOT propagate to the cloud — they must be configured in the platform's config:
    - **Azure App Service:** Azure portal → Web App → Settings → Environment Variables, or `az webapp config appsettings set --name <app> --resource-group <rg> --settings KEY=VALUE`. Use [Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/overview) for sensitive secrets. Verify with `az webapp config appsettings list --name <app> --resource-group <rg>`. Full deployment guide: [Deploy agent to Azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure).
@@ -325,6 +343,7 @@ Use `a365 publish --dry-run` first if you want to preview the manifest ID substi
 | Output | Action |
 |--------|--------|
 | `"Package created"` / `"manifest.zip written"` | Proceed to upload below |
+| `"name.short ... EXCEEDS 30 chars"` warning | The CLI's own length warning fired (see [PublishCommand.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Commands/PublishCommand.cs)) — Step 9.7.1b's pre-flight was bypassed, or this is a reused blueprint from 9.7.1a path 1. The blueprint is already provisioned with a long name. Two remediation paths: (i) edit `a365.generated.config.json#agentBlueprintDisplayName` to a value ≤ 30 chars, then re-run `a365 publish` — the Entra app's display name will mismatch the manifest cosmetically but publish will succeed; (ii) `a365 cleanup --agent-name <name>`, then re-run Step 9.7.1b with a name ≤ 20 chars. |
 | `"Manifest validation failed"` (any schema error) | Re-run `a365 setup all --aiteammate` (idempotent) so the CLI regenerates the manifest fields, then retry `a365 publish`. If the error persists, show the CLI output verbatim to the user and report to the A365 CLI team — do NOT hand-edit `manifest.json`. |
 
 **Upload the produced package to Microsoft 365 Admin Center** (this is always a manual step — there is no CLI upload API yet):
@@ -359,7 +378,7 @@ Walk the user through these exact steps:
 
 > **If the user doesn't have access to the Developer Portal:** they must contact their tenant administrator either to grant access or to complete this configuration on their behalf. This cannot be done via the CLI.
 
-> **If the bot messaging endpoint changes later** (e.g. the dev tunnel URL or the Azure Web App URL): update the blueprint via `a365 setup blueprint --update-endpoint <new-url>`, then return to this Developer Portal page and update the Notification URL to match. Both must agree.
+> **If the bot messaging endpoint changes later** (e.g. the dev tunnel URL or the Azure Web App URL): update the blueprint via `a365 setup blueprint --update-endpoint <new-url> --m365`, then return to this Developer Portal page and update the Notification URL to match. Both must agree. `--m365` is required — without it the CLI skips the Teams Graph re-registration silently.
 
 ---
 

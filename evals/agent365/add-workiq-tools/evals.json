@@ -77,12 +77,12 @@
     {
       "id": 3,
       "prompt": "Add Work IQ Mail and Work IQ Calendar to this agent",
-      "description": "User specifies exact server names — selective install",
-      "expected_output": "The skill uses the user-provided server names directly, runs a365 develop add-mcp-servers with those two servers, wires agent code per the framework-specific branch from Phase 4, and explains only the permissions relevant to Mail and Calendar.",
+      "description": "User specifies capability intent in natural language — skill maps to exact catalog names",
+      "expected_output": "The skill runs a365 develop list-available, maps the user's natural-language intent ('Work IQ Mail', 'Work IQ Calendar') to the catalog's exact mcpServerName values (e.g. mcp_MailTools, mcp_CalendarTools — current V2 names), runs a365 develop add-mcp-servers with those names, wires agent code per the framework-specific branch from Phase 4, and explains only the permissions relevant to the selected capabilities.",
       "files": [],
       "expectations": [
-        "Phase 2: User-provided server names ('Work IQ Mail', 'Work IQ Calendar') are used directly without re-prompting",
-        "Phase 3: a365 develop add-mcp-servers 'Work IQ Mail' 'Work IQ Calendar' is run as a single command",
+        "Phase 2: a365 develop list-available is run; user's natural-language intent is mapped to the catalog's exact mcpServerName values without re-prompting",
+        "Phase 3: a365 develop add-mcp-servers is run as a single command with the catalog-derived names (e.g. 'mcp_MailTools' 'mcp_CalendarTools'), NOT the user's natural-language strings",
         "Phase 3: Both servers appear in a365 develop list-configured output",
         "Phase 4: Agent code is wired per the framework-specific branch (§4.1–§4.11 depending on agentStack)",
         "Phase 8: Summary lists only the two selected servers"
@@ -132,8 +132,8 @@
         "Phase 1: a365 develop list-configured is run",
         "Phase 1: a365.generated.config.json is found with a non-empty agentBlueprintId",
         "Phase 2: a365 develop list-available is run and output is shown",
-        "Phase 2: User-provided server names ('Work IQ Mail', 'Work IQ Calendar') are used directly",
-        "Phase 3: a365 develop add-mcp-servers 'Work IQ Mail' 'Work IQ Calendar' is run as a single command",
+        "Phase 2: User's natural-language intent ('Work IQ Mail', 'Work IQ Calendar') is mapped to the catalog's exact mcpServerName values without re-prompting",
+        "Phase 3: a365 develop add-mcp-servers is run as a single command with catalog-derived names (e.g. 'mcp_MailTools' 'mcp_CalendarTools'), NOT the user's natural-language strings",
         "Phase 3: ToolingManifest.json is updated by CLI — not hand-edited",
         "Phase 4: Routed to §4.7 Python Agent Framework branch",
         "Phase 4: pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agentframework runs if missing (note: single-word suffix — '-agent-framework' with dash is NOT a valid pip name)",
