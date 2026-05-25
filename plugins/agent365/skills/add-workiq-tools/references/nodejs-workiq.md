@@ -122,6 +122,110 @@ export async function getClient(
 
 ---
 
+## Optional: Word @mention notification handling (LangChain — BEST-EFFORT)
+
+> **Status:** Public APIs (`NotificationType.WpxComment`, `wpxCommentNotification`, `AgentApplicationOptions.proactive`, `Proactive.storeConversation` / `sendActivity`) are verified in `@microsoft/agents-a365-notifications` and `@microsoft/agents-hosting`. No Microsoft Node.js sample published yet — mark generated lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
+
+When a user `@mentions` the agent on a Word comment, the runtime delivers an `AgentNotificationActivity` with `notificationType === NotificationType.WpxComment`. The document URL is **not** on `wpxCommentNotification` — read it from `activity.attachments[*].contentUrl`. The Node.js `WpxComment` shape exposes `documentId`, `initiatingCommentId`, `subjectCommentId` (note: no `parentCommentId` — that's the .NET shape). Delegate comment-ID resolution to the LLM via prompt so the agent doesn't depend on the typed shape.
+
+### 1. Enable proactive on the `AgentApplication`
+
+```typescript
+super({
+  storage: new MemoryStorage(),
+  proactive: {},                       // required for proactive Teams DMs
+  authorization: { agentic: { type: 'agentic', /* ... */ } },
+});
+```
+
+### 2. Index Teams conversations by user identifiers
+
+```typescript
+const userKeyToConversationId = new Map<string, string>();
+
+function userKeysFor(from: any): string[] {
+  if (!from) return [];
+  const keys = new Set<string>();
+  if (from.aadObjectId) keys.add(`aad:${String(from.aadObjectId).toLowerCase()}`);
+  if (from.id)          keys.add(`id:${String(from.id).toLowerCase()}`);
+  if (from.name)        keys.add(`name:${String(from.name).toLowerCase()}`);
+  return [...keys];
+}
+
+// A365 WorkIQ — best-effort wiring (verify against SDK source before production)
+private async trackConversationForProactive(context: TurnContext): Promise<void> {
+  const convId = await this.proactive.storeConversation(context);
+  for (const k of userKeysFor(context.activity.from)) {
+    userKeyToConversationId.set(k, convId);
+  }
+}
+```
+
+Call `trackConversationForProactive` from both the message handler **and** the `installationUpdate(add)` handler — proactive DMs require a previously stored conversation reference.
+
+### 3. Handle the `WpxComment` notification
+
+```typescript
+// A365 WorkIQ — best-effort wiring (verify against SDK source before production)
+case NotificationType.WpxComment:
+  await this.handleWpxCommentNotification(context, state, agentNotificationActivity);
+  break;
+
+private async handleWpxCommentNotification(context, state, activity) {
+  const wpx = activity.wpxCommentNotification;
+  if (!wpx) return;
+
+  // URL is not on wpxCommentNotification — pull from raw attachments.
+  const attachments  = (context.activity as any)?.attachments ?? [];
+  const fileAttachment = attachments.find((a: any) =>
+    typeof a?.contentUrl === 'string' && /\.(docx?|doc)(\?|$)/i.test(a.contentUrl),
+  ) ?? attachments[0];
+  const documentUrl  = fileAttachment?.contentUrl;
+  const documentName = fileAttachment?.name ?? 'the document';
+  const commentText  = (context.activity as any)?.text ?? '';
+  const senderName   = context.activity.from?.name ?? 'a user';
+
+  const client = await getClient(this.authorization, A365Agent.authHandlerName, context);
+
+  // Tell the LLM to use the REPLY tool — default behaviour is AddComment (new thread).
+  const prompt =
+    `${senderName} @mentioned you on a comment in "${documentName}".\n` +
+    `Comment: ${commentText}\nDocument URL: ${documentUrl}\n` +
+    `Steps:\n` +
+    `1. Call mcp_WordServer.GetDocumentContent with the URL.\n` +
+    `2. Find the comment matching the text above; capture driveId, documentId, commentId.\n` +
+    `3. Use the Word REPLY tool (name contains "reply") — NOT AddComment.\n` +
+    `4. Reply concisely. Finish with: "Replied to commentId=<id> with: <text>".`;
+
+  const response = await client.invokeInferenceScope(prompt);
+
+  // Proactively notify the user in Teams (needs prior tracked conversation).
+  const convId = userKeysFor(context.activity.from)
+    .map(k => userKeyToConversationId.get(k))
+    .find(Boolean);
+  if (convId) {
+    const replyText = response?.match(/Replied to commentId=\S+ with:\s*([\s\S]+)/)?.[1] ?? response;
+    await this.proactive.sendActivity(this.adapter, convId, {
+      text: `I replied to your comment on **${documentName}**:\n\n${replyText?.substring(0, 1500)}`,
+    });
+  }
+}
+```
+
+### 4. (Optional) Keep multi-turn @mention threads coherent
+
+Wire a LangGraph `MemorySaver` into `createAgent({ checkpointer })` and invoke with `{ configurable: { thread_id: conversation.id } }` so repeated @mentions on the same document retain tool-call history.
+
+### Gotchas
+
+- `wpxCommentNotification` does **not** carry the document URL — always pull from `activity.attachments`.
+- `proactive.sendActivity` requires the recipient to have previously spoken to (or installed) the bot. If `userKeyToConversationId.get(...)` returns `undefined`, surface a friendly *"DM me once to enable Word notifications"* message instead of failing silently.
+- Tell the LLM explicitly to use the **reply** tool. Without that instruction, models default to `AddComment` and create a new top-level thread.
+- The Node.js `WpxComment` shape has `initiatingCommentId` / `subjectCommentId`, **not** `parentCommentId` (which is .NET-only). The prompt above delegates ID resolution to the LLM, avoiding the typing gap.
+- Word MCP server's `audience` GUID in `ToolingManifest.json` is written by `a365 develop add-mcp-servers` — never hand-edit.
+
+---
+
 ## OpenAI Agents SDK — Wiring (VERIFIED)
 
 Sample: https://github.com/microsoft/Agent365-Samples/blob/main/nodejs/openai/sample-agent/src/client.ts

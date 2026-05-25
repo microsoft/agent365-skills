@@ -388,6 +388,12 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
    ```
 2. **Read** `nodejs-workiq.md` — section "LangChain — Wiring (VERIFIED)".
 3. **Edit** `src/client.ts` (or wherever the `getClient` factory lives). Add module-level `toolService = new McpToolRegistrationService()` singleton and the per-turn call inside `getClient`. **Capture the return value** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
+4. **Offer Word @mention notification handling** — only if `mcp_WordServer` is in the user's selected servers. Ask via `AskUserQuestion`:
+   > *"You added `mcp_WordServer`. Do you want this AI Teammate to also notify and reply when someone `@mentions` it on a Word comment? It will read the document, post a reply on the same comment thread, and DM the user in Teams with the reply text."*
+   >
+   > Options: **Yes — wire @mention handling** / **No — Word read/write only**
+   - If Yes: **Read** the "Optional: Word @mention notification handling (BEST-EFFORT)" section in `nodejs-workiq.md` and apply it to `src/agent.ts` + `src/client.ts`. Pre-check `proactive` is configured on the `AgentApplication` constructor; add `proactive: {}` if missing. Mark new lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
+   - If No: skip — Word tools still work for direct user prompts; only the proactive @mention path is omitted.
 
 ### §4.5 Node.js OpenAI
 
