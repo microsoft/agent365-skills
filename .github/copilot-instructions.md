@@ -5,6 +5,27 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 
 ---
 
+## Task Execution Discipline
+
+When a skill creates a task list, run every task to completion in one turn — do not pause
+between phases. Mark each task complete the moment its phase finishes (`TaskUpdate` in
+Claude Code, `- [ ]` → `- [x]` in Copilot Chat / CLI). Surface a one-line status update
+between phases instead of asking permission.
+
+**Only pause at these explicit interaction points:**
+- `a365-setup`: capabilities menu; authMode (non-AI-Teammate only); install confirmations for missing tools; Azure login.
+- `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
+- `make-ai-teammate`: Phase 0B confirm; 0C row-8 sub-question; 9.6 WorkIQ offer; 9.7.1a Reuse/Re-run/Fresh; 9.7.2 Run Target + 9.7.2b hosting.
+- `add-workiq-tools`: MCP server selection; Word @mention offer (only when `mcp_WordServer` is selected and stack is Node.js LangChain).
+- `instrument-observability`: agent kind + auth mode (only if not in cache).
+- `test-local`: confirm before launching.
+
+CLI `Allow / Skip` prompts are the chat client's permission flow — not stopping conditions.
+Manual browser steps (Teams Dev Portal, M365 Admin Center, GA consent) are surfaced with
+URL + action, then you continue to the next non-blocking phase.
+
+---
+
 ## Skill: make-ai-teammate
 
 **Full instructions:** [plugins/agent365/skills/make-ai-teammate/SKILL.md](../plugins/agent365/skills/make-ai-teammate/SKILL.md)
@@ -121,7 +142,8 @@ When a user asks for any of the trigger phrases below, follow the corresponding 
 3. Runs `a365 develop list-available` to show the MCP server catalog.
 4. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`).
 5. **Phase 4 is framework-aware** — branches on the cached `agentStack` into 11 sub-sections (§4.1 .NET Agent Framework, §4.2 .NET Semantic Kernel, §4.3 .NET Azure AI Foundry best-effort, §4.4 Node.js LangChain, §4.5 Node.js OpenAI, §4.6 Node.js Claude SDK, §4.7 Python Agent Framework, §4.8 Python OpenAI, §4.9 Python Google ADK, §4.10 Python Semantic Kernel best-effort, §4.11 Python Azure AI Foundry best-effort). The wiring symbol differs per stack: .NET AF uses `GetMcpToolsAsync`; .NET SK uses `AddToolServersToAgentAsync` (different namespace, mutates `Kernel`, void return); Node.js LangChain captures the returned new agent; Node.js OpenAI/Claude mutate in place; Python all use `add_tool_servers_to_agent` but with different kwargs (`turn_context=` for AF, `context=` for OpenAI/SK/ADK). **Do not cross-paste between sections** — kwarg name and parameter shape vary.
-6. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; supports V1/V2 mixed manifests, use `--remove-legacy-scopes` for V2 migration).
+6. **Optional Word @mention handling** (only when `mcp_WordServer` is in the selected servers AND `programmingLanguage = NodeJS && agentStack = LangChain`): asks via `AskUserQuestion` whether the AI Teammate should notify and reply when someone `@mentions` it on a Word comment. If yes, wires `proactive: {}` on the `AgentApplication`, a per-user conversation index, and a `NotificationType.WpxComment` handler that reads the document, posts a reply on the same comment thread, and DMs the user in Teams. Pattern is best-effort (no Microsoft Node.js sample published yet) — see [nodejs-workiq.md](../plugins/agent365/skills/add-workiq-tools/references/nodejs-workiq.md) "Word @mention notification handling (BEST-EFFORT)".
+7. Guides the permissions handoff to the Global Administrator (`a365 setup permissions mcp`; supports V1/V2 mixed manifests, use `--remove-legacy-scopes` for V2 migration).
 
 **Verified support matrix:**
 

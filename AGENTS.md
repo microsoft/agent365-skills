@@ -271,6 +271,22 @@ node /path/to/agent365-skills/plugins/agent365/hooks/stop/validate-make-ai-teamm
 
 ---
 
+## Task Execution Discipline
+
+Skills with task lists must run every task to completion in one turn. Mark each task
+complete (`TaskUpdate` in Claude Code, `- [ ]` → `- [x]` in Copilot) the moment its
+phase finishes — never leave a finished phase as ⭕.
+
+Only pause at the explicit interaction points each SKILL.md documents (capabilities menu,
+run-target, Reuse/Re-run/Fresh, WorkIQ offer, MCP server selection, Word @mention offer
+when `mcp_WordServer` is selected on a Node.js LangChain stack, launch confirmation).
+CLI `Allow / Skip` prompts and manual browser steps (Teams Dev Portal, M365 Admin Center,
+GA consent) are not stopping conditions — surface them with URL + action and continue.
+When adding a new interaction point to a SKILL.md, mirror it in [CLAUDE.md](CLAUDE.md)
+and [.github/copilot-instructions.md](.github/copilot-instructions.md) so all three stay in sync.
+
+---
+
 ## Code Style
 
 - All validator scripts: plain Node.js (no dependencies, no TypeScript).

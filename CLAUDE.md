@@ -70,6 +70,15 @@ agent365-skills/
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
 
+8. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+   every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
+   finishes. Only pause at the explicit interaction points each SKILL.md documents
+   (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server
+   selection, Word @mention offer when `mcp_WordServer` is selected on Node.js LangChain,
+   launch confirmation). CLI permission prompts and manual browser steps
+   (Teams Dev Portal, M365 Admin Center, GA consent) are not stopping conditions — surface
+   them with URL + action and continue.
+
 ---
 
 ## Testing

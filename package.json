@@ -1,6 +1,6 @@
 {
   "name": "agent365-skills",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
   "license": "MIT",
