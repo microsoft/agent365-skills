@@ -7,13 +7,18 @@ Source: [Agent365-Samples/dotnet/agent-framework/sample-agent](https://github.co
 
 ## Required NuGet Packages
 
-Add to the `.csproj` file:
+Add to the `.csproj` file. Versions are **pinned to tested-against builds** — see "Tested-against version matrix" below for why.
 
 ```xml
-<!-- A365 SDK Packages (Notifications is GA as of 2026-05-01) -->
+<!-- A365 SDK Packages (GA 1.0.0 as of 2026-05-01) -->
 <PackageReference Include="Microsoft.Agents.A365.Notifications" Version="1.0.0" />
+<PackageReference Include="Microsoft.Agents.A365.Runtime" Version="1.0.0" />
+<PackageReference Include="Microsoft.Agents.A365.Tooling" Version="1.0.0" />
+<PackageReference Include="Microsoft.Agents.A365.Tooling.Extensions.AgentFramework" Version="1.0.0" />
+<!-- Or, for other framework variants: -->
+<!-- <PackageReference Include="Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel" Version="1.0.0" /> -->
 
-<!-- Agent Framework Packages -->
+<!-- Agent Framework / hosting -->
 <PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
 <PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
 <PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
@@ -22,16 +27,40 @@ Add to the `.csproj` file:
 <PackageReference Include="Azure.Identity" Version="1.17.1" />
 ```
 
-Install via dotnet CLI (example — `Microsoft.Agents.A365.Notifications`):
+Install via dotnet CLI:
 ```bash
-dotnet add package Microsoft.Agents.A365.Notifications
-dotnet add package Microsoft.Agents.AI
-dotnet add package Microsoft.Agents.Authentication.Msal
-dotnet add package Microsoft.Agents.Hosting.AspNetCore
+dotnet add package Microsoft.Agents.A365.Notifications --version 1.0.0
+dotnet add package Microsoft.Agents.A365.Runtime --version 1.0.0
+dotnet add package Microsoft.Agents.A365.Tooling --version 1.0.0
+dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --version 1.0.0
+dotnet add package Microsoft.Agents.AI --version 1.1.0
+dotnet add package Microsoft.Agents.Authentication.Msal --version 1.4.83
+dotnet add package Microsoft.Agents.Hosting.AspNetCore --version 1.4.83
 dotnet add package Microsoft.Extensions.AI.OpenAI --prerelease
 dotnet add package Azure.AI.OpenAI --prerelease
-dotnet add package Azure.Identity
+dotnet add package Azure.Identity --version 1.17.1
 ```
+
+---
+
+## Tested-against version matrix
+
+Patterns in this reference are validated against these specific versions. NuGet does not auto-include pre-releases (unlike npm `latest` dist-tags), so an unpinned `dotnet add package` is generally safe — but pinning still protects against unintended major-version upgrades when the user runs `dotnet outdated` or similar.
+
+| Package | Tested version | Pin style |
+|---------|----------------|-----------|
+| `Microsoft.Agents.A365.Notifications` | 1.0.0 | exact |
+| `Microsoft.Agents.A365.Runtime` | 1.0.0 | exact |
+| `Microsoft.Agents.A365.Tooling` | 1.0.0 | exact |
+| `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | 1.0.0 | exact |
+| `Microsoft.Agents.AI` | 1.1.0 | exact |
+| `Microsoft.Agents.Authentication.Msal` | 1.4.83 | exact |
+| `Microsoft.Agents.Hosting.AspNetCore` | 1.4.83 | exact |
+| `Microsoft.Extensions.AI.OpenAI` | 10.0.1-preview.* | floating preview (intentional — GA not yet shipped) |
+| `Azure.AI.OpenAI` | 2.7.0-beta.* | floating beta (intentional — GA not yet shipped) |
+| `Azure.Identity` | 1.17.1 | exact |
+
+> If the build fails after `dotnet restore` with `Microsoft.Extensions.AI.OpenAI` or `Azure.AI.OpenAI` type errors, the floating preview/beta has likely moved to an incompatible build. Pin to a specific minor (e.g. `10.0.1-preview.1.25081.1`) to lock the contract until the GA lands.
 
 ---
 
@@ -122,11 +151,54 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Configure AgentApplication.OnTurnError BEFORE mapping /api/messages.
+// Without this, exceptions inside the turn lifecycle bubble out of ProcessAsync —
+// same Bot-Framework footgun as the Node.js / Python variants.
+// Verified: https://github.com/microsoft/Agents-for-net (AgentApplication.cs).
+if (app.Services.GetService<IAgent>() is AgentApplication agentApp)
+{
+    agentApp.OnTurnError(async (turnContext, turnState, exception, cancellationToken) =>
+    {
+        var errLogger = app.Services.GetRequiredService<ILogger<Program>>();
+        errLogger.LogError(exception, "[OnTurnError] unhandled error: {Message}", exception.Message);
+        try
+        {
+            await turnContext.SendActivityAsync(
+                $"Sorry — I hit an error processing that message. {exception.Message}",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception sendErr)
+        {
+            errLogger.LogError(sendErr, "[OnTurnError] SendActivity failed");
+        }
+    });
+}
+
 // /api/messages — main Teams / A365 message endpoint
 app.MapPost("/api/messages", async (HttpRequest request, HttpResponse response,
-    IAgentHttpAdapter adapter, IAgent agent, CancellationToken cancellationToken) =>
+    IAgentHttpAdapter adapter, IAgent agent, ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
 {
-    await adapter.ProcessAsync(request, response, agent, cancellationToken);
+    // Per-request log — cheap "did Teams reach us?" debugging default.
+    var activityType = request.Headers.TryGetValue("X-MS-ActivityType", out var t) ? t.ToString() : "?";
+    logger.LogInformation("[/api/messages] {Method} type={Type} contentLen={Len}",
+        request.Method, activityType, request.ContentLength ?? 0);
+
+    // OnTurnError catches errors inside the turn; this catches errors that escape it —
+    // pre-middleware auth/context setup, or throws from inside OnTurnError itself.
+    try
+    {
+        await adapter.ProcessAsync(request, response, agent, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "[/api/messages] ProcessAsync threw outside turn lifecycle");
+        if (!response.HasStarted)
+        {
+            response.StatusCode = StatusCodes.Status500InternalServerError;
+            await response.WriteAsJsonAsync(new { error = "Internal server error" }, cancellationToken);
+        }
+    }
 });
 
 // /api/health — health check (no auth required)
@@ -427,8 +499,22 @@ namespace YourNamespace.Agent
 - `Connections.ServiceConnection.Settings.ClientId` is the **Blueprint** app ID, NOT the bot ID. The bot/agent ID is now a separate `AgentId` field.
 - `TokenValidation.Audiences` uses the bot/agent ID (`{{BOT_ID}}`), not the legacy `{{ClientId}}`.
 - `UserAuthorization.Handlers.agentic.Settings.AlternateBlueprintConnectionName` links the auth handler back to a named `Connections` entry.
-- `Agent365Observability` is required for the observability skill to wire up. Leave `ClientSecret` empty when using Managed Identity; populate from a secret store / `appsettings.Development.json` for local dev.
+- `Agent365Observability` is required for the observability skill to wire up. **.NET's observability auth model is broader than Node.js/Python's** — it supports both Managed Identity (prod, cloud) and ClientSecret (local dev / S2S). That's why `AgentBlueprintId`, `ClientId`, and `ClientSecret` are kept here even though the equivalent Node.js/Python `agent365Observability__clientId/__clientSecret` env vars are inert. Leave `ClientSecret` empty when using Managed Identity in prod; populate from a secret store / `appsettings.Development.json` for local dev.
 - `AgenticAuthHandlerName: "agentic"` at the top of `AgentApplication` was removed in the latest AF sample (the handler key under `UserAuthorization.Handlers.agentic` is sufficient). The SK sample omits this key entirely. It's still written above as a defensive default — some setups may still read it from config.
+
+### Run-target rewrite rules
+
+`ENABLE_A365_OBSERVABILITY_EXPORTER` is the only `Agent365Observability` knob that flips by run target — and on .NET, the canonical place to set it is in **app-service environment variables** (Azure App Service → Configuration → Application settings, or `az webapp config appsettings set`), NOT in `appsettings.json`. That keeps `appsettings.json` source-controllable without leaking environment-specific settings.
+
+When `make-ai-teammate` Phase 8 runs for a .NET project, the skill reads `runTarget` from `.a365-workspace-detection.local.json` and instructs the user accordingly:
+
+| Run target | `ASPNETCORE_ENVIRONMENT` | `ENABLE_A365_OBSERVABILITY_EXPORTER` | Observability auth |
+|---|---|---|---|
+| `runTarget=prod` AND `runTargetHosting=cloud` (Azure App Service / equivalent) | `Production` | `true` (in app-service env vars) | Managed Identity — leave `Agent365Observability.ClientSecret` empty |
+| `runTarget=prod` AND `runTargetHosting=devtunnel` | `Production` (in `launchSettings.json`) | `true` (in `launchSettings.json` env vars) | ClientSecret — populate `Agent365Observability.ClientSecret` from `dotnet user-secrets` |
+| `runTarget=local` (AgentsPlayground) | `Development` | `false` | (not used — observability is console-only) |
+
+The skill MUST NOT rewrite `appsettings.json` values that the user has set (additive only — same rule as Node.js / Python). It MAY add missing keys from the template above, and it surfaces the run-target env-var settings as instructions for the user to apply via `az webapp config appsettings set` (cloud) or `launchSettings.json` (local / dev tunnel).
 
 ---
 
@@ -573,11 +659,54 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Configure AgentApplication.OnTurnError BEFORE mapping /api/messages.
+// Without this, exceptions inside the turn lifecycle bubble out of ProcessAsync —
+// same Bot-Framework footgun as the Node.js / Python variants.
+// Verified: https://github.com/microsoft/Agents-for-net (AgentApplication.cs).
+if (app.Services.GetService<IAgent>() is AgentApplication agentApp)
+{
+    agentApp.OnTurnError(async (turnContext, turnState, exception, cancellationToken) =>
+    {
+        var errLogger = app.Services.GetRequiredService<ILogger<Program>>();
+        errLogger.LogError(exception, "[OnTurnError] unhandled error: {Message}", exception.Message);
+        try
+        {
+            await turnContext.SendActivityAsync(
+                $"Sorry — I hit an error processing that message. {exception.Message}",
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception sendErr)
+        {
+            errLogger.LogError(sendErr, "[OnTurnError] SendActivity failed");
+        }
+    });
+}
+
 // /api/messages — main Teams / A365 message endpoint
 app.MapPost("/api/messages", async (HttpRequest request, HttpResponse response,
-    IAgentHttpAdapter adapter, IAgent agent, CancellationToken cancellationToken) =>
+    IAgentHttpAdapter adapter, IAgent agent, ILogger<Program> logger,
+    CancellationToken cancellationToken) =>
 {
-    await adapter.ProcessAsync(request, response, agent, cancellationToken);
+    // Per-request log — cheap "did Teams reach us?" debugging default.
+    var activityType = request.Headers.TryGetValue("X-MS-ActivityType", out var t) ? t.ToString() : "?";
+    logger.LogInformation("[/api/messages] {Method} type={Type} contentLen={Len}",
+        request.Method, activityType, request.ContentLength ?? 0);
+
+    // OnTurnError catches errors inside the turn; this catches errors that escape it —
+    // pre-middleware auth/context setup, or throws from inside OnTurnError itself.
+    try
+    {
+        await adapter.ProcessAsync(request, response, agent, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "[/api/messages] ProcessAsync threw outside turn lifecycle");
+        if (!response.HasStarted)
+        {
+            response.StatusCode = StatusCodes.Status500InternalServerError;
+            await response.WriteAsJsonAsync(new { error = "Internal server error" }, cancellationToken);
+        }
+    }
 });
 
 // /api/health — health check (no auth required)

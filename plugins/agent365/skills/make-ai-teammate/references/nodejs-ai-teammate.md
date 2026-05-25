@@ -10,15 +10,15 @@ nodejs samples.
 
 ### A365 SDK packages (all frameworks)
 
-All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01. Use stable versions — no `--prerelease` flag needed.
+All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01. **Always pin the install line to `~1.0.0`** — the packages' `latest` npm dist-tag points at `1.1.0-preview.7`, so an unpinned `npm install @microsoft/agents-a365-*` pulls preview by default. Preview drifts from the GA's type shapes (see "Preview package workarounds" below).
 
 ```bash
 npm install \
   @microsoft/agents-hosting@^1.2.2 \
   @microsoft/agents-activity \
-  @microsoft/agents-a365-runtime@^1.0.0 \
-  @microsoft/agents-a365-notifications@^1.0.0 \
-  @microsoft/agents-a365-tooling@^1.0.0 \
+  @microsoft/agents-a365-runtime@~1.0.0 \
+  @microsoft/agents-a365-notifications@~1.0.0 \
+  @microsoft/agents-a365-tooling@~1.0.0 \
   dotenv \
   express
 ```
@@ -28,14 +28,20 @@ npm install \
 For parity with the .NET pattern (`IMcpToolRegistrationService` DI hook in `Program.cs`), Node.js uses a module-level `McpToolRegistrationService` singleton from the framework-specific extension package. Install the one matching your LLM stack:
 
 ```bash
-# LangChain
-npm install @microsoft/agents-a365-tooling-extensions-langchain @langchain/mcp-adapters@^1.0.0
+# LangChain — pin A365 tooling extension to ~1.0.0 (GA) and core+langgraph to v1 so
+# npm resolves peer deps cleanly even if the project's lockfile has @langchain/core@0.3.x
+# (mcp-adapters@1.x peer-requires ^1.0.0). Unpinned A365 packages pull 1.1.0-preview.7 via `latest`.
+npm install \
+  @microsoft/agents-a365-tooling-extensions-langchain@~1.0.0 \
+  @langchain/mcp-adapters@^1.0.0 \
+  @langchain/core@^1.0.0 \
+  @langchain/langgraph@^1.0.0
 
 # OpenAI Agents SDK
-npm install @microsoft/agents-a365-tooling-extensions-openai
+npm install @microsoft/agents-a365-tooling-extensions-openai@~1.0.0
 
 # Claude SDK
-npm install @microsoft/agents-a365-tooling-extensions-claude
+npm install @microsoft/agents-a365-tooling-extensions-claude@~1.0.0
 ```
 
 Dev dependencies (all frameworks):
@@ -52,8 +58,8 @@ For local testing via `test-local`, the `@microsoft/agentsplayground` CLI is ins
 
 ### Framework-specific packages (install one)
 ```bash
-# LangChain
-npm install langchain @langchain/openai @langchain/core
+# LangChain — @langchain/core pinned to v1 to match mcp-adapters peer dep
+npm install langchain @langchain/openai @langchain/core@^1.0.0
 
 # OpenAI Agents SDK
 npm install @openai/agents
@@ -67,6 +73,27 @@ npm install @microsoft/semantic-kernel
 # Google ADK / Gemini
 npm install @google/generative-ai
 ```
+
+---
+
+## Tested-against version matrix
+
+Patterns in this reference are validated against these versions. Newer versions may work but are not tested; on type-compat errors in `bindTools`, `ToolMessage`, or `TurnContextLike`, see "Preview package workarounds" below.
+
+| Package | Tested version | Pin |
+|---------|----------------|-----|
+| `@microsoft/agents-hosting` | 1.3.x | `^1.2.2` |
+| `@microsoft/agents-activity` | 1.5.x | unpinned (`latest` is stable) |
+| `@microsoft/agents-a365-runtime` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-notifications` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-tooling` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-tooling-extensions-langchain` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-tooling-extensions-openai` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-tooling-extensions-claude` | 1.0.0 | `~1.0.0` |
+| `@langchain/core` | 1.1.x | `^1.0.0` |
+| `@langchain/mcp-adapters` | 1.1.x | `^1.0.0` |
+| `@langchain/langgraph` | 1.2.x | `^1.0.0` |
+| `langchain` | 1.4.x | unpinned |
 
 ---
 
@@ -121,6 +148,23 @@ const isProduction =
   Boolean(process.env.WEBSITE_SITE_NAME) || process.env.NODE_ENV === 'production';
 const authConfig: AuthConfiguration = isProduction ? loadAuthConfigFromEnv() : {};
 
+const adapter = agentApplication.adapter as CloudAdapter;
+
+// Without onTurnError set, runMiddleware rethrows on any error inside the turn,
+// adapter.process() rejects, the fire-and-forget call becomes an unhandledRejection,
+// and Node 16+ crashes the process.
+adapter.onTurnError = async (context, err) => {
+  const msg = err instanceof Error ? err.stack ?? err.message : JSON.stringify(err);
+  console.error('[onTurnError]', msg);
+  try {
+    await context.sendActivity(
+      `Sorry — I hit an error processing that message. ${err instanceof Error ? err.message : ''}`
+    );
+  } catch (sendErr) {
+    console.error('[onTurnError] sendActivity failed:', sendErr);
+  }
+};
+
 const server: Express = express();
 server.use(express.json());
 
@@ -131,11 +175,25 @@ server.get('/api/health', (_req, res: Response) => {
 
 server.use(authorizeJWT(authConfig));
 
-server.post('/api/messages', (req: Request, res: Response) => {
-  const adapter = agentApplication.adapter as CloudAdapter;
-  adapter.process(req, res, async (context) => {
-    await agentApplication.run(context);
-  });
+server.post('/api/messages', async (req: Request, res: Response) => {
+  const b = (req.body ?? {}) as { type?: string; text?: string; from?: { name?: string } };
+  console.log(
+    `[/api/messages] ${req.method} type=${b.type} from=${b.from?.name} text=${(b.text ?? '')
+      .toString()
+      .slice(0, 60)}`
+  );
+  // onTurnError catches errors inside the turn; this catches errors that escape
+  // it — pre-middleware (auth/context setup) or thrown from inside onTurnError.
+  try {
+    await adapter.process(req, res, async (context) => {
+      await agentApplication.run(context);
+    });
+  } catch (err) {
+    console.error('[/api/messages] outer catch:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 });
 
 const port = Number(process.env.PORT) || 3978;
@@ -154,8 +212,9 @@ server.listen(port, host, () => {
 Key rules:
 - `configDotenv()` MUST be the first line — before any other imports that read `process.env`
 - `/api/health` MUST be before `authorizeJWT` — health checks must work without auth
-- Production detection: `WEBSITE_SITE_NAME` is set automatically by Azure App Service
-- In dev, `authConfig` is `{}` so JWT validation is skipped
+- Production detection: `WEBSITE_SITE_NAME` is set automatically by Azure App Service. For dev tunnel hosting, also set `NODE_ENV=production` in `.env` (see Step 9.7.2d in deploy-pipeline.md) — otherwise `authConfig = {}` and CloudAdapter has no credentials to verify Teams' signed activity
+- `adapter.onTurnError` MUST be set — without it, turn errors rethrow from `adapter.process` and become unhandledRejection
+- Per-request log on `/api/messages` is a cheap default for "did Teams reach us?" debugging. Remove or downgrade to debug-level in prod if log volume matters
 
 ---
 
@@ -647,7 +706,7 @@ class GoogleADKClient implements Client {
 `ToolingManifest.json` is owned by `add-workiq-tools` and is written by the CLI:
 
 ```bash
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"
 ```
 
 The CLI pulls the live `url`, `audience`, and `scope` from `a365 develop list-available`,
@@ -659,8 +718,34 @@ pre-populate this file. To wire WorkIQ tools, run `/agent365:add-workiq-tools`
 
 ## .env — Complete Template
 
+Every key below is consumed by something specific — no dead lines, no duplicates. Comments indicate run-target applicability so the skill can rewrite `NODE_ENV` and validate the right subset based on `runTarget` from `.a365-workspace-detection.local.json`.
+
+### What reads what (canonical mapping)
+
+| Key | Consumer | Required when |
+|---|---|---|
+| `AZURE_OPENAI_*` / `OPENAI_*` / `ANTHROPIC_API_KEY` | `client.ts` (LLM client constructor) | always (pick one stack) |
+| `PORT` | `index.ts` (`server.listen`) | always |
+| `NODE_ENV` | `index.ts` `isProduction` gate → drives whether `loadAuthConfigFromEnv()` runs | `=production` for prod / dev tunnel; `=development` for AgentsPlayground-local |
+| `agentic_type`, `agentic_scopes`, `agentic_altBlueprintConnectionName` | `@microsoft/agents-hosting` `authorizationManager.ts` (short-form keys for the `agentic` handler) | prod / dev tunnel |
+| `connections__service_connection__settings__{clientId,clientSecret,tenantId}` | `@microsoft/agents-hosting` `loadAuthConfigFromEnv()` → used by `CloudAdapter` to verify Teams' signed activity AND authenticate outbound replies | prod / dev tunnel |
+| `connectionsMap__0__{serviceUrl,connection}` | `loadAuthConfigFromEnv()` → routes outbound activities to the named connection | prod / dev tunnel |
+| `ENABLE_A365_OBSERVABILITY_EXPORTER` | `@microsoft/opentelemetry` `A365Configuration.ts` (`A365_ENV_VARS.EXPORTER_ENABLED`) | prod / dev tunnel (`=true`); set `=false` for local to keep traces console-only |
+| `agent365Observability__agentId`, `__tenantId` | Stamped by `a365 setup all` ([ProjectSettingsSyncHelper.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Helpers/ProjectSettingsSyncHelper.cs)). Read by the agent's observability wiring (e.g. when constructing `AgentDetails` for `InvokeAgentScope`). | prod / dev tunnel |
+| `agent365Observability__agentName`, `__agentDescription` | Stamped by `a365 setup all`. Used as span attributes when present. | optional — keep for richer traces |
+| `BEARER_TOKEN`, `BEARER_TOKEN_MCP_*` | Local WorkIQ MCP testing only (`a365 develop get-token`). In prod, agentic identity handles MCP auth — no bearer token needed. | local-only — leave empty in prod |
+
+> **What's NOT in this template** (and why):
+> - `USE_AGENTIC_AUTH` — not read by `@microsoft/Agents-for-js`. Handler selection is driven by `MyAgent.authHandlerName = 'agentic'` in code plus the `agentic_*` env keys above. Including it is harmless but informational only.
+> - `agentic_connectionName` — invalid key for the agentic handler per [authorizationManager.ts](https://github.com/microsoft/Agents-for-js/blob/main/packages/agents-hosting/src/app/auth/authorizationManager.ts). The agentic handler recognizes only `type`, `scopes`, `altBlueprintConnectionName`. (`connectionName` is a legacy alias for `azureBotOAuthConnectionName` — Azure Bot handler only.)
+> - `agent365Observability__agentBlueprintId` — never written by the CLI (it writes `__agentId`) and never read by the distro. Stray.
+> - `agent365Observability__clientId/clientSecret` — never written by the CLI and never read by `@microsoft/opentelemetry`. Stray.
+> - `agent365Observability__sponsorUserId/Name/Email` — S2S-only per [instrument-observability/SKILL.md](../../instrument-observability/SKILL.md). For `agentic-user` (AI Teammate, always), `CallerDetails` come from the turn context, not env vars. Omit.
+
+### The template
+
 ```dotenv
-# ── LLM (choose one) ─────────────────────────────────────────────────────────
+# ── LLM (always required — pick one stack) ─────────────────────────────────
 # Option A: Azure OpenAI
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=
@@ -674,33 +759,59 @@ OPENAI_MODEL=gpt-4o
 # Option C: Claude (Anthropic)
 ANTHROPIC_API_KEY=
 
-# ── WorkIQ MCP servers ──────────────────────────────────────────────────────────
-# Single fallback dev token (from: a365 develop get-token)
-BEARER_TOKEN=
-# V2 per-server tokens (preferred, SDK reads BEARER_TOKEN_<SERVER_NAME_UPPER>)
-BEARER_TOKEN_MCP_MAILTOOLS=
-BEARER_TOKEN_MCP_CALENDARTOOLS=
-
-MCP_PLATFORM_ENDPOINT=
-MCP_PLATFORM_AUTHENTICATION_SCOPE=
-
-# ── Environment ───────────────────────────────────────────────────────────────
-NODE_ENV=development
+# ── Server (always required) ────────────────────────────────────────────────
 PORT=3978
+# NODE_ENV: production for cloud OR dev tunnel (Teams sends real signed JWTs);
+#           development ONLY for AgentsPlayground-local (no Teams traffic).
+# Skill rewrites this based on runTarget — do not hand-edit unless you know why.
+NODE_ENV=production
 
-# ── Agentic Auth (set by a365 setup) ─────────────────────────────────────────
-USE_AGENTIC_AUTH=false
+# ── Agentic auth handler (prod / dev tunnel) ────────────────────────────────
 agentic_type=agentic
 agentic_altBlueprintConnectionName=service_connection
 agentic_scopes=ea9ffc3e-8a23-4a7d-836d-234d7c7565c1/.default
 
-# ── Service Connection ────────────────────────────────────────────────────────
+# ── Bot Framework outbound auth (prod / dev tunnel) ─────────────────────────
+# Populated by `a365 setup all --aiteammate --m365` from a365.generated.config.json.
 connections__service_connection__settings__clientId=
 connections__service_connection__settings__clientSecret=
 connections__service_connection__settings__tenantId=
 connectionsMap__0__serviceUrl=*
 connectionsMap__0__connection=service_connection
+
+# ── Observability (prod / dev tunnel) ───────────────────────────────────────
+# ENABLE_*: the only env var the @microsoft/opentelemetry distro reads.
+# agentId / tenantId: stamped by a365 setup all; read by agent's observability wiring
+# (AgentDetails for InvokeAgentScope spans → MAC portal grouping).
+# agentName / agentDescription: optional, become span attributes.
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+agent365Observability__agentId=
+agent365Observability__tenantId=
+agent365Observability__agentName=
+agent365Observability__agentDescription=
+
+# ── Local-only (AgentsPlayground / local MCP testing) ───────────────────────
+# Leave empty in prod — the agentic identity handles MCP auth at runtime.
+# Populate only when running locally for development.
+BEARER_TOKEN=
+# Per-server tokens (preferred over BEARER_TOKEN — SDK reads BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME>):
+BEARER_TOKEN_MCP_MAILTOOLS=
+BEARER_TOKEN_MCP_CALENDARTOOLS=
+
+MCP_PLATFORM_ENDPOINT=
+MCP_PLATFORM_AUTHENTICATION_SCOPE=
 ```
+
+### Skill behavior — rewriting based on `runTarget`
+
+When `make-ai-teammate` Phase 8 (Update .env) or Phase 9.7.2d runs, the skill reads `runTarget` and `runTargetHosting` from `.a365-workspace-detection.local.json` and ensures:
+
+| Run target | Action on `.env` |
+|---|---|
+| `runTarget=prod` AND `runTargetHosting∈{devtunnel,cloud}` | Set `NODE_ENV=production`; require all "prod / dev tunnel" keys populated; leave `BEARER_TOKEN*` empty |
+| `runTarget=local` (AgentsPlayground) | Set `NODE_ENV=development`; "prod / dev tunnel" keys can be empty (inert in this path); `BEARER_TOKEN` may be set if user is testing MCP locally |
+
+The skill MUST NOT delete existing keys the user has set (additive only). It MAY update `NODE_ENV` to match `runTarget` — this is the one exception, because `NODE_ENV` mismatch is the dev tunnel silent-401 footgun documented at the top of the Troubleshooting table.
 
 ---
 
@@ -725,6 +836,8 @@ connectionsMap__0__connection=service_connection
 |------|-----|
 | `configDotenv()` first line of `index.ts` and `client.ts` | Env vars must be set before any import that reads `process.env` at load time |
 | `/api/health` before `authorizeJWT` | Azure health probes don't carry JWT tokens |
+| `adapter.onTurnError` set at module init | `runMiddleware` rethrows on any turn-handler error if `onTurnError` is undefined → fire-and-forget `adapter.process` becomes `unhandledRejection` → Node crashes |
+| `try`/`catch` around `await adapter.process(...)` in route handler | Catches the error paths `onTurnError` doesn't cover: pre-middleware auth/context setup, or throws from inside `onTurnError` itself |
 | `ToolingManifest.json` NOT created by this skill — owned by `add-workiq-tools` | The CLI writes it via `a365 develop add-mcp-servers` so URLs / `audience` GUIDs stay authoritative. Absence is a valid completion state (user skipped WorkIQ at Phase 9.6). |
 | `onAgentNotification` registered BEFORE `onActivity(Message)` | Notification routing must take priority |
 | `onAgentNotification` called with priority `1` and `[authHandlerName]` | Ensures agentic auth is required for notifications |
@@ -732,11 +845,44 @@ connectionsMap__0__connection=service_connection
 
 ---
 
+## Preview package workarounds
+
+If you (deliberately or accidentally) end up on `@microsoft/agents-a365-*@1.1.0-preview.x`, the type shapes drift from the GA versions this reference is tested against. Two known compile-break spots:
+
+### `createAgent` / `bindTools` type mismatch (LangChain)
+
+`createAgent({ model, ... })` rejects the model arg with an interface-compat error against preview tooling-extensions. Workaround:
+
+```typescript
+const agent = createAgent({
+  model: model as never,
+  name: 'MyAgent',
+  systemPrompt: SYSTEM_PROMPT,
+});
+```
+
+### `TurnContextLike` vs `TurnContext` (observability baggage)
+
+`@microsoft/opentelemetry`'s baggage helpers accept a `TurnContextLike` structurally narrower than `@microsoft/agents-hosting`'s `TurnContext`. When passing a `TurnContext`:
+
+```typescript
+const baggage = new BaggageBuilder()
+  .FromTurnContext(turnContext as TurnContextLike)
+  .Build();
+```
+
+**Cleaner fix:** downgrade to GA with `npm install @microsoft/agents-a365-tooling-extensions-langchain@~1.0.0 @microsoft/agents-a365-runtime@~1.0.0 @microsoft/agents-a365-tooling@~1.0.0` — GA has no type drift. Use casts only when you can't downgrade.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| 401 on `/api/messages` in dev | `authConfig` loaded in dev | Ensure `NODE_ENV=development` or `WEBSITE_SITE_NAME` is unset |
+| 401 on `/api/messages` in AgentsPlayground-local (no Teams) | `authConfig` loaded but Playground sends no JWT | Leave `NODE_ENV` unset / set to `development` so `authConfig = {}` and `authorizeJWT` no-ops |
+| Silent 401 / "Audience mismatch" when Teams hits dev tunnel; boot log shows `for appId undefined` | `authConfig = {}` because `NODE_ENV !== 'production'` — `authorizeJWT` no-ops, but `CloudAdapter.process` still needs `clientId` to verify Teams' signed activity and to authenticate outbound replies | Set `NODE_ENV=production` in `.env` (see Step 9.7.2d in deploy-pipeline.md). Boot log should then read `for appId <agentBlueprintId>` |
+| Node process exits with `unhandledRejection` after a user message | `adapter.onTurnError` not set — `runMiddleware` rethrows the turn error, `adapter.process` rejects, the fire-and-forget call escapes | Set `adapter.onTurnError` at module init in `index.ts` (see the hosting layer block above) |
+| Teams sends activities but `/api/messages` log line never appears | Teams can't reach the endpoint — dev tunnel down, wrong port, or Notification URL in Dev Portal doesn't match `messagingEndpoint` | Verify `devtunnel host` is still running, check `devtunnel show <name>` Access URL, and reconcile with Step 9.7.5 Notification URL |
 | Notifications never fire | Side-effect import missing | Add `import '@microsoft/agents-a365-notifications'` |
 | Tools not loaded | `add-workiq-tools` skill not yet run | Run `add-workiq-tools` to wire `McpToolRegistrationService` into `client.ts` |
 | `Cannot read property 'adapter'` | `agentApplication` not exported from agent.ts | Add `export const agentApplication = new MyAgent()` |

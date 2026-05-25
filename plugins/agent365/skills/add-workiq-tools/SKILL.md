@@ -8,8 +8,9 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
-argument-hint: "Optional: WorkIQ tool names to add (e.g. 'Work IQ Mail Work IQ Calendar'), or 'all' for full suite"
+argument-hint: "Optional: exact mcpServerName values from `a365 develop list-available` (e.g. 'mcp_MailTools mcp_CalendarTools'), or 'all' for full suite"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
@@ -56,15 +57,16 @@ hooks:
 
 This skill adds WorkIQ MCP tool servers to an existing A365 agent using the A365 CLI.
 
-**WorkIQ tools** give your agent pre-built access to M365 work data via MCP:
-- **Work IQ Mail** — Read, send, and manage email
-- **Work IQ Calendar** — Read/create events, check availability
-- **Work IQ Teams** — Read channel messages, list teams
-- **Work IQ SharePoint** — Search documents, read files, list sites
-- **Work IQ OneDrive** — Manage OneDrive files
-- **Work IQ Word** — Read and write Word documents
-- **Work IQ User** — Get user profile and presence
-- **Work IQ Copilot** — Chat with Microsoft 365 Copilot
+**WorkIQ tools** give your agent pre-built access to M365 work data via MCP. The capability categories below describe what each catalog server does — but **always pull the exact CLI argument names from `a365 develop list-available`**. V2 catalog names look like `mcp_MailTools`, `mcp_CalendarTools`, etc., and they evolve over time.
+
+- **Mail** — Read, send, and manage email
+- **Calendar** — Read/create events, check availability
+- **Teams** — Read channel messages, list teams
+- **SharePoint** — Search documents, read files, list sites
+- **OneDrive** — Manage OneDrive files
+- **Word** — Read and write Word documents
+- **User/Presence** — Get user profile and presence
+- **Copilot** — Chat with Microsoft 365 Copilot
 - **Dataverse and Dynamics 365** — CRUD and domain actions
 
 **How it works:**
@@ -284,13 +286,15 @@ Run `a365 develop add-mcp-servers` with the selected server names.
 Run the command **once** with all selected names space-separated:
 
 ```bash
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+# Substitute the exact mcpServerName values from your `list-available` output.
+# Example shown using the current V2 catalog names — yours may differ if the catalog evolved.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"
 
 # If running from a different directory, use --project-path:
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar" --project-path "<project_dir>"
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools" --project-path "<project_dir>"
 ```
 
-(Adjust to include whichever servers the user selected.)
+(Adjust the server names to match whichever servers the user selected from the live catalog. The CLI does case-insensitive trim-comparison, but the names must otherwise match the catalog's `mcpServerName` exactly.)
 
 This command creates `ToolingManifest.json` if it does not exist, or adds the selected servers to it if it does.
 
@@ -646,7 +650,7 @@ All commands the skill uses — show this table to the user on request.
 | Command | What it does | Who |
 |---------|-------------|-----|
 | `a365 develop list-available` | Full WorkIQ server catalog with V1/V2 labels | Developer |
-| `a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"` | Writes selected servers to `ToolingManifest.json` — no permissions yet | Developer |
+| `a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"` | Writes selected servers to `ToolingManifest.json` — no permissions yet. Names must match exact `mcpServerName` from `list-available`. | Developer |
 | `a365 develop list-configured` | Shows servers currently in `ToolingManifest.json` | Developer |
 | `a365 develop get-token` | Browser auth → bearer token for local testing | Developer |
 | `a365 develop get-token --resource mcp -o raw` | Raw token string (pipe to clipboard or `.env`) | Developer |
@@ -663,17 +667,7 @@ All commands the skill uses — show this table to the user on request.
 
 All WorkIQ servers require **delegated (OBO) permissions** — this is why `authMode = s2s` blocks WorkIQ entirely. The agent code wires the unified scope `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level by `a365 setup permissions mcp`.
 
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes | Signed-in user required? |
-|---------------|-------|------------------------|--------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` | ✅ Yes |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` | ✅ Yes |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` | ✅ Yes |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ Word | V2 | `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` | ✅ Yes |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` | ✅ Yes |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) | ✅ Yes |
+The OAuth2 scopes that `a365 setup permissions mcp` grants are fetched from the live catalog — see `a365 develop list-available` to inspect what each server requires. We don't reproduce the scope mapping here because the catalog can evolve; the CLI's grant step uses live data, not this doc.
 
 > **agentic-user path:** The Agentic User identity (AI Teammate) satisfies the "signed-in user" requirement — `a365 setup all --aiteammate` provisions the Agentic User and grants all delegated scopes to it. WorkIQ calls are made on behalf of the Agentic User, not the human caller.
 
@@ -688,7 +682,7 @@ Developer                                  Global Administrator
    (browse catalog)
 
 2. a365 develop add-mcp-servers
-   "Work IQ Mail" "Work IQ Calendar"
+   "mcp_MailTools" "mcp_CalendarTools"   (exact names from list-available)
    → writes ToolingManifest.json
    → NO permissions granted yet
 
