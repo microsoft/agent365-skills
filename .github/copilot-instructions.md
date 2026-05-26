@@ -10,7 +10,7 @@ Skills for instrumenting and registering Microsoft Agent 365 agents. When a user
 |---|---|---|
 | `a365-setup` | Entry point — CLI install, Azure prereqs, capability menu | `make-ai-teammate` (AI Teammate path) or `make-a365-agent` (other paths) |
 | `make-ai-teammate` | Transform an agent into an AI Teammate (Teams / Copilot publish) | `instrument-observability` (auto), `add-workiq-tools` (offered) |
-| `make-a365-agent` | Non-AI-Teammate blueprint provisioning (Register / Observability paths) | `instrument-observability`, `add-workiq-tools` (optional) |
+| `make-a365-agent` | Non-AI-Teammate blueprint provisioning (Register / Observability / WorkIQ paths) | `instrument-observability` (optional), `add-workiq-tools` (optional, skipped for S2S) |
 | `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
 | `instrument-observability` | OTel + A365 tracing exporter wiring | — |
 | `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
@@ -45,17 +45,17 @@ URL + action, then you continue to the next non-blocking phase.
 **Full instructions:** [plugins/agent365/skills/a365-setup/SKILL.md](../plugins/agent365/skills/a365-setup/SKILL.md)
 
 **Trigger phrases:**
+- "set up agent 365 for this agent"
 - "run a365 setup"
-- "create blueprint"
-- "register agent"
-- "setup agent blueprint"
-- "onboard agent"
-- "create agent blueprint"
-- "run cli setup"
-- "run a365 register"
-- "register blueprint"
-- "provision agent"
-- "publish agent"
+- "onboard this agent to agent 365"
+- "register this agent with agent 365"
+- "provision this agent with agent 365"
+- "add agent 365 to this agent"
+- "connect this agent to agent 365"
+- "make this agent an a365 agent"
+- "make this agent discoverable in Agent 365"
+- "create a365 blueprint"
+- "start agent 365 setup"
 
 **Summary of what this skill does:**
 0. Outputs a mandatory intro message first — describes the 4-step flow (detect → confirm → capabilities → auth mode if non-AI Teammate) so the developer knows what to expect before any commands run
@@ -125,15 +125,14 @@ URL + action, then you continue to the next non-blocking phase.
 **Full instructions:** [plugins/agent365/skills/make-a365-agent/SKILL.md](../plugins/agent365/skills/make-a365-agent/SKILL.md)
 
 **Trigger phrases:**
-- "provision agent with a365"
-- "run a365 setup all"
-- "create a365 blueprint"
-- "Registration setup"
-- "observability setup"
+- "provision this agent with agent 365"
 - "register this agent"
-- "set up agent for observability"
-- "add workiq to this agent"
+- "make this agent findable in the Agent 365 catalog"
+- "Registration setup for this agent"
 - "make this a custom engine agent"
+- "run a365 setup all"
+- "create a365 blueprint for this agent"
+- "set up this agent for observability only"
 
 **Summary of what this skill does:**
 0. Checks for an existing blueprint config (`a365.config.json` / `a365.generated.config.json`) **before collecting any inputs** — if found, asks the developer whether to reuse the existing blueprint (skips `a365 setup all`) or create a fresh one
@@ -164,7 +163,7 @@ URL + action, then you continue to the next non-blocking phase.
 **Summary of what this skill does:**
 1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.local.json` so subsequent skills skip re-asking.
    - **S2S block:** if `authMode = s2s`, the skill exits immediately — WorkIQ is not available for S2S agents (requires a delegated OBO token at runtime). "Autonomous" agents can run on either OBO or S2S; this block applies specifically to S2S, not to "autonomous" as a whole.
-   - **Framework support guard (Phase 0B):** verified against Agent365-{dotnet,python,nodejs} SDK source on 2026-05-21. Hard-stops on `(programmingLanguage, agentStack)` pairs that have no Microsoft-published adapter — see support matrix below. Hard-stop fires **before** any CLI command runs and ends the session with a message pointing at supported framework alternatives.
+   - **Framework support guard (Phase 0B):** verified against Agent365-{dotnet,python,nodejs}. Hard-stops on `(programmingLanguage, agentStack)` pairs that have no Microsoft-published adapter — see support matrix below. Hard-stop fires **before** any CLI command runs and ends the session with a message pointing at supported framework alternatives.
 2. Displays a visible TODO checklist to the user **before** Phase 1 (Claude Code uses `TaskCreate`; Copilot / Copilot CLI must emit a markdown checklist — `- [ ] Detect agent type…` — and update items to `- [x]` as phases complete).
 3. Runs `a365 develop list-available` to show the MCP server catalog.
 4. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`).
@@ -251,11 +250,13 @@ URL + action, then you continue to the next non-blocking phase.
 
 **Trigger phrases:**
 - "test this agent locally"
-- "run agent locally"
+- "run my agent locally"
 - "open agentsplayground"
-- "launch local test session"
-- "local test this agent"
-- "test without deploying"
+- "launch agentsplayground"
+- "start a local test session"
+- "debug this agent locally"
+- "test my agent without deploying to teams"
+- "spin up a local test"
 
 **Summary of what this skill does:**
 1. Detects agent language (.NET → port 5000, Node.js/Python → port 3978); detects Python command (`python3` on macOS/Linux, `python` on Windows)

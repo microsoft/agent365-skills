@@ -22,7 +22,7 @@ This plugin instruments and configures A365 agents. It contains six skills:
 
 **Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
-**Supported agent stacks for `add-workiq-tools`** (verified against Agent365-{dotnet,python,nodejs} SDK source on 2026-05-21):
+**Supported agent stacks for `add-workiq-tools`** (verified against Agent365-{dotnet,python,nodejs}):
 - **.NET:** Agent Framework · Semantic Kernel (different API: `AddToolServersToAgentAsync`, not `GetMcpToolsAsync`) · Azure AI Foundry (best-effort — package published, no Microsoft sample)
 - **Node.js:** LangChain (returns new agent — capture return) · OpenAI Agents SDK (mutates in place) · Claude SDK (first arg is `Options`, mutates in place) · ⚠ Semantic Kernel and Google ADK **hard-stop** (no Microsoft adapter — skill exits at Phase 0B)
 - **Python:** Agent Framework (uses `turn_context=` kwarg, requires `initial_tools=[]`) · OpenAI Agents SDK (uses `context=` kwarg, no `agentic_app_id`) · Google ADK (passes `agentic_app_id`, wraps in `asyncio.wait_for`) · Semantic Kernel and Azure AI Foundry (best-effort — package published, no Microsoft sample) · ⚠ LangChain / Claude SDK / CrewAI **hard-stop** (no Microsoft adapter; Claude and CrewAI samples ship a local DIY `mcp_tool_registration_service.py` scaffold — out of scope for this skill)
