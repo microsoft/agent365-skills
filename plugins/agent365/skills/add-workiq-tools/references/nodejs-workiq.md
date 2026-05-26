@@ -18,8 +18,9 @@ Official samples:
 # See all available MCP servers in the catalog
 a365 develop list-available
 
-# Add selected WorkIQ servers (updates ToolingManifest.json only — no permissions yet)
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Teams" "Work IQ Calendar"
+# Add selected WorkIQ servers — names MUST match exact mcpServerName from list-available.
+# V2 catalog names shown; pull current values from your `a365 develop list-available` output.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_TeamsTools" "mcp_CalendarTools"
 
 # Verify what is now configured
 a365 develop list-configured
@@ -35,18 +36,20 @@ a365 develop get-token --resource mcp -o raw
 
 ---
 
-## Available WorkIQ Servers (from a365 develop list-available)
+## Available WorkIQ Capabilities
 
-| Display Name | Category |
+Run `a365 develop list-available` for the live catalog — these are capability categories, not the exact CLI argument names (V2 names look like `mcp_MailTools`, `mcp_CalendarTools`, etc.).
+
+| Capability | Category |
 |---|---|
-| Work IQ Mail | Email |
-| Work IQ Calendar | Calendar |
-| Work IQ Teams | Teams chat |
-| Work IQ SharePoint | Documents |
-| Work IQ OneDrive | File storage |
-| Work IQ Word | Documents |
-| Work IQ User | Profile / presence |
-| Work IQ Copilot | M365 Copilot |
+| Mail | Email |
+| Calendar | Calendar |
+| Teams | Teams chat |
+| SharePoint | Documents |
+| OneDrive | File storage |
+| Word | Documents |
+| User / Presence | Profile / presence |
+| Copilot | M365 Copilot |
 | Dataverse and Dynamics 365 | Business data |
 
 ---
@@ -116,6 +119,110 @@ export async function getClient(
   return new LangChainClient(agentWithMcpTools || personalizedAgent, turnContext);
 }
 ```
+
+---
+
+## Optional: Word @mention notification handling (LangChain — BEST-EFFORT)
+
+> **Status:** Public APIs (`NotificationType.WpxComment`, `wpxCommentNotification`, `AgentApplicationOptions.proactive`, `Proactive.storeConversation` / `sendActivity`) are verified in `@microsoft/agents-a365-notifications` and `@microsoft/agents-hosting`. No Microsoft Node.js sample published yet — mark generated lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
+
+When a user `@mentions` the agent on a Word comment, the runtime delivers an `AgentNotificationActivity` with `notificationType === NotificationType.WpxComment`. The document URL is **not** on `wpxCommentNotification` — read it from `activity.attachments[*].contentUrl`. The Node.js `WpxComment` shape exposes `documentId`, `initiatingCommentId`, `subjectCommentId` (note: no `parentCommentId` — that's the .NET shape). Delegate comment-ID resolution to the LLM via prompt so the agent doesn't depend on the typed shape.
+
+### 1. Enable proactive on the `AgentApplication`
+
+```typescript
+super({
+  storage: new MemoryStorage(),
+  proactive: {},                       // required for proactive Teams DMs
+  authorization: { agentic: { type: 'agentic', /* ... */ } },
+});
+```
+
+### 2. Index Teams conversations by user identifiers
+
+```typescript
+const userKeyToConversationId = new Map<string, string>();
+
+function userKeysFor(from: any): string[] {
+  if (!from) return [];
+  const keys = new Set<string>();
+  if (from.aadObjectId) keys.add(`aad:${String(from.aadObjectId).toLowerCase()}`);
+  if (from.id)          keys.add(`id:${String(from.id).toLowerCase()}`);
+  if (from.name)        keys.add(`name:${String(from.name).toLowerCase()}`);
+  return [...keys];
+}
+
+// A365 WorkIQ — best-effort wiring (verify against SDK source before production)
+private async trackConversationForProactive(context: TurnContext): Promise<void> {
+  const convId = await this.proactive.storeConversation(context);
+  for (const k of userKeysFor(context.activity.from)) {
+    userKeyToConversationId.set(k, convId);
+  }
+}
+```
+
+Call `trackConversationForProactive` from both the message handler **and** the `installationUpdate(add)` handler — proactive DMs require a previously stored conversation reference.
+
+### 3. Handle the `WpxComment` notification
+
+```typescript
+// A365 WorkIQ — best-effort wiring (verify against SDK source before production)
+case NotificationType.WpxComment:
+  await this.handleWpxCommentNotification(context, state, agentNotificationActivity);
+  break;
+
+private async handleWpxCommentNotification(context, state, activity) {
+  const wpx = activity.wpxCommentNotification;
+  if (!wpx) return;
+
+  // URL is not on wpxCommentNotification — pull from raw attachments.
+  const attachments  = (context.activity as any)?.attachments ?? [];
+  const fileAttachment = attachments.find((a: any) =>
+    typeof a?.contentUrl === 'string' && /\.(docx?|doc)(\?|$)/i.test(a.contentUrl),
+  ) ?? attachments[0];
+  const documentUrl  = fileAttachment?.contentUrl;
+  const documentName = fileAttachment?.name ?? 'the document';
+  const commentText  = (context.activity as any)?.text ?? '';
+  const senderName   = context.activity.from?.name ?? 'a user';
+
+  const client = await getClient(this.authorization, A365Agent.authHandlerName, context);
+
+  // Tell the LLM to use the REPLY tool — default behaviour is AddComment (new thread).
+  const prompt =
+    `${senderName} @mentioned you on a comment in "${documentName}".\n` +
+    `Comment: ${commentText}\nDocument URL: ${documentUrl}\n` +
+    `Steps:\n` +
+    `1. Call mcp_WordServer.GetDocumentContent with the URL.\n` +
+    `2. Find the comment matching the text above; capture driveId, documentId, commentId.\n` +
+    `3. Use the Word REPLY tool (name contains "reply") — NOT AddComment.\n` +
+    `4. Reply concisely. Finish with: "Replied to commentId=<id> with: <text>".`;
+
+  const response = await client.invokeInferenceScope(prompt);
+
+  // Proactively notify the user in Teams (needs prior tracked conversation).
+  const convId = userKeysFor(context.activity.from)
+    .map(k => userKeyToConversationId.get(k))
+    .find(Boolean);
+  if (convId) {
+    const replyText = response?.match(/Replied to commentId=\S+ with:\s*([\s\S]+)/)?.[1] ?? response;
+    await this.proactive.sendActivity(this.adapter, convId, {
+      text: `I replied to your comment on **${documentName}**:\n\n${replyText?.substring(0, 1500)}`,
+    });
+  }
+}
+```
+
+### 4. (Optional) Keep multi-turn @mention threads coherent
+
+Wire a LangGraph `MemorySaver` into `createAgent({ checkpointer })` and invoke with `{ configurable: { thread_id: conversation.id } }` so repeated @mentions on the same document retain tool-call history.
+
+### Gotchas
+
+- `wpxCommentNotification` does **not** carry the document URL — always pull from `activity.attachments`.
+- `proactive.sendActivity` requires the recipient to have previously spoken to (or installed) the bot. If `userKeyToConversationId.get(...)` returns `undefined`, surface a friendly *"DM me once to enable Word notifications"* message instead of failing silently.
+- Tell the LLM explicitly to use the **reply** tool. Without that instruction, models default to `AddComment` and create a new top-level thread.
+- The Node.js `WpxComment` shape has `initiatingCommentId` / `subjectCommentId`, **not** `parentCommentId` (which is .NET-only). The prompt above delegates ID resolution to the LLM, avoiding the typing gap.
+- Word MCP server's `audience` GUID in `ToolingManifest.json` is written by `a365 develop add-mcp-servers` — never hand-edit.
 
 ---
 
@@ -299,19 +406,7 @@ a365 setup permissions mcp
 
 ### Permissions per server
 
-All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level.
-
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes |
-|---------------|-------|------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` |
-| Work IQ Word | V2 | `Files.ReadWrite.All` |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) |
+All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the per-server Graph scopes are granted at the Entra app level by `a365 setup permissions mcp`, which reads them from the live catalog. Run `a365 develop list-available` to see the current scopes required per server — we don't reproduce them here because the catalog evolves.
 
 ---
 
@@ -325,3 +420,4 @@ All WorkIQ servers use **delegated** scopes — they require an OBO token (signe
 | 403 at runtime | GA needs to run `a365 setup permissions mcp` with the updated `ToolingManifest.json` |
 | `Cannot find module '@microsoft/agents-a365-tooling-extensions-langchain'` | Run `npm install @microsoft/agents-a365-tooling-extensions-langchain` |
 | `Cannot find module '@microsoft/agents-a365-tooling'` | Run `npm install @microsoft/agents-a365-tooling` |
+| `Failed to read MCP servers from endpoint: UNKNOWN rawServers.map is not a function` | GA `@microsoft/agents-a365-tooling@~1.0.0` doesn't unwrap the WorkIQ gateway envelope `{ mcpServers: [...] }`. Upgrade with `npm install @microsoft/agents-a365-tooling@~1.1.0-preview.7 @microsoft/agents-a365-runtime@~1.1.0-preview.7 @microsoft/agents-a365-tooling-extensions-langchain@~1.1.0-preview.7` (fix in [PR #255](https://github.com/microsoft/Agent365-nodejs/commit/a9c03f2), 2026-05-21). Verify with `npm ls @microsoft/agents-a365-tooling` — resolved version must be ≥ `1.1.0-preview.7`. Temporary workaround: `NODE_ENV=Development` + populated `ToolingManifest.json` + per-server `BEARER_TOKEN_*` (not viable for production traffic). |

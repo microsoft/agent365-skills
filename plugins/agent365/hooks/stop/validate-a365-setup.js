@@ -52,14 +52,16 @@ if (fileExists(genConfigPath)) {
     if (!genConfig.agentBlueprintId || genConfig.agentBlueprintId === '') {
       issues.push('a365.generated.config.json exists but agentBlueprintId is empty — Blueprint creation may have failed');
     }
-    // Non-blocking signals that the GA handoff is still pending.
-    // Per the docs, when setup runs as Agent ID Developer (not GA), `completed` may
-    // stay false and `resourceConsents` may be empty until a GA completes the grants.
+    // Non-blocking signals that the admin handoff is still pending.
+    // Per the docs, when setup runs as Agent ID Developer (without an admin role), `completed`
+    // may stay false and `resourceConsents` may be empty until an admin (Application Admin /
+    // Cloud App Admin / GA — see https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration)
+    // completes the grants.
     if (genConfig.completed === false) {
-      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has completed=false — OAuth2 permission grants are still pending. A Global Administrator must run the PowerShell script printed in the setup summary (or grant admin consent via Entra portal).');
+      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has completed=false — OAuth2 permission grants are still pending. An admin (Application Admin / Cloud App Admin / GA) must run the PowerShell script printed in the setup summary, or grant admin consent via the Entra portal.');
     }
     if (Array.isArray(genConfig.resourceConsents) && genConfig.resourceConsents.length === 0) {
-      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has empty resourceConsents — OAuth2 grants for Graph / Agent 365 Tools / Bot API / Observability are not yet recorded. Expected if a non-GA developer ran setup; ask a Global Administrator to complete the grants.');
+      console.warn('[validate-a365-setup] Warning: a365.generated.config.json has empty resourceConsents — OAuth2 grants for Graph / Agent 365 Tools / Bot API / Observability are not yet recorded. Expected if a non-admin developer ran setup; ask an admin (Application Admin / Cloud App Admin / GA) to complete the grants.');
     }
   } catch {
     issues.push('a365.generated.config.json exists but cannot be parsed — file may be malformed');
