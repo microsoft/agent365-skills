@@ -27,7 +27,8 @@ agent365-skills/
 │       │       ├── validate-make-a365-agent.js
 │       │       ├── validate-make-ai-teammate.js
 │       │       ├── validate-instrument-observability.js
-│       │       └── validate-add-workiq-tools.js
+│       │       ├── validate-add-workiq-tools.js
+│       │       └── validate-test-local.js
 │       └── shared/agent-detection.md  # Shared heuristics for detecting agent type and authMode
 ├── tests/                             # Unit tests for stop hook validators
 │   ├── helpers.js
@@ -36,11 +37,13 @@ agent365-skills/
 │   ├── validate-observability.test.js
 │   └── validate-workiq.test.js
 ├── evals/
-│   └── agent365/                      # Evaluation test cases
+│   └── agent365/                      # Evaluation test cases (one per skill)
 │       ├── a365-setup/evals.json
+│       ├── make-a365-agent/evals.json
+│       ├── make-ai-teammate/evals.json
 │       ├── instrument-observability/evals.json
 │       ├── add-workiq-tools/evals.json
-│       └── make-ai-teammate/ (if present)
+│       └── test-local/evals.json
 ├── scripts/install.js                 # One-liner installer for Claude Code + Copilot CLI
 ├── AGENTS.md                          # Top-level contributor guidelines
 └── README.md                          # User-facing documentation
@@ -113,4 +116,4 @@ For comprehensive eval test cases, see [evals/README.md](evals/README.md).
 
 ## Allowed commands
 
-`dotnet *`, `npm *`, `node *`, `a365 *`, `az *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
+`dotnet *`, `npm *`, `node *`, `python *`, `python3 *`, `pip *`, `pip3 *`, `uv *`, `a365 *`, `az *`, `devtunnel *`, `agentsplayground *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`

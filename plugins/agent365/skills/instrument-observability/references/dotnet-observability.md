@@ -27,7 +27,7 @@ Unified Distro (preferred — single package, GA as of 2026-05-01):
 
 | Package | Purpose |
 |---------|---------|
-| `Microsoft.OpenTelemetry` (1.0.2 GA — latest stable) | All-in-one: includes A365 observability types (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `IExporterTokenCache`, `ServiceTokenCache`, `AgentDetails`, etc.) plus OTel pipeline configuration. Targets `net8.0` and `netstandard2.0`. Auto-instrumentation toggles for SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk are first-class options on `o.Instrumentation` (all default `true`). |
+| `Microsoft.OpenTelemetry` (1.0.3 GA — latest stable) | All-in-one: includes A365 observability types (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `IExporterTokenCache`, `ServiceTokenCache`, `AgentDetails`, etc.) plus OTel pipeline configuration. Targets `net8.0` and `netstandard2.0`. Auto-instrumentation toggles for SemanticKernel / OpenAI / AgentFramework / AspNetCore / HttpClient / SqlClient / AzureSdk are first-class options on `o.Instrumentation` (all default `true`). |
 | `Azure.Identity` | `ManagedIdentityCredential` for MSI-based token acquisition |
 | `Microsoft.Identity.Client` | MSAL `ConfidentialClientApplicationBuilder` with `.WithFmiPath()` for the FMI token chain |
 

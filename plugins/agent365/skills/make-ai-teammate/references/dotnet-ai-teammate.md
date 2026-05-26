@@ -19,9 +19,9 @@ Add to the `.csproj` file. Versions are **pinned to tested-against builds** — 
 <!-- <PackageReference Include="Microsoft.Agents.A365.Tooling.Extensions.SemanticKernel" Version="1.0.0" /> -->
 
 <!-- Agent Framework / hosting -->
-<PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
-<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
-<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
+<PackageReference Include="Microsoft.Agents.AI" Version="1.6.2" />
+<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.5.184" />
+<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.5.184" />
 <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.1-preview.*" />
 <PackageReference Include="Azure.AI.OpenAI" Version="2.7.0-beta.*" />
 <PackageReference Include="Azure.Identity" Version="1.17.1" />
@@ -33,9 +33,9 @@ dotnet add package Microsoft.Agents.A365.Notifications --version 1.0.0
 dotnet add package Microsoft.Agents.A365.Runtime --version 1.0.0
 dotnet add package Microsoft.Agents.A365.Tooling --version 1.0.0
 dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework --version 1.0.0
-dotnet add package Microsoft.Agents.AI --version 1.1.0
-dotnet add package Microsoft.Agents.Authentication.Msal --version 1.4.83
-dotnet add package Microsoft.Agents.Hosting.AspNetCore --version 1.4.83
+dotnet add package Microsoft.Agents.AI --version 1.6.2
+dotnet add package Microsoft.Agents.Authentication.Msal --version 1.5.184
+dotnet add package Microsoft.Agents.Hosting.AspNetCore --version 1.5.184
 dotnet add package Microsoft.Extensions.AI.OpenAI --prerelease
 dotnet add package Azure.AI.OpenAI --prerelease
 dotnet add package Azure.Identity --version 1.17.1
@@ -53,9 +53,9 @@ Patterns in this reference are validated against these specific versions. NuGet 
 | `Microsoft.Agents.A365.Runtime` | 1.0.0 | exact |
 | `Microsoft.Agents.A365.Tooling` | 1.0.0 | exact |
 | `Microsoft.Agents.A365.Tooling.Extensions.AgentFramework` | 1.0.0 | exact |
-| `Microsoft.Agents.AI` | 1.1.0 | exact |
-| `Microsoft.Agents.Authentication.Msal` | 1.4.83 | exact |
-| `Microsoft.Agents.Hosting.AspNetCore` | 1.4.83 | exact |
+| `Microsoft.Agents.AI` | 1.6.2 | exact |
+| `Microsoft.Agents.Authentication.Msal` | 1.5.184 | exact |
+| `Microsoft.Agents.Hosting.AspNetCore` | 1.5.184 | exact |
 | `Microsoft.Extensions.AI.OpenAI` | 10.0.1-preview.* | floating preview (intentional — GA not yet shipped) |
 | `Azure.AI.OpenAI` | 2.7.0-beta.* | floating beta (intentional — GA not yet shipped) |
 | `Azure.Identity` | 1.17.1 | exact |
@@ -554,8 +554,8 @@ Source: [Agent365-Samples/dotnet/semantic-kernel/sample-agent](https://github.co
 <PackageReference Include="Microsoft.Agents.A365.Notifications" Version="1.0.0" />
 
 <!-- Agent Framework Packages -->
-<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.4.83" />
-<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.4.83" />
+<PackageReference Include="Microsoft.Agents.Authentication.Msal" Version="1.5.184" />
+<PackageReference Include="Microsoft.Agents.Hosting.AspNetCore" Version="1.5.184" />
 <PackageReference Include="Azure.Identity" Version="1.17.1" />
 
 <!-- Semantic Kernel Packages — pin to 1.71.0 (latest sample tested) -->

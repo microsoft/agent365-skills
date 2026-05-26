@@ -49,7 +49,6 @@ hooks:
 > - "add agent 365 to this agent"
 > - "connect this agent to agent 365"
 > - "make this agent an a365 agent"
-> - "make this agent an ai teammate"
 > - "make this agent discoverable in Agent 365"
 > - "create a365 blueprint"
 > - "start agent 365 setup"

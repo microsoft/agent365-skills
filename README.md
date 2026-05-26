@@ -1,9 +1,9 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -136,7 +136,7 @@ An **AI Teammate** is an agent with a first-class M365 identity. It has an Agent
 
 **Before this skill:** Your agent is a standalone script or HTTP server with no Teams presence.
 
-**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, and ToolingManifest.json. Then offers Observability and WorkIQ tools as optional add-ons.
+**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, and ToolingManifest.json. Then offers Observability and WorkIQ tools as optional add-ons.
 
 **Prerequisite:** `a365-setup` must create the Blueprint and Agentic User identity first. This skill is normally invoked automatically from `a365-setup` after prerequisites are confirmed; it can also be run directly against an already-registered agent.
 

@@ -1,0 +1,67 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run all tests",
+      "type": "shell",
+      "command": "npm test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Validate all stop hooks",
+      "type": "shell",
+      "command": "npm run validate",
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate test fixture (a365-setup)",
+      "type": "shell",
+      "command": "node",
+      "args": ["--test", "tests/validate-a365-setup.test.js"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate test fixture (make-ai-teammate)",
+      "type": "shell",
+      "command": "node",
+      "args": ["--test", "tests/validate-make-ai-teammate.test.js"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate test fixture (observability)",
+      "type": "shell",
+      "command": "node",
+      "args": ["--test", "tests/validate-observability.test.js"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate test fixture (workiq)",
+      "type": "shell",
+      "command": "node",
+      "args": ["--test", "tests/validate-workiq.test.js"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Install plugin into Claude Code (this machine)",
+      "type": "shell",
+      "command": "node scripts/install.js",
+      "problemMatcher": []
+    },
+    {
+      "label": "Markdownlint (plugins/ + .github/)",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 \"plugins/**/*.md\" \".github/**/*.md\" \"*.md\"",
+      "problemMatcher": [],
+      "group": "build"
+    }
+  ]
+}

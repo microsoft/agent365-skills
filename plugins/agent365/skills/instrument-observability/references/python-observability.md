@@ -1,7 +1,7 @@
 # Python — A365 Observability Reference
 
 Authoritative package versions and code patterns for instrumenting A365 observability
-into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.1.x** (released 2026-05-11).
+into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.2.x** (released 2026-05-11).
 
 > **Major shift from earlier 0.x:** the legacy packages
 > (`microsoft-agents-a365-observability-core`, `-hosting`, `-runtime`, and the four
@@ -31,7 +31,7 @@ The agent's `authMode` (read from `.a365-workspace-detection.local.json`) determ
 
 | Package | Purpose |
 |---------|---------|
-| `microsoft-opentelemetry` (1.1.x GA) | Sole entry point. Re-exports `use_microsoft_opentelemetry`, baggage helpers (`populate`, `BaggageMiddleware`, `ObservabilityHostingManager`), `AgenticTokenCache`, all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`), and all contract types (`AgentDetails`, `CallerDetails`, `UserDetails`, `Request`, `Response`, `InvokeAgentScopeDetails`, `InferenceCallDetails`, `ToolCallDetails`, etc.). **Note:** Unlike Node.js, no `shutdown_microsoft_opentelemetry` helper is exported — see [Graceful Shutdown](#graceful-shutdown) for the OTel SDK-based pattern. |
+| `microsoft-opentelemetry` (1.2.x GA) | Sole entry point. Re-exports `use_microsoft_opentelemetry`, baggage helpers (`populate`, `BaggageMiddleware`, `ObservabilityHostingManager`), `AgenticTokenCache`, all scope types (`InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`, `OutputScope`), and all contract types (`AgentDetails`, `CallerDetails`, `UserDetails`, `Request`, `Response`, `InvokeAgentScopeDetails`, `InferenceCallDetails`, `ToolCallDetails`, etc.). **Note:** Unlike Node.js, no `shutdown_microsoft_opentelemetry` helper is exported — see [Graceful Shutdown](#graceful-shutdown) for the OTel SDK-based pattern. |
 | `microsoft-opentelemetry[langchain]` | Optional extra — adds LangChain instrumentation deps (only if your agent uses LangChain) |
 | `msal` (^1.34) | MSAL Python `ConfidentialClientApplication` for Hop 3 token acquisition (S2S only) |
 | `azure-identity` (^1.20) | `ManagedIdentityCredential` for MSI-based token acquisition (S2S only) |
@@ -55,7 +55,7 @@ Minimum Python: **3.10+** (for `str | None` typing in code samples; the package 
 
 ### Google ADK projects — pin the OTel stack
 
-If `pyproject.toml` lists `google-adk`, `uv sync` will spin for minutes resolving the OTel graph because `google-adk` requires `opentelemetry-sdk<1.39.0` while `microsoft-opentelemetry` 1.1.x pulls a newer transitive OTel SDK. Force a compatible version with `[tool.uv] override-dependencies`:
+If `pyproject.toml` lists `google-adk`, `uv sync` will spin for minutes resolving the OTel graph because `google-adk` requires `opentelemetry-sdk<1.39.0` while `microsoft-opentelemetry` 1.2.x pulls a newer transitive OTel SDK. Force a compatible version with `[tool.uv] override-dependencies`:
 
 ```toml
 # pyproject.toml — merge into existing [tool.uv] or add this block

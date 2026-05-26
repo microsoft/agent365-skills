@@ -1,7 +1,21 @@
 # Agent 365 Skills — GitHub Copilot Instructions
 
-This repository contains six skills for instrumenting and registering Microsoft Agent 365 agents.
-When a user asks for any of the trigger phrases below, follow the corresponding SKILL.md exactly.
+Skills for instrumenting and registering Microsoft Agent 365 agents. When a user asks for any of the trigger phrases below, follow the corresponding SKILL.md exactly.
+
+---
+
+## Quick reference
+
+| Skill | When to invoke | Delegates to |
+|---|---|---|
+| `a365-setup` | Entry point — CLI install, Azure prereqs, capability menu | `make-ai-teammate` (AI Teammate path) or `make-a365-agent` (other paths) |
+| `make-ai-teammate` | Transform an agent into an AI Teammate (Teams / Copilot publish) | `instrument-observability` (auto), `add-workiq-tools` (offered) |
+| `make-a365-agent` | Non-AI-Teammate blueprint provisioning (Register / Observability / WorkIQ paths) | `instrument-observability` (optional), `add-workiq-tools` (optional, skipped for S2S) |
+| `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
+| `instrument-observability` | OTel + A365 tracing exporter wiring | — |
+| `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
+
+Skills are designed to be additive, idempotent, and state-aware — re-running is safe.
 
 ---
 
@@ -14,8 +28,8 @@ between phases instead of asking permission.
 
 **Only pause at these explicit interaction points:**
 - `a365-setup`: capabilities menu; authMode (non-AI-Teammate only); install confirmations for missing tools; Azure login.
-- `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
 - `make-ai-teammate`: Phase 0B confirm; 0C row-8 sub-question; 9.6 WorkIQ offer; 9.7.1a Reuse/Re-run/Fresh; 9.7.2 Run Target + 9.7.2b hosting.
+- `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
 - `add-workiq-tools`: MCP server selection; Word @mention offer (only when `mcp_WordServer` is selected and stack is Node.js LangChain).
 - `instrument-observability`: agent kind + auth mode (only if not in cache).
 - `test-local`: confirm before launching.
@@ -23,6 +37,38 @@ between phases instead of asking permission.
 CLI `Allow / Skip` prompts are the chat client's permission flow — not stopping conditions.
 Manual browser steps (Teams Dev Portal, M365 Admin Center, GA consent) are surfaced with
 URL + action, then you continue to the next non-blocking phase.
+
+---
+
+## Skill: a365-setup
+
+**Full instructions:** [plugins/agent365/skills/a365-setup/SKILL.md](../plugins/agent365/skills/a365-setup/SKILL.md)
+
+**Trigger phrases:**
+- "set up agent 365 for this agent"
+- "run a365 setup"
+- "onboard this agent to agent 365"
+- "register this agent with agent 365"
+- "provision this agent with agent 365"
+- "add agent 365 to this agent"
+- "connect this agent to agent 365"
+- "make this agent an a365 agent"
+- "make this agent discoverable in Agent 365"
+- "create a365 blueprint"
+- "start agent 365 setup"
+
+**Summary of what this skill does:**
+0. Outputs a mandatory intro message first — describes the 4-step flow (detect → confirm → capabilities → auth mode if non-AI Teammate) so the developer knows what to expect before any commands run
+1. Detects agent stack, language, CEA status (`usesTeamsOrCopilot`), existing blueprint (`hasBlueprintConfig` from `a365.config.json` / `a365.generated.config.json`), and the **three primary state flags** (`has_aiteammate_structure`, `has_obs`, `has_workiq`) that drive the 8-row matrix in `make-ai-teammate` Phase 0C. Shows all detections in a single summary message.
+   - **Blueprint question:** if `hasBlueprintConfig = 1`, asks the developer whether to reuse the existing blueprint (provide ID, skip `setup all`) or create a fresh one — never assumes
+2. Asks **capabilities first** (Register, Observability, WorkIQ, AI Teammate) — capability options are **auto-filtered**: Observability is hidden when `has_obs = true`, WorkIQ is hidden when `has_workiq = true`, the menu collapses to Register + WorkIQ when `(has_aiteammate_structure && has_obs)` (the derived "already-an-AI-Teammate" route). Then asks `authMode` (`obo` or `s2s`) **only if AI Teammate was not selected** AND `(has_aiteammate_structure && has_obs)` is false — AI Teammate always uses `agentic-user` (the agent's own M365 identity), no auth mode question needed. If s2s is selected and WorkIQ was also picked, WorkIQ is dropped with a warning.
+   - **CEA auto-route:** if `usesTeamsOrCopilot = 1` (Custom Engine Agent), automatically sets all 4 capabilities (Register, Observability, WorkIQ, AI Teammate) without presenting a menu — CEA agents are always AI Teammates
+3. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.local.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, and `existingBlueprintId`. **`hasAITeammateChanges` is no longer stored — it is derived inline as `has_aiteammate_structure && has_obs` at read sites.** Downstream skills (`instrument-observability`, `add-workiq-tools`, `make-ai-teammate` Phase 0C) read this cache to drive matrix-based routing.
+4. Runs a full system prerequisite scan (parallel version checks) and shows a ✅/❌ summary — **only processes sections for ❌ missing or outdated tools; skips ✅ tools entirely (no reinstall, no re-prompt)**. Exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
+5. Validates Azure CLI login using `az login --allow-no-subscriptions` (plain `az login` fails for accounts with no Azure subscription) and validates Entra ID roles
+6. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths — passes `reuseBlueprint` and `existingBlueprintId` when the developer chose to reuse an existing blueprint
+
+**This skill does NOT:** run `a365 setup all` itself — it delegates that to `make-ai-teammate` or `make-a365-agent`.
 
 ---
 
@@ -49,7 +95,20 @@ URL + action, then you continue to the next non-blocking phase.
 5. Runs `a365 setup all --aiteammate --m365` — creates the Blueprint and Agentic User identity in Entra ID, and registers the agent in the M365 admin center. `--m365` is **always passed** for AI Teammate; no user question.
 6. **State-matrix routing (Phase 0C):** detects three primary skill-state flags — `has_obs`, `has_workiq`, `disk_blueprint_present` — and routes through an **8-row matrix**. Skip-gates: Phase 9.5 (Observability) is skipped if `has_obs = true`; Phase 9.6 (WorkIQ) is skipped if `has_workiq = true`. **Phase 9.7.1a is the verification gate for the blueprint dimension** — `disk_blueprint_present` (derived from disk at read-time) is advisory only; the user is always asked explicitly (**Reuse / Re-run / Fresh**) before any skip/reuse decision (handles cases where disk lies about tenant state). Row 8 (T/T/T) shows an additional Phase 0C sub-question: **Re-publish** or **Verify only**. The skill is idempotent — re-run safely and it will skip whatever's already wired.
 
-7. **Verifies** `manifest.json` (read-only — does NOT hand-edit) — the CLI generates the v1.22+ schema, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents` marker, and `validDomains` end-to-end via `a365 setup all --aiteammate` and `a365 publish`. **Phase 9.7.2 Run Target decision** (Prod vs Local) is asked after Step 9.7.1 with remember-with-confirm on re-runs (value persisted in `.a365-workspace-detection.local.json`). For `runTarget = "prod"`: a **Phase 9.7.2b hosting sub-question** follows — *dev tunnel* (Microsoft Dev Tunnel exposing localhost for in-Teams testing) or *cloud endpoint* (Azure App Service/Container Apps/Functions, AWS App Runner/Lambda + API Gateway/ECS, or Google Cloud Run/App Engine/Cloud Functions). The user supplies (or the skill derives) an HTTPS URL stored as `chosenEndpoint`. Phase 9.7.2c reconciles `chosenEndpoint` with the blueprint's `messagingEndpoint` via `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` when they differ (`--m365` is required — without it the CLI silently skips the Teams Graph re-registration). Then runs `a365 publish` to package the manifest into `manifest.zip` (or `appPackage.zip` for Teams Toolkit) — `publish` does NOT upload (upload to M365 Admin Center is always manual) and does NOT touch the bot endpoint. Then walks the user through **two required manual steps**: (a) Teams Developer Portal config at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration` (Agent Type=API Based, Notification URL = the reconciled `chosenEndpoint`/`messagingEndpoint` — required for Teams to deliver messages), and (b) instance request from Teams Apps + admin approval at admin.cloud.microsoft. For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default) — all publish/Dev-Portal/MAC-upload/instance steps are skipped — the skill routes directly to AgentsPlayground for smoke testing. **Phase 9.7.2d** validates env configuration before either path proceeds: confirms agentic-auth + LLM + observability vars are present in `.env` / `appsettings.json`; for prod, verifies `a365.generated.config.json` has `completed: true` and non-empty `resourceConsents` (else surfaces the GA-consent PowerShell handoff) and reminds the user that cloud env vars must be set at the cloud platform (`az webapp config appsettings set` / `eb setenv` / `gcloud run services update --set-env-vars`), not just locally; for local, confirms AgentsPlayground and `.m365agentsplayground.yml`. On any manifest validation error, re-runs `a365 setup all --aiteammate` rather than hand-editing. Authoritative Microsoft Learn references: [Create agent instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance), [Testing](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/testing), [test-with-devtunnels](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels), [deploy-agent-azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure), [deploy-agent-aws](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws), [deploy-agent-gcp](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp).
+7. **Run Target + Publish pipeline.** Phase 9.7.2 asks **Prod vs Local** (remembered in `.a365-workspace-detection.local.json` with confirm-on-rerun).
+
+   For `runTarget = "prod"`:
+   - **Phase 9.7.2b — Hosting:** *dev tunnel* (devtunnel exposes localhost for in-Teams testing) or *cloud endpoint* (Azure App Service / Container Apps / Functions; AWS App Runner / Lambda + API Gateway / ECS; Google Cloud Run / App Engine / Cloud Functions). Stored as `chosenEndpoint`.
+   - **Phase 9.7.2c — Endpoint reconciliation:** `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` when `chosenEndpoint` differs from the blueprint's `messagingEndpoint`. `--m365` is required — without it the CLI silently skips the Teams Graph re-registration.
+   - **Phase 9.7.2d — Env validation:** confirms agentic-auth + LLM + observability vars in `.env` / `appsettings.json`; verifies `a365.generated.config.json` has `completed: true` + non-empty `resourceConsents` (else surfaces the GA-consent PowerShell handoff); reminds the user that cloud env vars must be set at the platform level (`az webapp config appsettings set` / `eb setenv` / `gcloud run services update --set-env-vars`), not just locally.
+   - **Verify manifest** (read-only, never hand-edit — re-run `a365 setup all --aiteammate` on validation errors). CLI owns the v1.22+ schema, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents`, `validDomains`.
+   - **`a365 publish`** packages into `manifest.zip` (or `appPackage.zip` for Teams Toolkit). Does NOT upload — M365 Admin Center upload is always manual. Does NOT touch the bot endpoint.
+   - **Manual step (a) — Teams Dev Portal config** at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`: Agent Type = API Based, Notification URL = the reconciled `messagingEndpoint`. Required for Teams to deliver messages.
+   - **Manual step (b) — Instance request** from Teams Apps + admin approval at admin.cloud.microsoft.
+
+   For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default). All publish / Dev-Portal / MAC-upload / instance steps are skipped — routes directly to AgentsPlayground. Phase 9.7.2d still runs to confirm AgentsPlayground is installed and `.m365agentsplayground.yml` is present.
+
+   **Microsoft Learn refs:** [create-instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance) · [testing](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/testing) · [test-with-devtunnels](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels) · [deploy-agent-azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure) · [aws](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws) · [gcp](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp).
 8. Runs `instrument-observability` automatically when `has_obs = false` — part of the AI Teammate package. **Skipped when `has_obs = true`** (already wired).
 9. Offers `add-workiq-tools` as optional when `has_workiq = false` — asks the user; can be run later via `/agent365:add-workiq-tools`. **Skipped when `has_workiq = true`** (already wired).
 
@@ -61,52 +120,19 @@ URL + action, then you continue to the next non-blocking phase.
 
 ---
 
-## Skill: a365-setup
-
-**Full instructions:** [plugins/agent365/skills/a365-setup/SKILL.md](../plugins/agent365/skills/a365-setup/SKILL.md)
-
-**Trigger phrases:**
-- "run a365 setup"
-- "create blueprint"
-- "register agent"
-- "setup agent blueprint"
-- "onboard agent"
-- "create agent blueprint"
-- "run cli setup"
-- "run a365 register"
-- "register blueprint"
-- "provision agent"
-- "publish agent"
-
-**Summary of what this skill does:**
-0. Outputs a mandatory intro message first — describes the 4-step flow (detect → confirm → capabilities → auth mode if non-AI Teammate) so the developer knows what to expect before any commands run
-1. Detects agent stack, language, CEA status (`usesTeamsOrCopilot`), existing blueprint (`hasBlueprintConfig` from `a365.config.json` / `a365.generated.config.json`), and the **three primary state flags** (`has_aiteammate_structure`, `has_obs`, `has_workiq`) that drive the 8-row matrix in `make-ai-teammate` Phase 0C. Shows all detections in a single summary message.
-   - **Blueprint question:** if `hasBlueprintConfig = 1`, asks the developer whether to reuse the existing blueprint (provide ID, skip `setup all`) or create a fresh one — never assumes
-2. Asks **capabilities first** (Register, Observability, WorkIQ, AI Teammate) — capability options are **auto-filtered**: Observability is hidden when `has_obs = true`, WorkIQ is hidden when `has_workiq = true`, the menu collapses to Register + WorkIQ when `(has_aiteammate_structure && has_obs)` (the derived "already-an-AI-Teammate" route). Then asks `authMode` (`obo` or `s2s`) **only if AI Teammate was not selected** AND `(has_aiteammate_structure && has_obs)` is false — AI Teammate always uses `agentic-user` (the agent's own M365 identity), no auth mode question needed. If s2s is selected and WorkIQ was also picked, WorkIQ is dropped with a warning.
-   - **CEA auto-route:** if `usesTeamsOrCopilot = 1` (Custom Engine Agent), automatically sets all 4 capabilities (Register, Observability, WorkIQ, AI Teammate) without presenting a menu — CEA agents are always AI Teammates
-3. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.local.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, and `existingBlueprintId`. **`hasAITeammateChanges` is no longer stored — it is derived inline as `has_aiteammate_structure && has_obs` at read sites.** Downstream skills (`instrument-observability`, `add-workiq-tools`, `make-ai-teammate` Phase 0C) read this cache to drive matrix-based routing.
-4. Runs a full system prerequisite scan (parallel version checks) and shows a ✅/❌ summary — **only processes sections for ❌ missing or outdated tools; skips ✅ tools entirely (no reinstall, no re-prompt)**. Exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. Runs `a365 setup requirements` after all tools are confirmed.
-5. Validates Azure CLI login using `az login --allow-no-subscriptions` (plain `az login` fails for accounts with no Azure subscription) and validates Entra ID roles
-6. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths — passes `reuseBlueprint` and `existingBlueprintId` when the developer chose to reuse an existing blueprint
-
-**This skill does NOT:** run `a365 setup all` itself — it delegates that to `make-ai-teammate` or `make-a365-agent`.
-
----
-
 ## Skill: make-a365-agent
 
 **Full instructions:** [plugins/agent365/skills/make-a365-agent/SKILL.md](../plugins/agent365/skills/make-a365-agent/SKILL.md)
 
 **Trigger phrases:**
-- "provision agent with a365"
-- "run a365 setup all"
-- "create a365 blueprint"
-- "Registration setup"
-- "observability setup"
+- "provision this agent with agent 365"
 - "register this agent"
-- "set up agent for observability"
-- "add workiq to this agent"
+- "make this agent findable in the Agent 365 catalog"
+- "Registration setup for this agent"
 - "make this a custom engine agent"
+- "run a365 setup all"
+- "create a365 blueprint for this agent"
+- "set up this agent for observability only"
 
 **Summary of what this skill does:**
 0. Checks for an existing blueprint config (`a365.config.json` / `a365.generated.config.json`) **before collecting any inputs** — if found, asks the developer whether to reuse the existing blueprint (skips `a365 setup all`) or create a fresh one
@@ -137,7 +163,7 @@ URL + action, then you continue to the next non-blocking phase.
 **Summary of what this skill does:**
 1. Loads detection cache (`agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode`); asks agent kind + auth mode if not cached; writes `agentType`+`authMode` back to `.a365-workspace-detection.local.json` so subsequent skills skip re-asking.
    - **S2S block:** if `authMode = s2s`, the skill exits immediately — WorkIQ is not available for S2S agents (requires a delegated OBO token at runtime). "Autonomous" agents can run on either OBO or S2S; this block applies specifically to S2S, not to "autonomous" as a whole.
-   - **Framework support guard (Phase 0B):** verified against Agent365-{dotnet,python,nodejs} SDK source on 2026-05-21. Hard-stops on `(programmingLanguage, agentStack)` pairs that have no Microsoft-published adapter — see support matrix below. Hard-stop fires **before** any CLI command runs and ends the session with a message pointing at supported framework alternatives.
+   - **Framework support guard (Phase 0B):** verified against Agent365-{dotnet,python,nodejs}. Hard-stops on `(programmingLanguage, agentStack)` pairs that have no Microsoft-published adapter — see support matrix below. Hard-stop fires **before** any CLI command runs and ends the session with a message pointing at supported framework alternatives.
 2. Displays a visible TODO checklist to the user **before** Phase 1 (Claude Code uses `TaskCreate`; Copilot / Copilot CLI must emit a markdown checklist — `- [ ] Detect agent type…` — and update items to `- [x]` as phases complete).
 3. Runs `a365 develop list-available` to show the MCP server catalog.
 4. Adds selected servers via `a365 develop add-mcp-servers` (updates `ToolingManifest.json`).
@@ -224,11 +250,13 @@ URL + action, then you continue to the next non-blocking phase.
 
 **Trigger phrases:**
 - "test this agent locally"
-- "run agent locally"
+- "run my agent locally"
 - "open agentsplayground"
-- "launch local test session"
-- "local test this agent"
-- "test without deploying"
+- "launch agentsplayground"
+- "start a local test session"
+- "debug this agent locally"
+- "test my agent without deploying to teams"
+- "spin up a local test"
 
 **Summary of what this skill does:**
 1. Detects agent language (.NET → port 5000, Node.js/Python → port 3978); detects Python command (`python3` on macOS/Linux, `python` on Windows)

@@ -23,7 +23,7 @@ dependencies = [
     # "semantic-kernel",                                  # Semantic Kernel
 
     # Microsoft Agents SDK — hosting and integration
-    "microsoft-agents-hosting-aiohttp >= 0.9.1",
+    "microsoft-agents-hosting-aiohttp >= 1.0.0",
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
@@ -53,7 +53,7 @@ dependencies = [
     # "microsoft-agents-a365-tooling-extensions-openai >= 1.0.0",
     # "microsoft-agents-a365-tooling-extensions-claude >= 1.0.0",
 
-    "microsoft-opentelemetry >= 0.1.0a3",
+    "microsoft-opentelemetry >= 1.2.0",
 ]
 
 [tool.uv]
@@ -75,7 +75,7 @@ Patterns in this reference are validated against these versions. pip excludes pr
 
 | Package | Tested version | Pin |
 |---------|----------------|-----|
-| `microsoft-agents-hosting-aiohttp` | 0.9.1 | `>= 0.9.1` |
+| `microsoft-agents-hosting-aiohttp` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-hosting-core` | 0.9.x | unpinned |
 | `microsoft-agents-authentication-msal` | 0.9.x | unpinned |
 | `microsoft-agents-activity` | 0.9.x | unpinned |
@@ -85,9 +85,9 @@ Patterns in this reference are validated against these versions. pip excludes pr
 | `microsoft-agents-a365-observability-hosting` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-a365-tooling` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-a365-tooling-extensions-agentframework` | 1.0.0 | `>= 1.0.0` |
-| `microsoft-opentelemetry` | 0.1.0a3 | `>= 0.1.0a3` (alpha — intentional; GA not yet shipped) |
+| `microsoft-opentelemetry` | 1.2.0 | `>= 1.2.0` |
 
-> If you want to **block** preview upgrades while uv has `prerelease = "allow"`, change the constraint to `== 1.0.0` (exact pin) on the A365 packages. Or remove the `[tool.uv] prerelease = "allow"` line and pip/uv will only resolve stable versions — but then `microsoft-opentelemetry` (still alpha) won't install without `--pre`.
+> If you want to **block** preview upgrades while uv has `prerelease = "allow"`, change the constraint to `== 1.0.0` (exact pin) on the A365 packages. Removing the `[tool.uv] prerelease = "allow"` line is now safe — `microsoft-opentelemetry` reached GA at `1.2.0`, so plain `pip install` / `uv sync` resolves stable versions without `--pre`.
 
 > **Preview package workarounds:** if you end up on a `microsoft-agents-a365-*` pre-release, expect type shapes to drift from the GA AgentInterface contract. Common compile-break: `add_tool_servers_to_agent` may require `initial_tools=[]` as a positional arg in preview vs keyword in GA. Pass `initial_tools=[]` explicitly to be safe. Downgrade to `== 1.0.0` if drift becomes painful.
 
