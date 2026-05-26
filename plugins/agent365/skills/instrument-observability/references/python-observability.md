@@ -5,9 +5,12 @@ into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.2.x** (releas
 
 > **Major shift from earlier 0.x:** the legacy packages
 > (`microsoft-agents-a365-observability-core`, `-hosting`, `-runtime`, and the four
-> `-extensions-*` packages) are **deprecated**. Everything ships from a single package
-> now: `microsoft-opentelemetry`. See `MIGRATION_A365.md` in the distro repo for the
-> authoritative migration guide.
+> `-extensions-*` packages) are **deprecated**. The entry point `use_microsoft_opentelemetry`
+> ships from `microsoft-opentelemetry`, but `BaggageBuilder`, `get_observability_authentication_scope`,
+> and the scope types are still importable from their legacy module paths (transitive deps).
+> See `MIGRATION_A365.md` in the distro repo for the authoritative migration guide.
+>
+> **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` + `get_observability_authentication_scope` from `microsoft_agents_a365.observability.core.middleware.baggage_builder` and `microsoft_agents_a365.runtime.environment_utils` respectively. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
 
 ---
 
@@ -104,6 +107,8 @@ use_microsoft_opentelemetry(
 > **GenAI auto-instrumentation is now ON by default.** OpenAI Agents, LangChain,
 > Semantic Kernel, and Agent Framework are auto-patched. Do NOT call legacy
 > `*Instrumentor().instrument()` — manual calls produce **duplicate spans**.
+>
+> **OpenAI Agents SDK migration note:** the published `Agent365-Samples/python/openai/sample-agent` still imports the legacy `configure(...)` API + `OpenAIAgentsTraceInstrumentor().instrument()`. **If you see `OpenAIAgentsTraceInstrumentor().instrument()` in user code copied from that sample, REMOVE it** — auto-instrumentation in `microsoft-opentelemetry` 1.2+ handles it. Replace `configure(...)` with `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, ...)`.
 
 > **Non-GenAI instrumentations** (HTTP, DB, etc.) are **disabled by default** when
 > `enable_a365=True`. Opt them back in via the distro's `instrumentation_options` kwarg if needed.
@@ -436,7 +441,7 @@ configured in your `AgentApplication` decides which identity the token exchange 
 ```python
 # A365 Observability — best-effort instrumentation (verify against official sample)
 # A365 auth mode: agentic-user  (or: obo)
-from microsoft.opentelemetry.a365.runtime import get_observability_authentication_scope
+from microsoft_agents_a365.runtime.environment_utils import get_observability_authentication_scope
 from token_cache import cache_agentic_token
 
 
@@ -472,19 +477,23 @@ async def on_message(context: TurnContext, state: TurnState):
 > agent setup; its configured identity (user delegated or agent's own) determines whose
 > token gets returned.
 
-#### Optional manual baggage construction
+#### Canonical: manual per-turn baggage construction (matches AF sample)
 
-If you skipped `ObservabilityHostingManager` and want to build baggage manually per turn:
+**This is the path the verified `Agent365-Samples/python/agent-framework/sample-agent` actually takes** — `ObservabilityHostingManager` middleware is a fallback, but the AF sample builds baggage manually inside the handler to ensure the outer wrapping is present for InvokeAgentScope + InferenceScope. Without this exact ordering, spans risk being filtered as "0 identity groups" — same silent-drop risk seen in the Node.js LangChain path.
 
 ```python
-from microsoft.opentelemetry.a365.core import BaggageBuilder
-from microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage import populate
+# A365 Observability — best-effort instrumentation (verify against official sample)
+# Imports use the legacy module paths (still required even with the unified distro entry point):
+from microsoft_agents_a365.observability.core.middleware.baggage_builder import BaggageBuilder
+from microsoft_agents_a365.runtime.environment_utils import get_observability_authentication_scope
 
-builder = BaggageBuilder()
-populate(builder, context)   # auto-populates from TurnContext
+# In your message handler:
+tenant_id = context.activity.recipient.tenant_id
+agent_id = context.activity.recipient.agentic_app_id
 
-with builder.build():
-    # ... your handler logic ...
+with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
+    # InvokeAgentScope / InferenceScope / agent invocation inside this `with` block
+    # so they inherit the baggage. Spans outside will be filtered.
     pass
 ```
 
@@ -515,15 +524,15 @@ async def on_message(context: TurnContext, state: TurnState):
 > **Store publishing requirement:** `InvokeAgentScope`, `InferenceScope`, and `ExecuteToolScope`
 > are **required** for store validation. Missing any one causes store validation failure.
 
-> **All scope types import from `microsoft.opentelemetry.a365.core`** — no other packages needed.
+> **Scope-type imports come from the legacy `microsoft_agents_a365.observability.core` module path** — the unified `microsoft-opentelemetry` distro entry point (`use_microsoft_opentelemetry`) is in `microsoft.opentelemetry`, but the scope classes themselves still live in the legacy module (transitive dep of the distro). The AF sample uses these legacy paths.
 
 > **`ScopeUtils.populate_*_from_context` is removed in 1.0+.** Construct scopes directly
 > with `.start(...)`.
 
 ```python
-from microsoft.opentelemetry.a365.core import (
+# Verified import paths from Agent365-Samples/python/agent-framework/sample-agent
+from microsoft_agents_a365.observability.core import (
     AgentDetails,
-    BaggageBuilder,
     InferenceCallDetails,
     InferenceOperationType,
     InferenceScope,
@@ -816,7 +825,7 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 | `ObservabilityHostingOptions` | `microsoft.opentelemetry.a365.hosting` | Options for `ObservabilityHostingManager.configure` (defaults: `enable_baggage=False`, `enable_output_logging=False`) |
 | `BaggageMiddleware` | `microsoft.opentelemetry.a365.hosting` | Adapter middleware — registered by `ObservabilityHostingManager` |
 | `AgenticTokenCache` | `microsoft.opentelemetry.a365.hosting.token_cache_helpers` | Hosting token cache for OBO / agentic-user flows |
-| `get_observability_authentication_scope()` | `microsoft.opentelemetry.a365.runtime` | Returns the default OAuth scope string |
+| `get_observability_authentication_scope()` | `microsoft_agents_a365.runtime.environment_utils` | Returns the default OAuth scope string (legacy module path — still required) |
 | `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `microsoft.opentelemetry.a365.core` | Agent invocation scope (context manager) |
 | `ExecuteToolScope.start(request, tool_details, agent_details)` | `microsoft.opentelemetry.a365.core` | Tool execution scope (context manager) |
 | `InferenceScope.start(request, inference_details, agent_details)` | `microsoft.opentelemetry.a365.core` | LLM inference scope (context manager) |

@@ -8,6 +8,8 @@ into a Node.js agent. Aligned with `@microsoft/opentelemetry` **GA 1.0.x** (upda
 > `@microsoft/agents-a365-runtime`) are **deprecated**. Everything ships from a single
 > package now: `@microsoft/opentelemetry`. See `MIGRATION_A365.md` in the distro repo
 > for the authoritative migration guide.
+>
+> **Sample-lag note (2026-05):** `Agent365-Samples/nodejs/langchain/sample-agent` has migrated to `@microsoft/opentelemetry` and matches the patterns in this reference. `Agent365-Samples/nodejs/openai/sample-agent` still imports from the legacy `@microsoft/agents-a365-observability*` packages as of this writing — the skill direction (unified `@microsoft/opentelemetry`) is forward-looking. If a user's project already has the legacy imports from following the OpenAI sample literally, the skill should migrate them to `@microsoft/opentelemetry` during the wiring step rather than co-existing.
 
 ---
 
@@ -406,7 +408,15 @@ configureA365Hosting(adapter, {
 
 ## Message Handler
 
-**The canonical pattern** (verified against the working Agent365-Samples LangChain sample, and the only one proven to produce spans that surface in MAC) builds baggage manually per-turn using `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).build()` and runs `InvokeAgentScope.start(...)` INSIDE `baggageScope.run(...)`. See the message handler sample below for the exact shape.
+**Per-stack patterns — they differ.** Verified against `Agent365-Samples/nodejs/{langchain,openai,claude}/sample-agent`:
+
+| Stack | Pattern | Where the scope lives |
+|---|---|---|
+| **LangChain** | Canonical wrapping: `preloadObservabilityToken` → outer `baggageScope.run` → `InvokeAgentScope.start` + `InferenceScope.start` INSIDE | `src/agent.ts` message handler |
+| **OpenAI Agents SDK** | Same as LangChain — canonical wrapping | `src/agent.ts` message handler |
+| **Claude SDK** | **`InferenceScope.start` only** — no outer baggageScope, no `InvokeAgentScope`. The Claude sample wraps each LLM call individually inside `src/client.ts`; the handler does not open scopes. | `src/client.ts` query wrapper |
+
+Use the matching pattern for the user's stack. Mixing them produces either silent span drops (LangChain pattern on Claude won't work — Claude sample architecture doesn't reach the handler scopes the same way) or double-instrumentation. The rest of this section describes the **LangChain / OpenAI canonical pattern** — see `Agent365-Samples/nodejs/claude/sample-agent/src/client.ts` for the Claude-specific InferenceScope-only wrapping.
 
 > **`configureA365Hosting({ enableBaggage: true })` middleware (Phase 3) is a fallback** — it auto-populates baggage on the incoming request span, but the spans you'll create later in `InvokeAgentScope.start(...)` are not automatically wrapped by the middleware unless they happen inside the request's async context. In practice this is fragile and leads to the silent `Partitioned into 0 identity groups (N spans skipped)` failure mode. **Prefer the manual outer wrapping below.**
 >
@@ -751,15 +761,16 @@ useMicrosoftOpenTelemetry({
     enabled: true,
     enableObservabilityExporter: true,
     tokenResolver: ...,
-    logger: {
-      info: (msg, ...args) => myLogger.info(msg, ...args),
-      warn: (msg, ...args) => myLogger.warn(msg, ...args),
-      error: (msg, ...args) => myLogger.error(msg, ...args),
-    },
+    // `logLevel` is the only logger-related option on A365Options — a pipe-separated
+    // list of levels to emit. There is NO `logger: { info, warn, error }` callback hook
+    // on A365Options in 1.0.x; routing exporter logs through your own logger requires
+    // setting OTEL's diag logger via @opentelemetry/api, not a per-A365 logger option.
     logLevel: 'info|warn|error',
   },
 });
 ```
+
+> **Want exporter logs to flow through your app logger?** A365Options has no `logger` callback. Use `diag.setLogger(...)` from `@opentelemetry/api` before `useMicrosoftOpenTelemetry()` — that pipes the entire OTel SDK (including the A365 exporter) through your custom diag logger.
 
 ---
 

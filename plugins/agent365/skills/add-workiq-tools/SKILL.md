@@ -355,7 +355,7 @@ For every branch:
    dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
    ```
 2. **Read** `dotnet-workiq.md` — sections "Program.cs — Service Registration" and "Agent Class — GetMcpToolsAsync (Agent Framework)".
-3. **Edit** `Program.cs`: add `builder.Services.AddMcpServices();` (preferred one-liner) or the two-line `AddSingleton` form (matches the sample). Skip if already present.
+3. **Edit** `Program.cs`: add the two-line `AddSingleton<IMcpToolRegistrationService, ...>` + `AddSingleton<IMcpToolServerConfigurationService, ...>` form (matches the verified `Agent365-Samples` AF sample). `builder.Services.AddMcpServices()` exists as a one-liner alternative but registers both as **Scoped** — the AF sample uses Singleton lifetimes to match `AgentApplication`'s singleton agent host and avoid captive-dependency issues. Skip if already present.
 4. **Edit** the `AgentApplication` subclass: add the `GetMcpToolsAsync` call inside **`OnMessageAsync`** (Agent Framework's per-turn handler) — **not** `OnMessageActivityAsync` (older docs in this repo had that wrong; the verified sample uses `OnMessageAsync`).
 
 ### §4.2 .NET Semantic Kernel
@@ -441,8 +441,11 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
      || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-googleadk
    ```
    Edit `requirements.txt` / `pyproject.toml`.
-2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED)".
-3. **Edit** `agent.py` to wrap the call in `asyncio.wait_for(timeout=10.0)` and pass `agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123")`. Pre-skip if neither bearer token nor auth handler is available (Playground scenario).
+2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED, with sample-vs-PyPI divergence)".
+3. **Decide between two paths** (the published ADK sample diverges from the PyPI extension's signature):
+   - **Path A — PyPI extension (default, smaller scope):** import `McpToolRegistrationService` from `microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service` and call `add_tool_servers_to_agent(agent=..., auth=..., auth_handler_name=..., context=turn_context, auth_token=...)`. **Do NOT pass `agentic_app_id`** — the PyPI extension's signature has no such kwarg and will `TypeError`. Wrap in `asyncio.wait_for(timeout=10.0)`.
+   - **Path B — DIY scaffold (matches sample exactly):** ask the user *"Do you want the sample's exact behavior (AGENTIC_APP_ID env-var override + ~165-line local file)? Or the simpler PyPI-extension path?"* — if they pick Path B, copy `mcp_tool_registration_service.py` from `Agent365-Samples/python/google-adk/sample-agent/` into the project and import locally.
+4. Pre-skip the call if neither bearer token nor auth handler is available (Playground scenario).
 
 ### §4.10 Python Semantic Kernel (BEST-EFFORT — no published sample)
 
@@ -503,6 +506,8 @@ grep -i '"mcpServerName":\s*"mcp_WordServer"' ToolingManifest.json
 > Options: **Yes — wire @mention handling** / **No — Word read/write only**
 
 **On Yes:**
+
+> ⚠️ **Preserve existing observability wiring.** If `instrument-observability` already ran, the message handler (`handleAgentMessageActivity`) is wrapped in an outer `baggageScope.run(...)` (the canonical pattern from Phase 5.5 of that skill). The new `case NotificationType.WpxComment` branch lives inside `handleAgentNotificationActivity` — a structurally separate handler — so it does NOT need to share the baggage scope. **Do NOT modify or remove the existing `baggageScope.run` wrapping in `handleAgentMessageActivity`** while adding the @mention code; removing it would silently break observability for regular messages.
 
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md` — section "Optional: Word @mention notification handling (LangChain — BEST-EFFORT)".
 2. **Edit** `src/agent.ts`:

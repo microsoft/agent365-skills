@@ -94,9 +94,18 @@ dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 
 ## Program.cs — Service Registration
 
-Both AF and SK extensions ship an `AddMcpServices()` extension method that registers both interfaces as **Scoped** in one line. The official samples currently use the two-line `AddSingleton` form below (both work); the one-liner is the canonical option going forward.
+Use the two-line `AddSingleton` form — it matches the verified `Agent365-Samples` AF sample and the lifetime aligns with `AgentApplication`'s singleton agent host.
 
-**Recommended (one-liner):**
+**Recommended (matches the verified sample):**
+```csharp
+// A365 WorkIQ — added by add-workiq-tools skill
+using Microsoft.Agents.A365.Tooling;
+
+builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
+builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
+```
+
+**Alternative (one-liner — Scoped lifetimes):**
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
 using Microsoft.Agents.A365.Tooling;
@@ -106,16 +115,7 @@ using Microsoft.Agents.A365.Tooling;
 builder.Services.AddMcpServices();
 ```
 
-**Alternative (matches the official samples):**
-```csharp
-// A365 WorkIQ — added by add-workiq-tools skill
-using Microsoft.Agents.A365.Tooling;
-
-builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
-builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
-```
-
-> **Lifetime note:** `AddMcpServices()` uses `Scoped` registrations; the sample pattern uses `Singleton`. Both work for the standard request-scoped agent host. If you change to a long-lived background worker, prefer `Scoped` to keep the `IMcpToolServerConfigurationService` aligned with per-request lifetime.
+> **Lifetime note:** `AddMcpServices()` uses `Scoped` registrations; the verified AF sample uses `Singleton`. **Prefer `AddSingleton`** because `AgentApplication`'s agent host is itself a Singleton — if it captures a Scoped `IMcpToolRegistrationService`, you hit captive-dependency issues (the agent retains a stale scope when the request finishes). The `AddMcpServices()` Scoped form is reasonable only for long-lived background workers where the consuming service is itself Scoped.
 
 ---
 

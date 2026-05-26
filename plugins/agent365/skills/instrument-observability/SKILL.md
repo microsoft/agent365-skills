@@ -176,7 +176,20 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 4. **If agent type cannot be determined**, write marker `.a365setup-unknown-agent` and **exit early** with clear error message.
 
-5. **TaskUpdate** — Mark complete and report detected agent type to user.
+5. **Framework-support soft-warn matrix.** Check `(programmingLanguage, agentStack)` from the detection cache and surface a warning when the stack lacks first-class auto-instrumentation in `@microsoft/opentelemetry` or `microsoft-opentelemetry`. The skill still proceeds — observability is the OTel SDK underneath, which works for any HTTP-based LLM — but the user should know they'll need to add manual `InferenceScope.start` wrappers around each LLM call.
+
+   | Lang | Stack | Action |
+   |---|---|---|
+   | Node.js | LangChain, OpenAI Agents SDK, Claude SDK | ✅ Auto-instrumented (Claude with custom shape — see Phase 5.5) |
+   | Node.js | Semantic Kernel, Google ADK | ⚠ Soft-warn — auto-instrumentation may not patch the LLM library; add manual `InferenceScope.start` around each LLM call |
+   | Python | Agent Framework, OpenAI, Google ADK | ✅ Auto-instrumented |
+   | Python | LangChain, Claude SDK, CrewAI | ⚠ Soft-warn — same as Node.js SK/ADK |
+   | .NET | Agent Framework, Semantic Kernel | ✅ Auto-instrumented via `.UseOpenTelemetry()` on `IChatClient` |
+   | .NET | Azure AI Foundry | ⚠ Soft-warn — best-effort wiring |
+
+   For soft-warn rows, surface verbatim: *"Auto-instrumentation in `<unified-distro-package>` doesn't patch your LLM library directly. The skill will still wire `useMicrosoftOpenTelemetry`/`UseMicrosoftOpenTelemetry` (OTel SDK + A365 exporter), but you'll need to manually wrap each LLM call with `InferenceScope.start(...)` to capture `gen_ai.*` spans. See `<language>-observability.md` § 'InferenceScope — Manual Wrapping' for the pattern."* Continue to Phase 2.
+
+6. **TaskUpdate** — Mark complete and report detected agent type (+ any soft-warn) to user.
 
 ---
 
@@ -291,7 +304,7 @@ flag live in the references — see the "Required packages" section of:
    **OBO path** (`obo` / `agentic-user`) — applies to both **AI Teammate** agents and **Standard .NET agents**:
    - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor (auto-registered by the distro — no `AddAgenticTracingExporter()` call needed).
    - Inject `IConfiguration` (for blueprint/observability config) and `ILogger<MyAgent>`.
-   - **Resolve agent ID for BOTH auth paths** — agentic instance ID from the Activity for agentic turns, **decoded from the OBO token** via `Utility.ResolveAgentIdentity` for non-agentic turns. Do NOT fall back to `Guid.Empty.ToString()` — that creates a synthetic identity the exporter cannot authenticate, polluting traces with `"No token obtained. Skipping export for this identity."` warnings.
+   - **Resolve agent ID for BOTH auth paths** — agentic instance ID from the Activity for agentic turns, **decoded from the auth token** via `Utility.ResolveAgentIdentity(context, authToken)` for non-agentic turns (the SDK names the second parameter generically `authToken` — it accepts both OBO tokens and agentic-path tokens returned by `UserAuthorization.GetTurnTokenAsync`). Do NOT fall back to `Guid.Empty.ToString()` — that creates a synthetic identity the exporter cannot authenticate, polluting traces with `"No token obtained. Skipping export for this identity."` warnings.
      ```csharp
      string? resolvedAgentId = null;
      if (turnContext.Activity.IsAgenticRequest())
@@ -302,17 +315,17 @@ flag live in the references — see the "Required packages" section of:
      {
          try
          {
-             var oboToken = await UserAuthorization
+             var authToken = await UserAuthorization
                  .GetTurnTokenAsync(turnContext, authHandlerName, cancellationToken: cancellationToken)
                  .ConfigureAwait(false);
-             if (!string.IsNullOrEmpty(oboToken))
+             if (!string.IsNullOrEmpty(authToken))
              {
-                 resolvedAgentId = Utility.ResolveAgentIdentity(turnContext, oboToken);
+                 resolvedAgentId = Utility.ResolveAgentIdentity(turnContext, authToken);
              }
          }
          catch (Exception ex)
          {
-             _logger.LogDebug(ex, "Could not resolve agent id from OBO token; A365 observability skipped for this turn.");
+             _logger.LogDebug(ex, "Could not resolve agent id from auth token; A365 observability skipped for this turn.");
          }
      }
 
@@ -322,7 +335,7 @@ flag live in the references — see the "Required packages" section of:
      var hasObservabilityIdentity = !string.IsNullOrEmpty(resolvedAgentId)
                                  && !string.IsNullOrEmpty(resolvedTenantId);
      ```
-     `GetAgenticInstanceId()` returns the agent's **service principal object ID** (the instance ID assigned by A365 for the Teams agentic identity). `Utility.ResolveAgentIdentity(turnContext, token)` decodes the agent identity from a JWT OBO token. Both paths produce the same kind of ID — what shows up in MAC Advanced Hunting.
+     `GetAgenticInstanceId()` returns the agent's **service principal object ID** (the instance ID assigned by A365 for the Teams agentic identity). `Utility.ResolveAgentIdentity(context, authToken)` decodes the agent identity from a JWT — works for both OBO tokens and agentic-path tokens (SDK signature names the param generically `authToken`). Both paths produce the same kind of ID — what shows up in MAC Advanced Hunting.
    - **Conditional baggage + token registration** — only when `hasObservabilityIdentity == true`. Skip both calls cleanly when the identity can't be resolved:
      ```csharp
      using IDisposable? baggageScope = hasObservabilityIdentity
@@ -395,9 +408,9 @@ flag live in the references — see the "Required packages" section of:
 
 ### For Python
 
-1. **Read** the detected message handler file.
+1. **Read** the detected message handler file AND `host_agent_server.py` — the helper lives in the HOST file, not the agent class. The verified AF sample places `_setup_observability_token` in `host_agent_server.py:130-156` so it has access to the `AgentApplication` instance and can be called by activity middleware. Per-turn baggage construction also lives in the handler/middleware layer in `host_agent_server.py`, NOT in `agent.py`.
 
-2. **Edit** — Refresh the per-turn exporter token following the reference pattern in `python-observability.md`:
+2. **Edit `host_agent_server.py`** (the host file) — Refresh the per-turn exporter token following the reference pattern in `python-observability.md`:
    - Default observability scope is auto-applied by `microsoft-opentelemetry` 1.1+ — do **not** import `get_observability_authentication_scope` unless you need to override the default. If overriding, pass via `a365_observability_scope_override` to `use_microsoft_opentelemetry`. The `exchange_token()` call below omits `scopes=` and lets the auth handler resolve the default.
    - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5) — or use `AgenticTokenCache` from the hosting helpers.
    - **OBO paths only** (`obo` / `agentic-user`): Resolve `agent_id` and `tenant_id` dynamically from context each turn (never from config), then exchange the OBO token (non-fatal, wrap in try/except):
@@ -541,7 +554,13 @@ Follow the reference patterns in `dotnet-observability.md` for each scope being 
 
 ### For Node.js
 
-Follow the reference patterns in `nodejs-observability.md` for each scope being added. **The wrapping order is non-negotiable — wrong order produces silent span drops** (logged as `Partitioned into 0 identity groups`).
+**The pattern is per-stack — read `agentStack` from `.a365-workspace-detection.local.json` and branch:**
+
+- **`LangChain`** or **`OpenAI`** → canonical wrapping pattern below (verified against the LangChain + OpenAI samples).
+- **`Claude`** → **InferenceScope-only**, no outer baggageScope, no InvokeAgentScope. The Claude sample (`Agent365-Samples/nodejs/claude/sample-agent/src/client.ts`) wraps each LLM call individually in `src/client.ts`. Skip the canonical pattern below; follow the InferenceScope-only shape from the Claude sample instead. Tell the user: *"Claude SDK uses a different observability shape — wrapping per LLM call in client.ts instead of around the message handler. InvokeAgentScope is not used."*
+- **`Semantic Kernel`** or **`Google ADK`** → handled by Phase 0.6 framework guard (soft-warn — auto-instrumentation may not patch the LLM library; manual `InferenceScope.start` wrapping required around each LLM call).
+
+For LangChain + OpenAI, follow the reference patterns in `nodejs-observability.md` for each scope. **The wrapping order is non-negotiable — wrong order produces silent span drops** (logged as `Partitioned into 0 identity groups`).
 
 **Canonical pattern (generate exactly this shape):**
 
