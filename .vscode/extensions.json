@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "github.copilot",
+    "github.copilot-chat",
+    "anthropic.claude-code",
+    "davidanson.vscode-markdownlint",
+    "editorconfig.editorconfig",
+    "redhat.vscode-yaml"
+  ]
+}

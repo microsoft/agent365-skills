@@ -11,6 +11,7 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
 argument-hint: "Optional: port number (default: 3978 for Node.js/Python, 5000 for .NET)"
 allowed-tools: Read, Glob, Grep, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList

@@ -1,9 +1,9 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Six skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -15,6 +15,14 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 - **Node.js 18+**, **.NET 8.0+**, or **Python 3.11+** (depending on your agent)
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
+
+### Tenant prerequisites (one-time, admin-only)
+
+The Agent 365 CLI requires a custom Entra ID app registration in your tenant. This is a **one-time tenant-wide setup** — once any tenant admin runs `a365 setup requirements`, all developers in the tenant inherit the ready state and skip this step.
+
+Required admin role: **Application Administrator** *(recommended — lightest)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. See [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration) for full details.
+
+If you're a developer without admin access, the skills detect this and surface a clean handoff message for your admin — no need to track down a Global Admin yourself.
 
 ---
 
@@ -136,7 +144,7 @@ An **AI Teammate** is an agent with a first-class M365 identity. It has an Agent
 
 **Before this skill:** Your agent is a standalone script or HTTP server with no Teams presence.
 
-**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (\.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, and ToolingManifest.json. Then offers Observability and WorkIQ tools as optional add-ons.
+**After this skill:** Your agent has the full A365 hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (.NET), or aiohttp (Python) — with an AgentApplication class, message routing, typing indicators, email notification handling, and ToolingManifest.json. Then offers Observability and WorkIQ tools as optional add-ons.
 
 **Prerequisite:** `a365-setup` must create the Blueprint and Agentic User identity first. This skill is normally invoked automatically from `a365-setup` after prerequisites are confirmed; it can also be run directly against an already-registered agent.
 

@@ -37,4 +37,5 @@ Thumbs.db
 *.user
 
 # Claude Code session state — local only, not repo config
-.claude/settings.json
+.claude/
+

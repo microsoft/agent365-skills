@@ -8,8 +8,9 @@ description: >
 compatibility:
   - claude-code
   - vscode-copilot
+  - github-copilot-cli
 user-invocable: true
-argument-hint: "Optional: WorkIQ tool names to add (e.g. 'Work IQ Mail Work IQ Calendar'), or 'all' for full suite"
+argument-hint: "Optional: exact mcpServerName values from `a365 develop list-available` (e.g. 'mcp_MailTools mcp_CalendarTools'), or 'all' for full suite"
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 model: sonnet
 hooks:
@@ -56,15 +57,16 @@ hooks:
 
 This skill adds WorkIQ MCP tool servers to an existing A365 agent using the A365 CLI.
 
-**WorkIQ tools** give your agent pre-built access to M365 work data via MCP:
-- **Work IQ Mail** — Read, send, and manage email
-- **Work IQ Calendar** — Read/create events, check availability
-- **Work IQ Teams** — Read channel messages, list teams
-- **Work IQ SharePoint** — Search documents, read files, list sites
-- **Work IQ OneDrive** — Manage OneDrive files
-- **Work IQ Word** — Read and write Word documents
-- **Work IQ User** — Get user profile and presence
-- **Work IQ Copilot** — Chat with Microsoft 365 Copilot
+**WorkIQ tools** give your agent pre-built access to M365 work data via MCP. The capability categories below describe what each catalog server does — but **always pull the exact CLI argument names from `a365 develop list-available`**. V2 catalog names look like `mcp_MailTools`, `mcp_CalendarTools`, etc., and they evolve over time.
+
+- **Mail** — Read, send, and manage email
+- **Calendar** — Read/create events, check availability
+- **Teams** — Read channel messages, list teams
+- **SharePoint** — Search documents, read files, list sites
+- **OneDrive** — Manage OneDrive files
+- **Word** — Read and write Word documents
+- **User/Presence** — Get user profile and presence
+- **Copilot** — Chat with Microsoft 365 Copilot
 - **Dataverse and Dynamics 365** — CRUD and domain actions
 
 **How it works:**
@@ -181,6 +183,7 @@ TaskCreate: "Detect agent type and check prerequisites"
 TaskCreate: "Show available WorkIQ tools catalog"
 TaskCreate: "Add WorkIQ MCP servers via CLI"
 TaskCreate: "Wire MCP tool service in agent code"
+TaskCreate: "Offer Word @mention handler (if applicable)"
 TaskCreate: "Guide permissions handoff"
 TaskCreate: "Set up dev token for testing"
 TaskCreate: "Validate build"
@@ -284,13 +287,15 @@ Run `a365 develop add-mcp-servers` with the selected server names.
 Run the command **once** with all selected names space-separated:
 
 ```bash
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+# Substitute the exact mcpServerName values from your `list-available` output.
+# Example shown using the current V2 catalog names — yours may differ if the catalog evolved.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"
 
 # If running from a different directory, use --project-path:
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar" --project-path "<project_dir>"
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools" --project-path "<project_dir>"
 ```
 
-(Adjust to include whichever servers the user selected.)
+(Adjust the server names to match whichever servers the user selected from the live catalog. The CLI does case-insensitive trim-comparison, but the names must otherwise match the catalog's `mcpServerName` exactly.)
 
 This command creates `ToolingManifest.json` if it does not exist, or adds the selected servers to it if it does.
 
@@ -350,7 +355,7 @@ For every branch:
    dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
    ```
 2. **Read** `dotnet-workiq.md` — sections "Program.cs — Service Registration" and "Agent Class — GetMcpToolsAsync (Agent Framework)".
-3. **Edit** `Program.cs`: add `builder.Services.AddMcpServices();` (preferred one-liner) or the two-line `AddSingleton` form (matches the sample). Skip if already present.
+3. **Edit** `Program.cs`: add the two-line `AddSingleton<IMcpToolRegistrationService, ...>` + `AddSingleton<IMcpToolServerConfigurationService, ...>` form (matches the verified `Agent365-Samples` AF sample). `builder.Services.AddMcpServices()` exists as a one-liner alternative but registers both as **Scoped** — the AF sample uses Singleton lifetimes to match `AgentApplication`'s singleton agent host and avoid captive-dependency issues. Skip if already present.
 4. **Edit** the `AgentApplication` subclass: add the `GetMcpToolsAsync` call inside **`OnMessageAsync`** (Agent Framework's per-turn handler) — **not** `OnMessageActivityAsync` (older docs in this repo had that wrong; the verified sample uses `OnMessageAsync`).
 
 ### §4.2 .NET Semantic Kernel
@@ -384,6 +389,7 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
    ```
 2. **Read** `nodejs-workiq.md` — section "LangChain — Wiring (VERIFIED)".
 3. **Edit** `src/client.ts` (or wherever the `getClient` factory lives). Add module-level `toolService = new McpToolRegistrationService()` singleton and the per-turn call inside `getClient`. **Capture the return value** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
+4. **`mcp_WordServer` was added?** → continue to **Phase 4.5** below for the gated Word @mention handler offer. This is a required check, not a soft suggestion — Phase 4.5's gates handle the actual decision.
 
 ### §4.5 Node.js OpenAI
 
@@ -435,8 +441,11 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
      || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-googleadk
    ```
    Edit `requirements.txt` / `pyproject.toml`.
-2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED)".
-3. **Edit** `agent.py` to wrap the call in `asyncio.wait_for(timeout=10.0)` and pass `agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123")`. Pre-skip if neither bearer token nor auth handler is available (Playground scenario).
+2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED, with sample-vs-PyPI divergence)".
+3. **Decide between two paths** (the published ADK sample diverges from the PyPI extension's signature):
+   - **Path A — PyPI extension (default, smaller scope):** import `McpToolRegistrationService` from `microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service` and call `add_tool_servers_to_agent(agent=..., auth=..., auth_handler_name=..., context=turn_context, auth_token=...)`. **Do NOT pass `agentic_app_id`** — the PyPI extension's signature has no such kwarg and will `TypeError`. Wrap in `asyncio.wait_for(timeout=10.0)`.
+   - **Path B — DIY scaffold (matches sample exactly):** ask the user *"Do you want the sample's exact behavior (AGENTIC_APP_ID env-var override + ~165-line local file)? Or the simpler PyPI-extension path?"* — if they pick Path B, copy `mcp_tool_registration_service.py` from `Agent365-Samples/python/google-adk/sample-agent/` into the project and import locally.
+4. Pre-skip the call if neither bearer token nor auth handler is available (Playground scenario).
 
 ### §4.10 Python Semantic Kernel (BEST-EFFORT — no published sample)
 
@@ -465,6 +474,59 @@ Tell the user verbatim: *"No Microsoft sample exists for Python Azure AI Foundry
 3. Do **not** generate wiring code. Mark this branch complete with a best-effort note.
 
 **Mark task complete: "Wire MCP tool service in agent code"**
+
+---
+
+## Phase 4.5 — Offer Word `@mention` handler (gated)
+
+**Mark task in progress: "Offer Word @mention handler (if applicable)"**
+
+This phase is **gated** — most flows skip it. **Always run the gates explicitly** — the @mention handler should be offered every time `mcp_WordServer` is added on a Node.js LangChain stack. **Do not skip this phase without running both gates.**
+
+**Gate 1 — Framework check.** Read `programmingLanguage` and `agentStack` from `.a365-workspace-detection.local.json`:
+
+| programmingLanguage | agentStack | Apply? |
+|---|---|---|
+| `NodeJS` | `LangChain` | ✅ continue to Gate 2 |
+| anything else | anything else | ❌ skip phase — mark task complete with note: *"N/A — only Node.js LangChain has a verified proactive `@mention` pattern in this repo today."* |
+
+**Gate 2 — `mcp_WordServer` presence.** The user only sees the offer if WordServer was actually added. Read `ToolingManifest.json` (or whichever path Phase 3 wrote) and check:
+
+```bash
+grep -i '"mcpServerName":\s*"mcp_WordServer"' ToolingManifest.json
+```
+
+- Match found → continue to the offer below.
+- No match → skip phase — mark task complete with note: *"N/A — `mcp_WordServer` was not in the selected servers."*
+
+**Both gates passed — ask via `AskUserQuestion`:**
+
+> *"You added `mcp_WordServer`. Do you want this AI Teammate to also notify and reply when someone `@mentions` it on a Word comment? It will read the document, post a reply on the same comment thread (not a new top-level comment), and DM the user in Teams with the reply text. The pattern is best-effort — no Microsoft Node.js sample is published yet, but the underlying SDK APIs are verified."*
+>
+> Options: **Yes — wire @mention handling** / **No — Word read/write only**
+
+**On Yes:**
+
+> ⚠️ **Preserve existing observability wiring.** If `instrument-observability` already ran, the message handler (`handleAgentMessageActivity`) is wrapped in an outer `baggageScope.run(...)` (the canonical pattern from Phase 5.5 of that skill). The new `case NotificationType.WpxComment` branch lives inside `handleAgentNotificationActivity` — a structurally separate handler — so it does NOT need to share the baggage scope. **Do NOT modify or remove the existing `baggageScope.run` wrapping in `handleAgentMessageActivity`** while adding the @mention code; removing it would silently break observability for regular messages.
+
+1. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md` — section "Optional: Word @mention notification handling (LangChain — BEST-EFFORT)".
+2. **Edit** `src/agent.ts`:
+   - Pre-check the `AgentApplication` `super(...)` call for `proactive: {}`. **Add it if missing** — required for proactive Teams DMs.
+   - Add the per-user conversation index (`userKeyToConversationId: Map<string, string>` + `userKeysFor` helper).
+   - Add the `trackConversationForProactive` private method. Call it from BOTH the message handler AND the `installationUpdate(add)` handler.
+   - Add the `case NotificationType.WpxComment` branch + `handleWpxCommentNotification` method.
+3. **Edit** `src/client.ts` (optional but recommended): wire LangGraph `MemorySaver` checkpointer keyed on `conversation.id` so multi-turn @mention threads keep tool-call history.
+4. Mark all generated lines with: `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`
+5. Tell the user the gotchas verbatim:
+   - "The document URL is on `activity.attachments[*].contentUrl`, NOT on `wpxCommentNotification`."
+   - "Proactive DM requires the user to have spoken to the bot at least once (or had it installed). If `userKeyToConversationId.get(...)` returns undefined on first @mention, the agent surfaces a *'DM me once to enable Word notifications'* message instead of failing silently."
+   - "Tell the LLM explicitly to use the **reply** tool — without that instruction, models default to `AddComment` which creates a new top-level thread."
+
+**On No:**
+
+Tell the user: *"Skipped. Word tools still work for direct user prompts; only the proactive @mention path is omitted. You can re-enable later by re-running `/agent365:add-workiq-tools` — the skill is idempotent."*
+
+**Mark task complete: "Offer Word @mention handler (if applicable)"**
 
 ---
 
@@ -646,7 +708,7 @@ All commands the skill uses — show this table to the user on request.
 | Command | What it does | Who |
 |---------|-------------|-----|
 | `a365 develop list-available` | Full WorkIQ server catalog with V1/V2 labels | Developer |
-| `a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"` | Writes selected servers to `ToolingManifest.json` — no permissions yet | Developer |
+| `a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"` | Writes selected servers to `ToolingManifest.json` — no permissions yet. Names must match exact `mcpServerName` from `list-available`. | Developer |
 | `a365 develop list-configured` | Shows servers currently in `ToolingManifest.json` | Developer |
 | `a365 develop get-token` | Browser auth → bearer token for local testing | Developer |
 | `a365 develop get-token --resource mcp -o raw` | Raw token string (pipe to clipboard or `.env`) | Developer |
@@ -663,17 +725,7 @@ All commands the skill uses — show this table to the user on request.
 
 All WorkIQ servers require **delegated (OBO) permissions** — this is why `authMode = s2s` blocks WorkIQ entirely. The agent code wires the unified scope `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level by `a365 setup permissions mcp`.
 
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes | Signed-in user required? |
-|---------------|-------|------------------------|--------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` | ✅ Yes |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` | ✅ Yes |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` | ✅ Yes |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ Word | V2 | `Files.ReadWrite.All` | ✅ Yes |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` | ✅ Yes |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` | ✅ Yes |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) | ✅ Yes |
+The OAuth2 scopes that `a365 setup permissions mcp` grants are fetched from the live catalog — see `a365 develop list-available` to inspect what each server requires. We don't reproduce the scope mapping here because the catalog can evolve; the CLI's grant step uses live data, not this doc.
 
 > **agentic-user path:** The Agentic User identity (AI Teammate) satisfies the "signed-in user" requirement — `a365 setup all --aiteammate` provisions the Agentic User and grants all delegated scopes to it. WorkIQ calls are made on behalf of the Agentic User, not the human caller.
 
@@ -688,7 +740,7 @@ Developer                                  Global Administrator
    (browse catalog)
 
 2. a365 develop add-mcp-servers
-   "Work IQ Mail" "Work IQ Calendar"
+   "mcp_MailTools" "mcp_CalendarTools"   (exact names from list-available)
    → writes ToolingManifest.json
    → NO permissions granted yet
 

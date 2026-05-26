@@ -16,8 +16,9 @@ Reference for the `add-workiq-tools` skill. The CLI workflow (`list-available` �
 # See all available MCP servers in the catalog
 a365 develop list-available
 
-# Add selected WorkIQ servers (updates ToolingManifest.json only — no permissions yet)
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar"
+# Add selected WorkIQ servers — names MUST match exact mcpServerName from list-available.
+# V2 catalog names shown; pull current values from your `a365 develop list-available` output.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools"
 
 # Verify what is now configured
 a365 develop list-configured
@@ -33,18 +34,20 @@ a365 develop get-token --resource mcp -o raw
 
 ---
 
-## Available WorkIQ Servers (from a365 develop list-available)
+## Available WorkIQ Capabilities
 
-| Display Name | Category |
+Run `a365 develop list-available` for the live catalog — these are capability categories, not the exact CLI argument names (V2 names look like `mcp_MailTools`, `mcp_CalendarTools`, etc.).
+
+| Capability | Category |
 |---|---|
-| Work IQ Mail | Email |
-| Work IQ Calendar | Calendar |
-| Work IQ Teams | Teams chat |
-| Work IQ SharePoint | Documents |
-| Work IQ OneDrive | File storage |
-| Work IQ Word | Documents |
-| Work IQ User | Profile / presence |
-| Work IQ Copilot | M365 Copilot |
+| Mail | Email |
+| Calendar | Calendar |
+| Teams | Teams chat |
+| SharePoint | Documents |
+| OneDrive | File storage |
+| Word | Documents |
+| User / Presence | Profile / presence |
+| Copilot | M365 Copilot |
 | Dataverse and Dynamics 365 | Business data |
 
 ---
@@ -239,11 +242,18 @@ class MyAgent:
 
 ---
 
-## Python Google ADK — Wiring (VERIFIED)
+## Python Google ADK — Wiring (VERIFIED, with sample-vs-PyPI divergence)
 
 Sample: https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/agent.py
 
-**Import** (verified):
+> ⚠️ **Sample uses a LOCAL DIY scaffold, NOT the PyPI extension.** The published sample imports `from mcp_tool_registration_service import McpToolRegistrationService` — a local `mcp_tool_registration_service.py` file shipped alongside `agent.py`, NOT the PyPI extension. The PyPI extension's `add_tool_servers_to_agent` signature does NOT accept `agentic_app_id`; calling it with that kwarg raises `TypeError`.
+>
+> **Two valid paths for this skill:**
+> - **Path A (recommended for skill use) — use the PyPI extension:** import from `microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service`, drop `agentic_app_id` from the call. Loses the AGENTIC_APP_ID-env-var override pattern but works with stock pip-installed packages.
+> - **Path B — match the verified sample:** copy the sample's local `mcp_tool_registration_service.py` (~165 lines) into the user's project and import it locally. Preserves the env-var override + timeout pattern; requires shipping the DIY file.
+
+**Path A — PyPI extension (recommended):**
+
 ```python
 # A365 WorkIQ — added by add-workiq-tools skill
 from microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service import (
@@ -251,12 +261,23 @@ from microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_regist
 )
 ```
 
-**Wiring** — the ADK sample passes `agentic_app_id` explicitly and wraps the call in `asyncio.wait_for(timeout=10.0)` so a hung token exchange falls back to bare-LLM mode:
+Verified signature (`Agent365-python/libraries/microsoft-agents-a365-tooling-extensions-googleadk/.../services/mcp_tool_registration_service.py:56-65`):
+```python
+async def add_tool_servers_to_agent(
+    self,
+    agent,
+    auth,
+    auth_handler_name,
+    context,
+    auth_token: str = "",
+) -> Agent
+```
+
+**Wiring (Path A):** No `agentic_app_id` kwarg; wrap in `asyncio.wait_for(timeout=10.0)` so a hung token exchange falls back to bare-LLM mode:
 
 ```python
 import asyncio
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +294,6 @@ async def attach_workiq_tools(agent, auth, auth_handler_name, turn_context, bear
         return await asyncio.wait_for(
             tool_service.add_tool_servers_to_agent(
                 agent=agent,
-                agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123"),
                 auth=auth,
                 auth_handler_name=auth_handler_name,
                 context=turn_context,
@@ -288,6 +308,8 @@ async def attach_workiq_tools(agent, auth, auth_handler_name, turn_context, bear
         logger.error("MCP tool init error: %s — running without tools", e)
         return agent
 ```
+
+**Path B — DIY scaffold (matches sample):** copy `mcp_tool_registration_service.py` from https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/mcp_tool_registration_service.py into the user's project root and `from mcp_tool_registration_service import McpToolRegistrationService`. The DIY signature accepts `agentic_app_id` (env-var override pattern) — only use this if the user explicitly wants the sample's exact behavior.
 
 ### Parameter semantics differences from OpenAI
 
@@ -441,19 +463,7 @@ The GA must run `a365 setup permissions mcp` from the project directory (where `
 
 ### Permissions per server
 
-All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level.
-
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes |
-|---------------|-------|------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` |
-| Work IQ Word | V2 | `Files.ReadWrite.All` |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) |
+All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the per-server Graph scopes are granted at the Entra app level by `a365 setup permissions mcp`, which reads them from the live catalog. Run `a365 develop list-available` to see the current scopes required per server — we don't reproduce them here because the catalog evolves.
 
 ---
 

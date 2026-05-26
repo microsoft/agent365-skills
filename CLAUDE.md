@@ -27,7 +27,8 @@ agent365-skills/
 │       │       ├── validate-make-a365-agent.js
 │       │       ├── validate-make-ai-teammate.js
 │       │       ├── validate-instrument-observability.js
-│       │       └── validate-add-workiq-tools.js
+│       │       ├── validate-add-workiq-tools.js
+│       │       └── validate-test-local.js
 │       └── shared/agent-detection.md  # Shared heuristics for detecting agent type and authMode
 ├── tests/                             # Unit tests for stop hook validators
 │   ├── helpers.js
@@ -36,11 +37,13 @@ agent365-skills/
 │   ├── validate-observability.test.js
 │   └── validate-workiq.test.js
 ├── evals/
-│   └── agent365/                      # Evaluation test cases
+│   └── agent365/                      # Evaluation test cases (one per skill)
 │       ├── a365-setup/evals.json
+│       ├── make-a365-agent/evals.json
+│       ├── make-ai-teammate/evals.json
 │       ├── instrument-observability/evals.json
 │       ├── add-workiq-tools/evals.json
-│       └── make-ai-teammate/ (if present)
+│       └── test-local/evals.json
 ├── scripts/install.js                 # One-liner installer for Claude Code + Copilot CLI
 ├── AGENTS.md                          # Top-level contributor guidelines
 └── README.md                          # User-facing documentation
@@ -69,6 +72,15 @@ agent365-skills/
 7. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
+
+8. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+   every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
+   finishes. Only pause at the explicit interaction points each SKILL.md documents
+   (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server
+   selection, Word @mention offer when `mcp_WordServer` is selected on Node.js LangChain,
+   launch confirmation). CLI permission prompts and manual browser steps
+   (Teams Dev Portal, M365 Admin Center, GA consent) are not stopping conditions — surface
+   them with URL + action and continue.
 
 ---
 
@@ -104,4 +116,4 @@ For comprehensive eval test cases, see [evals/README.md](evals/README.md).
 
 ## Allowed commands
 
-`dotnet *`, `npm *`, `node *`, `a365 *`, `az *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
+`dotnet *`, `npm *`, `node *`, `python *`, `python3 *`, `pip *`, `pip3 *`, `uv *`, `a365 *`, `az *`, `devtunnel *`, `agentsplayground *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
