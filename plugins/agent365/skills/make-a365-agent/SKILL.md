@@ -211,6 +211,13 @@ Where will your agent run?
 
 ## Phase 2 — Register with Agent 365
 
+### 2.0 — Guardrail: route AI Teammate agents away
+
+This skill is for **Agent (Non AI Teammate)** registration only. Re-read `.a365-workspace-detection.local.json`:
+
+- **If `agentType = "ai-teammate"`** (stale cache from a prior session, or user picked the wrong skill): **abort this skill** and tell the user verbatim: *"This agent is registered as an AI Teammate. The `make-a365-agent` skill handles non-AI-Teammate agents only — appending `--authmode obo|s2s` to `a365 setup all` would conflict with `--aiteammate`. Switch to `/agent365:make-ai-teammate` instead, which uses `a365 setup all --aiteammate --m365` and never passes `--authmode`."* Do NOT proceed to 2.1.
+- **If `agentType = "system-agent"`** (or unset): proceed to 2.1.
+
 ### 2.1 — Dry-run preview (REQUIRED before applying anything)
 
 ```bash
@@ -227,6 +234,8 @@ Show the full dry-run output to the user, then ask:
 - **yes**: Proceed to 2.2.
 
 ### 2.2 — Apply setup
+
+> ⚠️ **`a365 setup all` is long-running and block-buffers under chat-tool execution.** If output stalls, see [AGENTS.md § CLI output buffering under chat-tool execution](../../../../AGENTS.md#cli-output-buffering-under-chat-tool-execution) — preferred remediation is `run_in_background: true` (Claude Code Bash tool); fallback is hand-off to a separate terminal.
 
 Choose the right flags based on the detected agent type:
 

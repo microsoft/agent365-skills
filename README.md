@@ -16,6 +16,14 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
+### Tenant prerequisites (one-time, admin-only)
+
+The Agent 365 CLI requires a custom Entra ID app registration in your tenant. This is a **one-time tenant-wide setup** — once any tenant admin runs `a365 setup requirements`, all developers in the tenant inherit the ready state and skip this step.
+
+Required admin role: **Application Administrator** *(recommended — lightest)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. See [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration) for full details.
+
+If you're a developer without admin access, the skills detect this and surface a clean handoff message for your admin — no need to track down a Global Admin yourself.
+
 ---
 
 ## Getting Started

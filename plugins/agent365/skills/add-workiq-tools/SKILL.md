@@ -183,6 +183,7 @@ TaskCreate: "Detect agent type and check prerequisites"
 TaskCreate: "Show available WorkIQ tools catalog"
 TaskCreate: "Add WorkIQ MCP servers via CLI"
 TaskCreate: "Wire MCP tool service in agent code"
+TaskCreate: "Offer Word @mention handler (if applicable)"
 TaskCreate: "Guide permissions handoff"
 TaskCreate: "Set up dev token for testing"
 TaskCreate: "Validate build"
@@ -354,7 +355,7 @@ For every branch:
    dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
    ```
 2. **Read** `dotnet-workiq.md` — sections "Program.cs — Service Registration" and "Agent Class — GetMcpToolsAsync (Agent Framework)".
-3. **Edit** `Program.cs`: add `builder.Services.AddMcpServices();` (preferred one-liner) or the two-line `AddSingleton` form (matches the sample). Skip if already present.
+3. **Edit** `Program.cs`: add the two-line `AddSingleton<IMcpToolRegistrationService, ...>` + `AddSingleton<IMcpToolServerConfigurationService, ...>` form (matches the verified `Agent365-Samples` AF sample). `builder.Services.AddMcpServices()` exists as a one-liner alternative but registers both as **Scoped** — the AF sample uses Singleton lifetimes to match `AgentApplication`'s singleton agent host and avoid captive-dependency issues. Skip if already present.
 4. **Edit** the `AgentApplication` subclass: add the `GetMcpToolsAsync` call inside **`OnMessageAsync`** (Agent Framework's per-turn handler) — **not** `OnMessageActivityAsync` (older docs in this repo had that wrong; the verified sample uses `OnMessageAsync`).
 
 ### §4.2 .NET Semantic Kernel
@@ -388,12 +389,7 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
    ```
 2. **Read** `nodejs-workiq.md` — section "LangChain — Wiring (VERIFIED)".
 3. **Edit** `src/client.ts` (or wherever the `getClient` factory lives). Add module-level `toolService = new McpToolRegistrationService()` singleton and the per-turn call inside `getClient`. **Capture the return value** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
-4. **Offer Word @mention notification handling** — only if `mcp_WordServer` is in the user's selected servers. Ask via `AskUserQuestion`:
-   > *"You added `mcp_WordServer`. Do you want this AI Teammate to also notify and reply when someone `@mentions` it on a Word comment? It will read the document, post a reply on the same comment thread, and DM the user in Teams with the reply text."*
-   >
-   > Options: **Yes — wire @mention handling** / **No — Word read/write only**
-   - If Yes: **Read** the "Optional: Word @mention notification handling (BEST-EFFORT)" section in `nodejs-workiq.md` and apply it to `src/agent.ts` + `src/client.ts`. Pre-check `proactive` is configured on the `AgentApplication` constructor; add `proactive: {}` if missing. Mark new lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
-   - If No: skip — Word tools still work for direct user prompts; only the proactive @mention path is omitted.
+4. **`mcp_WordServer` was added?** → continue to **Phase 4.5** below for the gated Word @mention handler offer. This is a required check, not a soft suggestion — Phase 4.5's gates handle the actual decision.
 
 ### §4.5 Node.js OpenAI
 
@@ -445,8 +441,11 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
      || pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-googleadk
    ```
    Edit `requirements.txt` / `pyproject.toml`.
-2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED)".
-3. **Edit** `agent.py` to wrap the call in `asyncio.wait_for(timeout=10.0)` and pass `agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123")`. Pre-skip if neither bearer token nor auth handler is available (Playground scenario).
+2. **Read** `python-workiq.md` — section "Python Google ADK — Wiring (VERIFIED, with sample-vs-PyPI divergence)".
+3. **Decide between two paths** (the published ADK sample diverges from the PyPI extension's signature):
+   - **Path A — PyPI extension (default, smaller scope):** import `McpToolRegistrationService` from `microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service` and call `add_tool_servers_to_agent(agent=..., auth=..., auth_handler_name=..., context=turn_context, auth_token=...)`. **Do NOT pass `agentic_app_id`** — the PyPI extension's signature has no such kwarg and will `TypeError`. Wrap in `asyncio.wait_for(timeout=10.0)`.
+   - **Path B — DIY scaffold (matches sample exactly):** ask the user *"Do you want the sample's exact behavior (AGENTIC_APP_ID env-var override + ~165-line local file)? Or the simpler PyPI-extension path?"* — if they pick Path B, copy `mcp_tool_registration_service.py` from `Agent365-Samples/python/google-adk/sample-agent/` into the project and import locally.
+4. Pre-skip the call if neither bearer token nor auth handler is available (Playground scenario).
 
 ### §4.10 Python Semantic Kernel (BEST-EFFORT — no published sample)
 
@@ -475,6 +474,59 @@ Tell the user verbatim: *"No Microsoft sample exists for Python Azure AI Foundry
 3. Do **not** generate wiring code. Mark this branch complete with a best-effort note.
 
 **Mark task complete: "Wire MCP tool service in agent code"**
+
+---
+
+## Phase 4.5 — Offer Word `@mention` handler (gated)
+
+**Mark task in progress: "Offer Word @mention handler (if applicable)"**
+
+This phase is **gated** — most flows skip it. **Always run the gates explicitly** — the @mention handler should be offered every time `mcp_WordServer` is added on a Node.js LangChain stack. **Do not skip this phase without running both gates.**
+
+**Gate 1 — Framework check.** Read `programmingLanguage` and `agentStack` from `.a365-workspace-detection.local.json`:
+
+| programmingLanguage | agentStack | Apply? |
+|---|---|---|
+| `NodeJS` | `LangChain` | ✅ continue to Gate 2 |
+| anything else | anything else | ❌ skip phase — mark task complete with note: *"N/A — only Node.js LangChain has a verified proactive `@mention` pattern in this repo today."* |
+
+**Gate 2 — `mcp_WordServer` presence.** The user only sees the offer if WordServer was actually added. Read `ToolingManifest.json` (or whichever path Phase 3 wrote) and check:
+
+```bash
+grep -i '"mcpServerName":\s*"mcp_WordServer"' ToolingManifest.json
+```
+
+- Match found → continue to the offer below.
+- No match → skip phase — mark task complete with note: *"N/A — `mcp_WordServer` was not in the selected servers."*
+
+**Both gates passed — ask via `AskUserQuestion`:**
+
+> *"You added `mcp_WordServer`. Do you want this AI Teammate to also notify and reply when someone `@mentions` it on a Word comment? It will read the document, post a reply on the same comment thread (not a new top-level comment), and DM the user in Teams with the reply text. The pattern is best-effort — no Microsoft Node.js sample is published yet, but the underlying SDK APIs are verified."*
+>
+> Options: **Yes — wire @mention handling** / **No — Word read/write only**
+
+**On Yes:**
+
+> ⚠️ **Preserve existing observability wiring.** If `instrument-observability` already ran, the message handler (`handleAgentMessageActivity`) is wrapped in an outer `baggageScope.run(...)` (the canonical pattern from Phase 5.5 of that skill). The new `case NotificationType.WpxComment` branch lives inside `handleAgentNotificationActivity` — a structurally separate handler — so it does NOT need to share the baggage scope. **Do NOT modify or remove the existing `baggageScope.run` wrapping in `handleAgentMessageActivity`** while adding the @mention code; removing it would silently break observability for regular messages.
+
+1. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/add-workiq-tools/references/nodejs-workiq.md` — section "Optional: Word @mention notification handling (LangChain — BEST-EFFORT)".
+2. **Edit** `src/agent.ts`:
+   - Pre-check the `AgentApplication` `super(...)` call for `proactive: {}`. **Add it if missing** — required for proactive Teams DMs.
+   - Add the per-user conversation index (`userKeyToConversationId: Map<string, string>` + `userKeysFor` helper).
+   - Add the `trackConversationForProactive` private method. Call it from BOTH the message handler AND the `installationUpdate(add)` handler.
+   - Add the `case NotificationType.WpxComment` branch + `handleWpxCommentNotification` method.
+3. **Edit** `src/client.ts` (optional but recommended): wire LangGraph `MemorySaver` checkpointer keyed on `conversation.id` so multi-turn @mention threads keep tool-call history.
+4. Mark all generated lines with: `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`
+5. Tell the user the gotchas verbatim:
+   - "The document URL is on `activity.attachments[*].contentUrl`, NOT on `wpxCommentNotification`."
+   - "Proactive DM requires the user to have spoken to the bot at least once (or had it installed). If `userKeyToConversationId.get(...)` returns undefined on first @mention, the agent surfaces a *'DM me once to enable Word notifications'* message instead of failing silently."
+   - "Tell the LLM explicitly to use the **reply** tool — without that instruction, models default to `AddComment` which creates a new top-level thread."
+
+**On No:**
+
+Tell the user: *"Skipped. Word tools still work for direct user prompts; only the proactive @mention path is omitted. You can re-enable later by re-running `/agent365:add-workiq-tools` — the skill is idempotent."*
+
+**Mark task complete: "Offer Word @mention handler (if applicable)"**
 
 ---
 

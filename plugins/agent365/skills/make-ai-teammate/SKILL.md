@@ -625,6 +625,8 @@ Check and add only what is missing:
 - `_sanitize_display_name()` before injecting into system prompt
 - `handle_agent_notification_activity()` handling `NotificationType.EMAIL_NOTIFICATION`
 
+> ⚠️ **Preserve prior-skill additions when re-writing agent.py.** If a prior run of `add-workiq-tools` ran, `agent.py` will already contain `tool_service`, `mcp_servers_initialized`, and a `setup_mcp_servers(...)` method called from `process_user_message`. The full-rewrite branch above MUST preserve these — otherwise re-running `make-ai-teammate` after WorkIQ silently clobbers the MCP wiring. **Pre-check**: grep `agent.py` for `tool_service`, `add_tool_servers_to_agent`, or `McpToolRegistrationService` BEFORE overwriting. If present, switch to the additive branch (check-and-add) and explicitly keep those lines. Same rule applies to `instrument-observability` additions (`BaggageBuilder` import, `with builder.build():` block) — preserve, don't overwrite.
+
 **Mark task complete.**
 
 ---

@@ -176,7 +176,20 @@ The `authMode` value drives Phases 3–5: OBO and S2S paths differ in entry poin
 
 4. **If agent type cannot be determined**, write marker `.a365setup-unknown-agent` and **exit early** with clear error message.
 
-5. **TaskUpdate** — Mark complete and report detected agent type to user.
+5. **Framework-support soft-warn matrix.** Check `(programmingLanguage, agentStack)` from the detection cache and surface a warning when the stack lacks first-class auto-instrumentation in `@microsoft/opentelemetry` or `microsoft-opentelemetry`. The skill still proceeds — observability is the OTel SDK underneath, which works for any HTTP-based LLM — but the user should know they'll need to add manual `InferenceScope.start` wrappers around each LLM call.
+
+   | Lang | Stack | Action |
+   |---|---|---|
+   | Node.js | LangChain, OpenAI Agents SDK, Claude SDK | ✅ Auto-instrumented (Claude with custom shape — see Phase 5.5) |
+   | Node.js | Semantic Kernel, Google ADK | ⚠ Soft-warn — auto-instrumentation may not patch the LLM library; add manual `InferenceScope.start` around each LLM call |
+   | Python | Agent Framework, OpenAI, Google ADK | ✅ Auto-instrumented |
+   | Python | LangChain, Claude SDK, CrewAI | ⚠ Soft-warn — same as Node.js SK/ADK |
+   | .NET | Agent Framework, Semantic Kernel | ✅ Auto-instrumented via `.UseOpenTelemetry()` on `IChatClient` |
+   | .NET | Azure AI Foundry | ⚠ Soft-warn — best-effort wiring |
+
+   For soft-warn rows, surface verbatim: *"Auto-instrumentation in `<unified-distro-package>` doesn't patch your LLM library directly. The skill will still wire `useMicrosoftOpenTelemetry`/`UseMicrosoftOpenTelemetry` (OTel SDK + A365 exporter), but you'll need to manually wrap each LLM call with `InferenceScope.start(...)` to capture `gen_ai.*` spans. See `<language>-observability.md` § 'InferenceScope — Manual Wrapping' for the pattern."* Continue to Phase 2.
+
+6. **TaskUpdate** — Mark complete and report detected agent type (+ any soft-warn) to user.
 
 ---
 
@@ -291,7 +304,7 @@ flag live in the references — see the "Required packages" section of:
    **OBO path** (`obo` / `agentic-user`) — applies to both **AI Teammate** agents and **Standard .NET agents**:
    - Inject `IExporterTokenCache<AgenticTokenStruct>` in the constructor (auto-registered by the distro — no `AddAgenticTracingExporter()` call needed).
    - Inject `IConfiguration` (for blueprint/observability config) and `ILogger<MyAgent>`.
-   - **Resolve agent ID for BOTH auth paths** — agentic instance ID from the Activity for agentic turns, **decoded from the OBO token** via `Utility.ResolveAgentIdentity` for non-agentic turns. Do NOT fall back to `Guid.Empty.ToString()` — that creates a synthetic identity the exporter cannot authenticate, polluting traces with `"No token obtained. Skipping export for this identity."` warnings.
+   - **Resolve agent ID for BOTH auth paths** — agentic instance ID from the Activity for agentic turns, **decoded from the auth token** via `Utility.ResolveAgentIdentity(context, authToken)` for non-agentic turns (the SDK names the second parameter generically `authToken` — it accepts both OBO tokens and agentic-path tokens returned by `UserAuthorization.GetTurnTokenAsync`). Do NOT fall back to `Guid.Empty.ToString()` — that creates a synthetic identity the exporter cannot authenticate, polluting traces with `"No token obtained. Skipping export for this identity."` warnings.
      ```csharp
      string? resolvedAgentId = null;
      if (turnContext.Activity.IsAgenticRequest())
@@ -302,17 +315,17 @@ flag live in the references — see the "Required packages" section of:
      {
          try
          {
-             var oboToken = await UserAuthorization
+             var authToken = await UserAuthorization
                  .GetTurnTokenAsync(turnContext, authHandlerName, cancellationToken: cancellationToken)
                  .ConfigureAwait(false);
-             if (!string.IsNullOrEmpty(oboToken))
+             if (!string.IsNullOrEmpty(authToken))
              {
-                 resolvedAgentId = Utility.ResolveAgentIdentity(turnContext, oboToken);
+                 resolvedAgentId = Utility.ResolveAgentIdentity(turnContext, authToken);
              }
          }
          catch (Exception ex)
          {
-             _logger.LogDebug(ex, "Could not resolve agent id from OBO token; A365 observability skipped for this turn.");
+             _logger.LogDebug(ex, "Could not resolve agent id from auth token; A365 observability skipped for this turn.");
          }
      }
 
@@ -322,7 +335,7 @@ flag live in the references — see the "Required packages" section of:
      var hasObservabilityIdentity = !string.IsNullOrEmpty(resolvedAgentId)
                                  && !string.IsNullOrEmpty(resolvedTenantId);
      ```
-     `GetAgenticInstanceId()` returns the agent's **service principal object ID** (the instance ID assigned by A365 for the Teams agentic identity). `Utility.ResolveAgentIdentity(turnContext, token)` decodes the agent identity from a JWT OBO token. Both paths produce the same kind of ID — what shows up in MAC Advanced Hunting.
+     `GetAgenticInstanceId()` returns the agent's **service principal object ID** (the instance ID assigned by A365 for the Teams agentic identity). `Utility.ResolveAgentIdentity(context, authToken)` decodes the agent identity from a JWT — works for both OBO tokens and agentic-path tokens (SDK signature names the param generically `authToken`). Both paths produce the same kind of ID — what shows up in MAC Advanced Hunting.
    - **Conditional baggage + token registration** — only when `hasObservabilityIdentity == true`. Skip both calls cleanly when the identity can't be resolved:
      ```csharp
      using IDisposable? baggageScope = hasObservabilityIdentity
@@ -387,7 +400,7 @@ flag live in the references — see the "Required packages" section of:
      - Default observability scope is auto-applied (`api://9b975845-388f-4429-889e-eab1ef63949c/.default`) — no need to import `getObservabilityAuthenticationScope` (removed in 1.0).
      - **Recommended pattern:** Extract the agentId/tenantId resolution and token refresh into a `preloadObservabilityToken(turnContext)` helper function to keep the handler clean. See `nodejs-observability.md` for the full helper implementation.
    - **S2S path**: Do **NOT** call `AgenticTokenCacheInstance.RefreshObservabilityToken` — there is no user authorization token. The `tokenResolver` passed to `useMicrosoftOpenTelemetry()` (set up in Phase 3) handles authentication via the FMI 3-hop chain token service.
-   - **Baggage:** No manual baggage construction in the handler. Phase 3 registered `configureA365Hosting(adapter, { enableBaggage: true })` which auto-populates baggage from `TurnContext` for every request. The old `BaggageBuilderUtils.fromTurnContext(...)` pattern is no longer in the public API (removed in 1.0) — do NOT add it back.
+   - **Baggage construction is done in Phase 5.5 (canonical pattern), NOT here.** In Phase 5.5 the message handler builds `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).build()` and runs `InvokeAgentScope.start(...)` inside `baggageScope.run(...)`. The `configureA365Hosting(adapter, { enableBaggage: true })` middleware registered in Phase 3 is a fallback that auto-populates baggage outside the handler, but it does NOT cover the scopes you'll add in Phase 5.5 — those need the manual outer wrapping or they get filtered as `Partitioned into 0 identity groups`. In Phase 4 itself, just refresh the token; do NOT call `InvokeAgentScope.start` here.
    - Add inline comment: `// A365 auth mode: {authMode} — see: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow`
    - Mark all new lines with: `// A365 Observability — best-effort instrumentation (verify against official sample)`
 
@@ -395,9 +408,9 @@ flag live in the references — see the "Required packages" section of:
 
 ### For Python
 
-1. **Read** the detected message handler file.
+1. **Read** the detected message handler file AND `host_agent_server.py` — the helper lives in the HOST file, not the agent class. The verified AF sample places `_setup_observability_token` in `host_agent_server.py:130-156` so it has access to the `AgentApplication` instance and can be called by activity middleware. Per-turn baggage construction also lives in the handler/middleware layer in `host_agent_server.py`, NOT in `agent.py`.
 
-2. **Edit** — Refresh the per-turn exporter token following the reference pattern in `python-observability.md`:
+2. **Edit `host_agent_server.py`** (the host file) — Refresh the per-turn exporter token following the reference pattern in `python-observability.md`:
    - Default observability scope is auto-applied by `microsoft-opentelemetry` 1.1+ — do **not** import `get_observability_authentication_scope` unless you need to override the default. If overriding, pass via `a365_observability_scope_override` to `use_microsoft_opentelemetry`. The `exchange_token()` call below omits `scopes=` and lets the auth handler resolve the default.
    - Import `cache_agentic_token` from `token_cache` (the custom module created in Phase 5) — or use `AgenticTokenCache` from the hosting helpers.
    - **OBO paths only** (`obo` / `agentic-user`): Resolve `agent_id` and `tenant_id` dynamically from context each turn (never from config), then exchange the OBO token (non-fatal, wrap in try/except):
@@ -541,8 +554,41 @@ Follow the reference patterns in `dotnet-observability.md` for each scope being 
 
 ### For Node.js
 
-Follow the reference patterns in `nodejs-observability.md` for each scope being added:
-- **`InvokeAgentScope`** — wrap the top-level message handler. Use `ScopeUtils.populateInvokeAgentScopeFromTurnContext` from `@microsoft/agents-a365-observability-hosting` to auto-populate from TurnContext
+**The pattern is per-stack — read `agentStack` from `.a365-workspace-detection.local.json` and branch:**
+
+- **`LangChain`** or **`OpenAI`** → canonical wrapping pattern below (verified against the LangChain + OpenAI samples).
+- **`Claude`** → **InferenceScope-only**, no outer baggageScope, no InvokeAgentScope. The Claude sample (`Agent365-Samples/nodejs/claude/sample-agent/src/client.ts`) wraps each LLM call individually in `src/client.ts`. Skip the canonical pattern below; follow the InferenceScope-only shape from the Claude sample instead. Tell the user: *"Claude SDK uses a different observability shape — wrapping per LLM call in client.ts instead of around the message handler. InvokeAgentScope is not used."*
+- **`Semantic Kernel`** or **`Google ADK`** → handled by Phase 0.6 framework guard (soft-warn — auto-instrumentation may not patch the LLM library; manual `InferenceScope.start` wrapping required around each LLM call).
+
+For LangChain + OpenAI, follow the reference patterns in `nodejs-observability.md` for each scope. **The wrapping order is non-negotiable — wrong order produces silent span drops** (logged as `Partitioned into 0 identity groups`).
+
+**Canonical pattern (generate exactly this shape):**
+
+```typescript
+await preloadObservabilityToken(turnContext);                                    // STEP 1 — refresh token (cold-turn fix)
+
+const baggageScope = BaggageBuilderUtils                                          // STEP 2 — outer baggage scope
+  .fromTurnContext(new BaggageBuilder(), turnContext as any)
+  .sessionDescription('agent-turn')
+  .build();
+
+await baggageScope.run(async () => {                                              // STEP 3 — scopes run INSIDE baggage
+  const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails);
+  try {
+    await scope.withActiveSpanAsync(async () => {
+      // InferenceScope / ExecuteToolScope / agent invocation here
+    });
+  } finally { scope.dispose(); }
+});
+```
+
+**Why this exact shape:**
+- **Without `preloadObservabilityToken` before `baggageScope.run`**, the first export attempt on a cold turn sees an empty token, retries until timeout, and the span is silently dropped.
+- **Without the outer `baggageScope.run` wrapping `InvokeAgentScope.start`**, the spans have no `microsoft.tenant.id` / `gen_ai.agent.id` baggage attached — the exporter filters them as `Partitioned into 0 identity groups (N spans skipped)` and they never reach MAC.
+
+**Additional rules:**
+- **Import `BaggageBuilder` AND `BaggageBuilderUtils`** from `@microsoft/opentelemetry`. Both are required.
+- **`InvokeAgentScopeDetails`** is `{}` in Node.js — endpoint is optional and unused. Do NOT generate `endpoint: new Uri(...)` — that's the .NET API surface and will not compile in TypeScript.
 - **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
 - **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async scenarios
@@ -615,6 +661,8 @@ Apply these invariants across all three languages:
    - Exporter is `false` (Node.js / Python local dev) → "instrumented but
      disabled; set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` to start exporting".
 
+7. **Stamp the verbose-logging pair into `.env`** (Node.js / Python) — `OTEL_LOG_LEVEL=INFO` (OpenTelemetry SDK's own internal logger) **and** `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` (pipe-separated levels emitted by the A365 exporter). For .NET, write the equivalent `Logging.LogLevel.Microsoft.Agents.A365.Observability: Information` to `appsettings.json` AND set `OTEL_LOG_LEVEL=INFO` / `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` as env vars (.NET reads both forms). Recommended baseline: `INFO` + `info|warn|error` in prod; users can trim to `WARN` + `warn|error` to reduce noise. Write them as a labeled `# ── Observability verbose logging ──` block so the two vars stay grouped. **Additive — never overwrite** values the user has set.
+
 If the project also uses `.env.example` (Node.js / Python), update it with
 placeholder values to match `.env`.
 
@@ -684,6 +732,40 @@ If yes, invoke the `test-local` skill.
 
 ---
 
+## Phase 8.5: First-run smoke test (Node.js / Python only)
+
+**TaskCreate** — "Verify a span actually exports"
+
+Without this phase the skill ends "instrumented successfully" but the user has no way to know whether spans actually reach MAC until 15-90 min later when indexing catches up. This phase runs the agent for ~30 seconds with verbose-logging env vars enabled, sends one message, and greps the log for the specific line that confirms export succeeded. Pass/fail is visible immediately.
+
+**Node.js:**
+
+1. **Bash** (background) — start the agent with verbose logs enabled:
+   ```bash
+   OTEL_LOG_LEVEL=INFO A365_OBSERVABILITY_LOG_LEVEL=info|warn|error npm start > .a365-smoketest.log 2>&1 &
+   ```
+   Use Claude Code's `run_in_background: true` so the agent stays up while we probe.
+
+2. **Wait ~5s for boot**, then send a test message to `/api/messages` (or instruct the user to send one via AgentsPlayground / Teams).
+
+3. **Bash** — after ~30s, check the log for the export-success line:
+   ```bash
+   grep -E "export-group succeeded|exported successfully|rejectedSpans:0" .a365-smoketest.log | head -5
+   ```
+
+4. **Interpret:**
+   - **Match found** → ✅ spans are exporting. Tell user: *"Verified — at least one identity-group exported successfully. MAC indexing takes 15-90 min; check `admin.cloud.microsoft → Advanced Hunting → CloudAppEvents` filtered by AgentId = `<AUID>` after that delay."*
+   - **No match, only `Partitioned into 0 identity groups` lines** → ❌ silent drop. Most likely: missing outer baggage scope (Phase 5.5) OR missing exporter flag (`a365.enableObservabilityExporter: true` / env var). Re-check Phases 3 + 5.5.
+   - **No match, errors visible** → surface the exact error to the user verbatim; do NOT proceed.
+
+**Python:** same flow with `OTEL_LOG_LEVEL` + `A365_OBSERVABILITY_LOG_LEVEL` env vars and `python host_agent_server.py` instead of `npm start`.
+
+**.NET:** skip this phase — the .NET CLI's own boot-time logging covers the verification path. If the user wants stricter checking, set `Logging.LogLevel.Microsoft.Agents.A365.Observability: Information` in `appsettings.json` and grep `dotnet run` output for `"Sending N spans to ..."` / `"HTTP 202 exporting spans"`.
+
+**TaskUpdate** — Mark complete with the result (pass / fail / skipped).
+
+---
+
 ## Phase 9: Final Summary
 
 1. **TaskList** — Show all completed tasks.
@@ -701,8 +783,17 @@ If yes, invoke the `test-local` skill.
    **Next steps:**
    1. Enable exporting when ready for production:
       - .NET: set EnableAgent365Exporter: true in appsettings.json
-      - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env
+      - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env (or `a365.enableObservabilityExporter: true` in code — both required alongside `a365.enabled: true`)
    2. Run your agent and verify traces appear in the Observability dashboard.
+
+   **What to expect for MAC visibility (first-run reality check):**
+   - **Indexing lag: 15–90 minutes** between first successful export and spans appearing in `admin.cloud.microsoft → Advanced Hunting → CloudAppEvents`. If you query immediately after instrumenting, you'll see empty results — that's not a bug.
+   - **Instance approval required.** Spans only attribute to a `CloudAppEvents` row when the AI Teammate's agent instance has been approved at `admin.cloud.microsoft/#/agents/all/requested` and an Agentic User UPN has been issued. Without that, exported spans land but don't surface in MAC queries.
+   - **KQL filter MUST use the AUID, NOT the blueprint id.** The `AgentId` column in `CloudAppEvents` is the runtime AUID resolved from `turnContext.activity.recipient.agenticAppId`. The `agent365Observability__agentId` env var that `a365 setup all` stamps into `.env` is the BLUEPRINT id — filtering by that value returns empty results. Get the AUID from your agent logs (the exporter logs `Obtained token for agent <AUID> tenant ...`) or from `recipient.agenticAppId` in any inbound activity.
+
+   **Verbose logging — only enable when actively debugging:**
+   - Node.js / Python: uncomment `OTEL_LOG_LEVEL=INFO` AND `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` in `.env`. **Both** are required to see `[Agent365Exporter]` activity — the exporter uses a wrapped logger that defaults to silent.
+   - Grep for `exported successfully` / `export-group succeeded` to confirm spans are flowing; `Partitioned into 0 identity groups (N spans skipped)` for spans outside an active baggage scope is **expected** (early framework / middleware / health-ping spans) — not an error.
    3. [If authMode = obo] Confirm the OBO token exchange is working correctly.
       - Signed-in user sub-type: verify the signed-in user's token is passed correctly.
         → OBO flow docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow

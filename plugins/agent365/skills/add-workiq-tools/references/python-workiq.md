@@ -242,11 +242,18 @@ class MyAgent:
 
 ---
 
-## Python Google ADK — Wiring (VERIFIED)
+## Python Google ADK — Wiring (VERIFIED, with sample-vs-PyPI divergence)
 
 Sample: https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/agent.py
 
-**Import** (verified):
+> ⚠️ **Sample uses a LOCAL DIY scaffold, NOT the PyPI extension.** The published sample imports `from mcp_tool_registration_service import McpToolRegistrationService` — a local `mcp_tool_registration_service.py` file shipped alongside `agent.py`, NOT the PyPI extension. The PyPI extension's `add_tool_servers_to_agent` signature does NOT accept `agentic_app_id`; calling it with that kwarg raises `TypeError`.
+>
+> **Two valid paths for this skill:**
+> - **Path A (recommended for skill use) — use the PyPI extension:** import from `microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service`, drop `agentic_app_id` from the call. Loses the AGENTIC_APP_ID-env-var override pattern but works with stock pip-installed packages.
+> - **Path B — match the verified sample:** copy the sample's local `mcp_tool_registration_service.py` (~165 lines) into the user's project and import it locally. Preserves the env-var override + timeout pattern; requires shipping the DIY file.
+
+**Path A — PyPI extension (recommended):**
+
 ```python
 # A365 WorkIQ — added by add-workiq-tools skill
 from microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_registration_service import (
@@ -254,12 +261,23 @@ from microsoft_agents_a365.tooling.extensions.googleadk.services.mcp_tool_regist
 )
 ```
 
-**Wiring** — the ADK sample passes `agentic_app_id` explicitly and wraps the call in `asyncio.wait_for(timeout=10.0)` so a hung token exchange falls back to bare-LLM mode:
+Verified signature (`Agent365-python/libraries/microsoft-agents-a365-tooling-extensions-googleadk/.../services/mcp_tool_registration_service.py:56-65`):
+```python
+async def add_tool_servers_to_agent(
+    self,
+    agent,
+    auth,
+    auth_handler_name,
+    context,
+    auth_token: str = "",
+) -> Agent
+```
+
+**Wiring (Path A):** No `agentic_app_id` kwarg; wrap in `asyncio.wait_for(timeout=10.0)` so a hung token exchange falls back to bare-LLM mode:
 
 ```python
 import asyncio
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +294,6 @@ async def attach_workiq_tools(agent, auth, auth_handler_name, turn_context, bear
         return await asyncio.wait_for(
             tool_service.add_tool_servers_to_agent(
                 agent=agent,
-                agentic_app_id=os.getenv("AGENTIC_APP_ID", "agent123"),
                 auth=auth,
                 auth_handler_name=auth_handler_name,
                 context=turn_context,
@@ -291,6 +308,8 @@ async def attach_workiq_tools(agent, auth, auth_handler_name, turn_context, bear
         logger.error("MCP tool init error: %s — running without tools", e)
         return agent
 ```
+
+**Path B — DIY scaffold (matches sample):** copy `mcp_tool_registration_service.py` from https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/mcp_tool_registration_service.py into the user's project root and `from mcp_tool_registration_service import McpToolRegistrationService`. The DIY signature accepts `agentic_app_id` (env-var override pattern) — only use this if the user explicitly wants the sample's exact behavior.
 
 ### Parameter semantics differences from OpenAI
 

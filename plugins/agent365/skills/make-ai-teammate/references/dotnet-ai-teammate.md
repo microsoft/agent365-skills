@@ -137,6 +137,10 @@ builder.Services.AddSingleton<IChatClient>(sp =>
         .AsIChatClient()
         .AsBuilder()
         .UseFunctionInvocation()
+        // Required for LLM spans to appear in MAC. Without this, the AI SDK does not
+        // emit gen_ai.* spans and InvokeAgentScope has nothing to anchor to.
+        // EnableSensitiveData captures prompts/responses — set to false in prod if regulated.
+        .UseOpenTelemetry(sourceName: null, configure: (cfg) => cfg.EnableSensitiveData = true)
         .Build();
 });
 
@@ -268,6 +272,10 @@ namespace YourNamespace.Agent
         private readonly IChatClient? _chatClient;
         private readonly IMcpToolRegistrationService _toolService;
         private readonly IConfiguration? _configuration;
+        // Auto-registered by the Microsoft.OpenTelemetry distro. Held here so the
+        // observability skill can wire RegisterObservability(...) per turn without
+        // having to reopen the constructor.
+        private readonly IExporterTokenCache<AgenticTokenStruct>? _agentTokenCache;
         private readonly ILogger<MyAgent>? _logger;
         private readonly string? AgenticAuthHandlerName;
         private readonly string? OboAuthHandlerName;
@@ -279,13 +287,18 @@ namespace YourNamespace.Agent
         public MyAgent(
             AgentApplicationOptions options,
             IChatClient chatClient,
-            IMcpToolRegistrationService toolService,
             IConfiguration configuration,
+            IExporterTokenCache<AgenticTokenStruct> agentTokenCache,
+            IMcpToolRegistrationService toolService,
             ILogger<MyAgent> logger) : base(options)
         {
             _chatClient = chatClient;
-            _toolService = toolService;
             _configuration = configuration;
+            // Auto-registered by the Microsoft.OpenTelemetry distro — used by instrument-observability
+            // for per-turn RegisterObservability(...) calls. Inject up-front so the constructor doesn't
+            // need to be reopened when the observability skill runs later.
+            _agentTokenCache = agentTokenCache;
+            _toolService = toolService;
             _logger = logger;
 
             AgenticAuthHandlerName = _configuration.GetValue<string>("AgentApplication:AgenticAuthHandlerName");
