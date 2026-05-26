@@ -594,25 +594,45 @@ Confirm at least one SDK entry at 8.0 or above is listed.
 
 ---
 
-### 1.9 — Run built-in requirements validator
+### 1.9 — Verify tenant readiness (one-time per tenant)
 
-Once all tools above are confirmed installed, run the Agent 365 CLI's built-in checker:
+The Agent 365 CLI requires a custom Entra ID app registration in the tenant. This is a **one-time tenant-wide setup** — most developers will inherit a ready tenant from a teammate's admin and skip this step entirely.
+
+**1.9.1 — Skip if tenant is already verified.** Read `tenantReady` from `.a365-workspace-detection.local.json`. If `true`, jump to Step 2.
+
+**1.9.2 — Smoke-probe tenant readiness:**
+
+```bash
+a365 develop list-available 2>&1 | head -5
+```
+
+- Returns the MCP catalog cleanly → tenant is set up by some admin already. Write `tenantReady: true` to the cache and jump to Step 2.
+- Returns `403`, "tenant not ready", or auth error → continue to 1.9.3.
+- `a365` not found / not logged in → continue to 1.9.3.
+
+**1.9.3 — Run the configurator** (auto-creates the `Agent 365 CLI` app registration, adds redirect URIs, enables public-client flows, grants admin consent):
 
 ```bash
 a365 setup requirements
 ```
 
-> **Note:** `a365 setup requirements` works without `a365.config.json` — no project config file is needed for this step.
+The command is **interactive** — it shows a `(y/N)` confirmation prompt before modifying the app registration. Use `--yes` for CI. Works without `a365.config.json`. Single-category re-runs: `--category Azure|Authentication|PowerShell`.
 
-This validates Azure connectivity, Authentication, PowerShell version, and Tenant Enrollment in one pass. Fix any reported issues before proceeding. To check a single category:
+**1.9.4 — If the user lacks an admin role**, the CLI detects this via the `wids` claim in the access token and falls back to printing PowerShell handoff scripts. Surface a clean handoff rather than just dumping CLI output:
 
-```bash
-a365 setup requirements --category Azure
-a365 setup requirements --category Authentication
-a365 setup requirements --category PowerShell
-```
+> ⚠️ **Tenant prerequisites need a one-time admin run.** Most developers don't have admin — that's expected. Ask your tenant admin to run this once:
+>
+> ```bash
+> a365 setup requirements --yes
+> ```
+>
+> Required role: **Application Administrator** *(recommended — lightest privilege)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration
+>
+> Once they confirm it's done, re-run this skill — I'll detect tenant readiness via the smoke probe and cache `tenantReady: true`. Your teammates won't repeat this.
 
-> **BEFORE MOVING ON:** Mark Todo 1 (Step 1) as **completed**. Mark Todo 2 (Step 2) as **in-progress**. Only then proceed to Step 2.
+On success (or smoke-probe pass), write `tenantReady: true` to `.a365-workspace-detection.local.json`.
+
+> **BEFORE MOVING ON:** Mark Todo 1 (Step 1) as **completed**. Mark Todo 2 (Step 2) as **in-progress**.
 
 ---
 
@@ -694,10 +714,12 @@ az login --allow-no-subscriptions --use-device-code
 The authenticated account needs roles based on which setup steps will run:
 
 - **Agent ID Developer** — required to run `a365 setup blueprint` (and the blueprint phase of `setup all`).
-- **Global Administrator** — required to complete `a365 setup permissions {mcp, bot, custom, copilotstudio}`, which grants OAuth2 consent.
+- **Application Administrator** *(recommended — lightest privilege)*, **Cloud Application Administrator**, or **Global Administrator** — required to complete `a365 setup requirements` (creates the `Agent 365 CLI` app registration and grants admin consent) and `a365 setup permissions {mcp, bot, custom, copilotstudio}` (per-MCP OAuth2 consent). GA is heaviest but not required — Application Admin works. Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration
 - **Azure Subscription Contributor** — required when the CLI provisions Azure resources (App Service Plan, Web App).
 
-If the developer is not a Global Administrator, `a365 setup all` runs as far as it can and **prints next-steps for a GA** to complete the consent grants (typically a PowerShell script in the setup summary). There is no separate `setup admin` subcommand — the GA reads the printed instructions and runs them.
+If the developer is not an admin (Application Admin / Cloud App Admin / GA), `a365 setup all` runs as far as it can and **prints PowerShell next-steps for an admin** to complete the consent grants. There is no separate `setup admin` subcommand — the admin reads the printed instructions and runs them.
+
+> **Note:** The CLI detects admin role via the `wids` claim in the access token. If `wids` isn't configured on your app registration (step 5 of [custom-client-app-registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration)), the CLI shows handoff scripts even when you ARE an admin — add the claim once to fix.
 
 If the logged-in user lacks the minimum roles, prompt them to switch accounts or to ask an admin to grant the role.
 
