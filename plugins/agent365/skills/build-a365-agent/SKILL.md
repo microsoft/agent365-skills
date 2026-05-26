@@ -720,7 +720,7 @@ SemanticKernel, OpenAI, AgentFramework, etc. is built in (all default `true`).
 
 | Language     | Default setup call (distro)                                                                                       |
 |--------------|-------------------------------------------------------------------------------------------------------------------|
-| C# / .NET    | `builder.UseMicrosoftOpenTelemetry(o => { o.Exporters = ExportTarget.Agent365 \| ExportTarget.Console; })` (OBO path — distro auto-registers `IExporterTokenCache<AgenticTokenStruct>`; no separate `AddAgenticTracingExporter()` / `AddA365Tracing()` call needed). For S2S, also set `o.Agent365.Exporter.UseS2SEndpoint = true` and supply `o.Agent365.Exporter.TokenResolver`. |
+11| C# / .NET    | `builder.UseMicrosoftOpenTelemetry(o => { o.Exporters = builder.Environment.IsDevelopment() ? ExportTarget.Agent365 \| ExportTarget.Otlp \| ExportTarget.Console : ExportTarget.Agent365 \| ExportTarget.Otlp; })` (OBO path — distro auto-registers `IExporterTokenCache<AgenticTokenStruct>`; no separate `AddAgenticTracingExporter()` / `AddA365Tracing()` call needed). For S2S, also set `o.Agent365.Exporter.UseS2SEndpoint = true` and supply `o.Agent365.Exporter.TokenResolver`. |
 | Node.js      | `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, tokenResolver } })` from `@microsoft/opentelemetry`. For S2S, also set `useS2SEndpoint: true`. |
 | Python       | `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)` from `microsoft_opentelemetry`. For S2S, also pass `a365_use_s2s_endpoint=True`. |
 
@@ -773,12 +773,110 @@ ENABLE_A365_OBSERVABILITY_EXPORTER=true
 ENABLE_A365_OBSERVABILITY=true
 A365_OBSERVABILITY_LOG_LEVEL=info
 OTEL_LOG_LEVEL=Debug
+# OTLP endpoint for Aspire Dashboard (local dev) or collector (production)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
 If the reference template suggests `ENABLE_A365_OBSERVABILITY_EXPORTER=false`,
 override it to `true` here. (.NET samples don't use these env vars — the
-exporter is wired in code via `ExportTarget.Agent365` and log levels live in
-`appsettings.json`.)
+exporter is wired in code via `ExportTarget.Agent365 | ExportTarget.Otlp` and
+log levels live in `appsettings.json`.)
+
+### Aspire Dashboard setup (local OTel visualization)
+
+**Prerequisites:**
+1. **Docker Desktop must be running.** Start Docker Desktop before proceeding — if it's not running, `docker run` will fail silently. On Windows, launch from Start Menu or run `Start-Process "Docker Desktop"` and wait ~30 seconds for the engine to initialize.
+2. Docker must be installed (Windows: Docker Desktop via winget, macOS: `brew install --cask docker`).
+
+For .NET agents, `ExportTarget.Otlp` sends traces, metrics, and structured logs
+to the OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`, default `http://localhost:4317`).
+Run the [Aspire Dashboard](https://learn.microsoft.com/dotnet/aspire/fundamentals/dashboard/standalone) via Docker to visualize telemetry during development:
+
+```bash
+docker run -d --name aspire-dashboard \
+  -p 4318:18888 -p 4317:18889 \
+  -e DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true \
+  mcr.microsoft.com/dotnet/aspire-dashboard:latest
+```
+
+| Port | Purpose |
+|------|---------|
+| `4318` (host) → `18888` (container) | Aspire Dashboard web UI |
+| `4317` (host) → `18889` (container) | OTLP gRPC receiver (traces + metrics + logs) |
+
+Open `http://localhost:4318` to view:
+- **Traces tab** — distributed traces for each agent interaction (InvokeAgentScope, InferenceScope, HTTP spans)
+- **Metrics tab** — token usage, request counts, durations
+- **Structured Logs tab** — filtered logs with correlation IDs
+
+**Reference:** [`microsoft/agent-framework` — AgentOpenTelemetry sample](https://github.com/microsoft/agent-framework/tree/main/dotnet/samples/02-agents/AgentOpenTelemetry)
+
+#### .NET configuration
+
+The agent's `Program.cs` must include `ExportTarget.Otlp` in the exporter flags:
+
+```csharp
+builder.UseMicrosoftOpenTelemetry(o =>
+{
+    o.Exporters = builder.Environment.IsDevelopment()
+        ? ExportTarget.Agent365 | ExportTarget.Otlp | ExportTarget.Console
+        : ExportTarget.Agent365 | ExportTarget.Otlp;
+});
+```
+
+#### Node.js / Python configuration
+
+**Important:** The `@microsoft/agents-a365-observability` package's `ObservabilityManager.start()` registers its own TracerProvider. You **cannot** start a second `NodeSDK` after it — OTel only allows one global provider. Instead, use the standard `@opentelemetry/sdk-node` `NodeSDK` as the sole provider with OTLP exporters, and import A365 utilities (`BaggageBuilder`, `InvokeAgentScope`) from the package without calling `ObservabilityManager.start()`:
+
+```typescript
+// observability.ts — Node.js pattern
+import { BaggageBuilder, InvokeAgentScope } from '@microsoft/agents-a365-observability';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-grpc';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-grpc';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+
+const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4317';
+
+const sdk = new NodeSDK({
+  resource: resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: process.env.AGENT365_AGENT_NAME || 'my-agent',
+    [ATTR_SERVICE_VERSION]: '0.1.0',
+  }),
+  spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: otlpEndpoint }))],
+  metricReader: new PeriodicExportingMetricReader({
+    exporter: new OTLPMetricExporter({ url: otlpEndpoint }),
+    exportIntervalMillis: 10000,
+  }),
+  logRecordProcessors: [new BatchLogRecordProcessor(new OTLPLogExporter({ url: otlpEndpoint }))],
+  instrumentations: [getNodeAutoInstrumentations({
+    '@opentelemetry/instrumentation-http': { enabled: true },
+    '@opentelemetry/instrumentation-express': { enabled: true },
+  })],
+});
+sdk.start();
+```
+
+Required `.env` variables:
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+```
+
+The gRPC exporter uses the base endpoint directly (do NOT append `/v1/traces` — that's for HTTP/protobuf only).
+
+**Production:** Replace the local Aspire Dashboard with your production OTLP
+collector (Application Insights, Grafana Alloy, Datadog Agent, etc.) by
+changing `OTEL_EXPORTER_OTLP_ENDPOINT` to the collector's endpoint URL.
 
 > **Don't pin the observability logger below the env var.** Wire your host so
 > that the observability logger reads its level from `A365_OBSERVABILITY_LOG_LEVEL`.
