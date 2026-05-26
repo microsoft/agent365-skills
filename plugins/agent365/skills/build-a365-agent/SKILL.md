@@ -864,92 +864,6 @@ The SDK-native path buys finer control at the cost of losing built-in
 auto-instrumentation for AspNetCore / HttpClient / SemanticKernel / OpenAI /
 AgentFramework — you have to install and wire each extension package yourself.
 
-### Console-span exporter requirements (Python — `a365 validate` parser)
-
-The `a365 validate` Telemetry tier scans the agent's stdout/stderr log file
-as **text**, not JSON. It splits spans on lines that are exactly `{` / `}`
-(or fallback: lines starting with `traceId:` / `"traceId":` /
-`Activity.TraceId:`) and looks for **camelCase** keys (`traceId`,
-`parentId`, `instrumentationScope`) plus resource attributes
-`telemetry.sdk.name`, `telemetry.sdk.version`, `service.name`.
-
-Python's default `ConsoleSpanExporter` emits compact JSON via
-`Span.to_json()` with snake_case keys (`trace_id`, `parent_id`) on a single
-line — the parser cannot read this. You must scaffold a **custom
-formatter** in `otel_init.py` that emits one multi-line block per span in
-the format below. Also wire the exporter behind a span filter so the
-console only shows A365 spans (`invoke_agent`, `chat`, `execute_tool`,
-`inference`) — not the noisy SDK auto-instrumentation
-(`agents.adapter.*`, `agents.app.*`, `agents.connector.*`):
-
-```python
-# A365 Observability — parser-compatible console exporter
-from opentelemetry import trace
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace.export import (
-    ConsoleSpanExporter, SimpleSpanProcessor, SpanExportResult,
-)
-
-_A365_SPAN_PREFIXES = ("invoke_agent", "execute_tool", "inference", "chat ")
-
-def _is_a365_span(span: ReadableSpan) -> bool:
-    if (span.name or "").startswith(_A365_SPAN_PREFIXES):
-        return True
-    return "gen_ai.operation.name" in (span.attributes or {})
-
-def _parser_compatible_formatter(span: ReadableSpan) -> str:
-    ctx = span.get_span_context()
-    trace_id = f"0x{ctx.trace_id:032x}" if ctx else ""
-    span_id  = f"0x{ctx.span_id:016x}"  if ctx else ""
-    parent_id = f"0x{span.parent.span_id:016x}" if span.parent else ""
-    lines = [
-        "{",
-        f"  traceId: '{trace_id}'",
-        f"  spanId: '{span_id}'",
-        f"  parentId: '{parent_id}'",
-        f"  name: '{span.name}'",
-        f"  kind: '{span.kind.name if span.kind else ''}'",
-        "  attributes: {",
-    ]
-    for k, v in (span.attributes or {}).items():
-        lines.append(f"    '{k}': '{v}'")
-    lines.append("  }")
-    scope = getattr(span, "instrumentation_scope", None)
-    lines.append("  instrumentationScope: {")
-    lines.append(f"    name: '{getattr(scope, 'name', '')}'")
-    lines.append(f"    version: '{getattr(scope, 'version', '')}'")
-    lines.append("  }")
-    res = getattr(span, "resource", None)
-    lines.append("  resource: {")
-    for k, v in (getattr(res, "attributes", {}) or {}).items():
-        lines.append(f"    '{k}': '{v}'")
-    lines.append("  }")
-    lines.append("}")
-    return "\n".join(lines) + "\n"
-
-class _A365FilteredConsoleExporter(ConsoleSpanExporter):
-    def export(self, spans):
-        kept = [s for s in spans if _is_a365_span(s)]
-        if not kept:
-            return SpanExportResult.SUCCESS
-        return super().export(kept)
-
-# Call use_microsoft_opentelemetry(..., enable_console=False) to suppress the
-# distro's pretty-printed multi-line JSON exporter, then add ours:
-tp = trace.get_tracer_provider()
-if hasattr(tp, "add_span_processor"):
-    tp.add_span_processor(SimpleSpanProcessor(
-        _A365FilteredConsoleExporter(formatter=_parser_compatible_formatter)
-    ))
-```
-
-**Critical:** also set `OTEL_SERVICE_NAME=<agent-name>` in `.env` — the
-plain `SERVICE_NAME` env var is not standard OTel and won't land in the
-resource block, which makes the parser report `service.name` as missing.
-
-Node.js and .NET don't need this workaround — their default console
-exporters already emit a parser-compatible format.
-
 Apply the rest of the reference for the chosen path (packages, BaggageBuilder
 or BaggageMiddleware, per-turn agentic-token refresh, env vars). Mark each
 instrumented block with the comment:
@@ -1258,25 +1172,13 @@ tier where `ok = false`:
   local MCP bearer tokens have expired — re-run `a365 develop get-token`
   to re-stamp fresh `BEARER_TOKEN_MCP_*` values into the env file, then
   restart the agent and re-validate.
-- `tiers.telemetry.ok = false` with message *"No console exporter span
-  output detected in agent logs"* → the validator (`TelemetryRequirementCheck`)
-  is a **text scanner**, not a JSON parser. It splits spans on lines that
-  are exactly `{` / `}` (or fallback: lines starting with `traceId:` /
-  `"traceId":` / `Activity.TraceId:`) and looks for camelCase keys
-  (`traceId`, `parentId`, `instrumentationScope`) plus the resource
-  attributes `telemetry.sdk.name`, `telemetry.sdk.version`, `service.name`.
-  - **Python**: the default `Span.to_json()` emits single-line, snake_case
-    JSON (`trace_id`, `parent_id`) which the parser cannot read. The
-    custom `_compact_formatter` scaffolded in Phase 9 emits the
-    multi-line camelCase block the parser expects — if you've changed it,
-    restore that format. Also ensure `OTEL_SERVICE_NAME=<service-name>`
-    is set in `.env` so `service.name` lands in the resource block
-    (the bare `SERVICE_NAME` var is NOT a standard OTel env var).
-  - **All languages**: confirm `InvokeAgentScope`, `InferenceScope` (or
-    LLM client `.UseOpenTelemetry()` auto-instrumentation), and
-    `ExecuteToolScope` (or MCP tool dispatch auto-instrumentation) are
-    all present — the parser requires all three `gen_ai.operation.name`
-    values (`invoke_agent`, `chat`, `execute_tool`) to appear.
+- `tiers.telemetry.ok = false` → confirm `InvokeAgentScope`,
+  `InferenceScope` (or LLM client `.UseOpenTelemetry()` auto-instrumentation),
+  and `ExecuteToolScope` (or MCP tool dispatch auto-instrumentation) are
+  all wired — the validator requires all three `gen_ai.operation.name`
+  values (`invoke_agent`, `chat`, `execute_tool`) to appear. Also set
+  `OTEL_SERVICE_NAME=<agent-name>` in `.env` so `service.name` lands in
+  the resource block.
 
 After applying a fix, re-run `a365 validate` and re-evaluate the report.
 **Do not skip ahead** — stay in this loop until `summary.ok = true`.
