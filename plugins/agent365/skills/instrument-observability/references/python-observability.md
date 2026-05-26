@@ -730,6 +730,14 @@ app.on_cleanup.append(cleanup_observability)
 # When using code kwargs (recommended), the env vars are not required.
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
 
+# ── Observability verbose logging ───────────────────────────────────────────
+# OTEL_LOG_LEVEL controls the OpenTelemetry SDK's own internal logger
+# (DEBUG / INFO / WARN / ERROR). A365_OBSERVABILITY_LOG_LEVEL is a
+# pipe-separated list of levels emitted by the A365 exporter.
+# Recommended: INFO + info|warn|error in prod; WARN + warn|error to reduce noise.
+OTEL_LOG_LEVEL=INFO
+A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
+
 # Sponsor identity for CallerDetails (S2S agents — no signed-in user).
 AGENT365_SPONSOR_USER_ID=<<Blueprint ID>>
 AGENT365_SPONSOR_USER_NAME=<<Blueprint Name>>
@@ -740,6 +748,8 @@ AGENT365_SPONSOR_USER_EMAIL=<<Sponsor Email>>
 | Variable | Local dev | Production |
 |---|---|---|
 | `ENABLE_A365_OBSERVABILITY_EXPORTER` | `false` (console only) | `true` |
+| `OTEL_LOG_LEVEL` | `INFO` (or `WARN` to quiet) | `INFO` |
+| `A365_OBSERVABILITY_LOG_LEVEL` | `info\|warn\|error` (or omit) | `info\|warn\|error` |
 | `AGENT365_SPONSOR_USER_ID` | `<<Blueprint ID>>` | `<<Blueprint ID>>` |
 | `AGENT365_SPONSOR_USER_NAME` | `<<Blueprint Name>>` | `<<Blueprint Name>>` |
 | `AGENT365_SPONSOR_USER_EMAIL` | `<<Sponsor Email>>` | `<<Sponsor Email>>` |

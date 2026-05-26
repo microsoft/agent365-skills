@@ -1160,7 +1160,29 @@ EnableAgent365Exporter=True
 A365_OBSERVABILITY_DOMAIN_OVERRIDE=https://your-test-endpoint.example.com
 # For S2S exports, override to the Observability API scope used by FMI Hop 3.
 A365_OBSERVABILITY_SCOPE_OVERRIDE=api://9b975845-388f-4429-889e-eab1ef63949c/.default
+
+# ── Observability verbose logging ─────────────────────────────────────────
+# OTEL_LOG_LEVEL controls the OpenTelemetry SDK's own internal logger
+# (DEBUG / INFO / WARN / ERROR). A365_OBSERVABILITY_LOG_LEVEL is a
+# pipe-separated list of levels emitted by the A365 exporter.
+# Recommended: INFO + info|warn|error in prod; WARN + warn|error to reduce noise.
+OTEL_LOG_LEVEL=INFO
+A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
 ```
+
+The same `A365_OBSERVABILITY_LOG_LEVEL` value can be set under `Logging.LogLevel` in `appsettings.json` if you prefer config over env:
+
+```jsonc
+{
+  "Logging": {
+    "LogLevel": {
+      "Microsoft.Agents.A365.Observability": "Information"
+    }
+  }
+}
+```
+
+The env var takes a pipe-separated form (`info|warn|error`) matching the Node.js/Python convention; the appsettings form takes a single .NET `LogLevel` enum (`Information`, `Warning`, `Error`).
 
 Key log messages:
 

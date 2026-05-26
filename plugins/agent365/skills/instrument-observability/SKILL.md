@@ -541,8 +541,35 @@ Follow the reference patterns in `dotnet-observability.md` for each scope being 
 
 ### For Node.js
 
-Follow the reference patterns in `nodejs-observability.md` for each scope being added:
-- **`InvokeAgentScope`** — wrap the top-level message handler. Use `ScopeUtils.populateInvokeAgentScopeFromTurnContext` from `@microsoft/agents-a365-observability-hosting` to auto-populate from TurnContext
+Follow the reference patterns in `nodejs-observability.md` for each scope being added. **The wrapping order is non-negotiable — wrong order produces silent span drops** (logged as `Partitioned into 0 identity groups`).
+
+**Canonical pattern (generate exactly this shape):**
+
+```typescript
+await preloadObservabilityToken(turnContext);                                    // STEP 1 — refresh token (cold-turn fix)
+
+const baggageScope = BaggageBuilderUtils                                          // STEP 2 — outer baggage scope
+  .fromTurnContext(new BaggageBuilder(), turnContext as any)
+  .sessionDescription('agent-turn')
+  .build();
+
+await baggageScope.run(async () => {                                              // STEP 3 — scopes run INSIDE baggage
+  const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails);
+  try {
+    await scope.withActiveSpanAsync(async () => {
+      // InferenceScope / ExecuteToolScope / agent invocation here
+    });
+  } finally { scope.dispose(); }
+});
+```
+
+**Why this exact shape:**
+- **Without `preloadObservabilityToken` before `baggageScope.run`**, the first export attempt on a cold turn sees an empty token, retries until timeout, and the span is silently dropped.
+- **Without the outer `baggageScope.run` wrapping `InvokeAgentScope.start`**, the spans have no `microsoft.tenant.id` / `gen_ai.agent.id` baggage attached — the exporter filters them as `Partitioned into 0 identity groups (N spans skipped)` and they never reach MAC.
+
+**Additional rules:**
+- **Import `BaggageBuilder` AND `BaggageBuilderUtils`** from `@microsoft/opentelemetry`. Both are required.
+- **`InvokeAgentScopeDetails`** is `{}` in Node.js — endpoint is optional and unused. Do NOT generate `endpoint: new Uri(...)` — that's the .NET API surface and will not compile in TypeScript.
 - **`InferenceScope`** — wrap each LLM call *(skip if framework extension installed)*
 - **`ExecuteToolScope`** — wrap each local/custom tool call *(skip if framework extension covers all tool calls)*
 - **`OutputScope`** — for async scenarios
@@ -615,6 +642,8 @@ Apply these invariants across all three languages:
    - Exporter is `false` (Node.js / Python local dev) → "instrumented but
      disabled; set `ENABLE_A365_OBSERVABILITY_EXPORTER=true` to start exporting".
 
+7. **Stamp the verbose-logging pair into `.env`** (Node.js / Python) — `OTEL_LOG_LEVEL=INFO` (OpenTelemetry SDK's own internal logger) **and** `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` (pipe-separated levels emitted by the A365 exporter). For .NET, write the equivalent `Logging.LogLevel.Microsoft.Agents.A365.Observability: Information` to `appsettings.json` AND set `OTEL_LOG_LEVEL=INFO` / `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` as env vars (.NET reads both forms). Recommended baseline: `INFO` + `info|warn|error` in prod; users can trim to `WARN` + `warn|error` to reduce noise. Write them as a labeled `# ── Observability verbose logging ──` block so the two vars stay grouped. **Additive — never overwrite** values the user has set.
+
 If the project also uses `.env.example` (Node.js / Python), update it with
 placeholder values to match `.env`.
 
@@ -684,6 +713,40 @@ If yes, invoke the `test-local` skill.
 
 ---
 
+## Phase 8.5: First-run smoke test (Node.js / Python only)
+
+**TaskCreate** — "Verify a span actually exports"
+
+Without this phase the skill ends "instrumented successfully" but the user has no way to know whether spans actually reach MAC until 15-90 min later when indexing catches up. This phase runs the agent for ~30 seconds with verbose-logging env vars enabled, sends one message, and greps the log for the specific line that confirms export succeeded. Pass/fail is visible immediately.
+
+**Node.js:**
+
+1. **Bash** (background) — start the agent with verbose logs enabled:
+   ```bash
+   OTEL_LOG_LEVEL=INFO A365_OBSERVABILITY_LOG_LEVEL=info|warn|error npm start > .a365-smoketest.log 2>&1 &
+   ```
+   Use Claude Code's `run_in_background: true` so the agent stays up while we probe.
+
+2. **Wait ~5s for boot**, then send a test message to `/api/messages` (or instruct the user to send one via AgentsPlayground / Teams).
+
+3. **Bash** — after ~30s, check the log for the export-success line:
+   ```bash
+   grep -E "export-group succeeded|exported successfully|rejectedSpans:0" .a365-smoketest.log | head -5
+   ```
+
+4. **Interpret:**
+   - **Match found** → ✅ spans are exporting. Tell user: *"Verified — at least one identity-group exported successfully. MAC indexing takes 15-90 min; check `admin.cloud.microsoft → Advanced Hunting → CloudAppEvents` filtered by AgentId = `<AUID>` after that delay."*
+   - **No match, only `Partitioned into 0 identity groups` lines** → ❌ silent drop. Most likely: missing outer baggage scope (Phase 5.5) OR missing exporter flag (`a365.enableObservabilityExporter: true` / env var). Re-check Phases 3 + 5.5.
+   - **No match, errors visible** → surface the exact error to the user verbatim; do NOT proceed.
+
+**Python:** same flow with `OTEL_LOG_LEVEL` + `A365_OBSERVABILITY_LOG_LEVEL` env vars and `python host_agent_server.py` instead of `npm start`.
+
+**.NET:** skip this phase — the .NET CLI's own boot-time logging covers the verification path. If the user wants stricter checking, set `Logging.LogLevel.Microsoft.Agents.A365.Observability: Information` in `appsettings.json` and grep `dotnet run` output for `"Sending N spans to ..."` / `"HTTP 202 exporting spans"`.
+
+**TaskUpdate** — Mark complete with the result (pass / fail / skipped).
+
+---
+
 ## Phase 9: Final Summary
 
 1. **TaskList** — Show all completed tasks.
@@ -701,8 +764,17 @@ If yes, invoke the `test-local` skill.
    **Next steps:**
    1. Enable exporting when ready for production:
       - .NET: set EnableAgent365Exporter: true in appsettings.json
-      - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env
+      - Node.js / Python: set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env (or `a365.enableObservabilityExporter: true` in code — both required alongside `a365.enabled: true`)
    2. Run your agent and verify traces appear in the Observability dashboard.
+
+   **What to expect for MAC visibility (first-run reality check):**
+   - **Indexing lag: 15–90 minutes** between first successful export and spans appearing in `admin.cloud.microsoft → Advanced Hunting → CloudAppEvents`. If you query immediately after instrumenting, you'll see empty results — that's not a bug.
+   - **Instance approval required.** Spans only attribute to a `CloudAppEvents` row when the AI Teammate's agent instance has been approved at `admin.cloud.microsoft/#/agents/all/requested` and an Agentic User UPN has been issued. Without that, exported spans land but don't surface in MAC queries.
+   - **KQL filter MUST use the AUID, NOT the blueprint id.** The `AgentId` column in `CloudAppEvents` is the runtime AUID resolved from `turnContext.activity.recipient.agenticAppId`. The `agent365Observability__agentId` env var that `a365 setup all` stamps into `.env` is the BLUEPRINT id — filtering by that value returns empty results. Get the AUID from your agent logs (the exporter logs `Obtained token for agent <AUID> tenant ...`) or from `recipient.agenticAppId` in any inbound activity.
+
+   **Verbose logging — only enable when actively debugging:**
+   - Node.js / Python: uncomment `OTEL_LOG_LEVEL=INFO` AND `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` in `.env`. **Both** are required to see `[Agent365Exporter]` activity — the exporter uses a wrapped logger that defaults to silent.
+   - Grep for `exported successfully` / `export-group succeeded` to confirm spans are flowing; `Partitioned into 0 identity groups (N spans skipped)` for spans outside an active baggage scope is **expected** (early framework / middleware / health-ping spans) — not an error.
    3. [If authMode = obo] Confirm the OBO token exchange is working correctly.
       - Signed-in user sub-type: verify the signed-in user's token is passed correctly.
         → OBO flow docs: https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
