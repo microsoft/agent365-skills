@@ -1,7 +1,21 @@
 # Agent 365 Skills — GitHub Copilot Instructions
 
-This repository contains six skills for instrumenting and registering Microsoft Agent 365 agents.
-When a user asks for any of the trigger phrases below, follow the corresponding SKILL.md exactly.
+Skills for instrumenting and registering Microsoft Agent 365 agents. When a user asks for any of the trigger phrases below, follow the corresponding SKILL.md exactly.
+
+---
+
+## Quick reference
+
+| Skill | When to invoke | Delegates to |
+|---|---|---|
+| `a365-setup` | Entry point — CLI install, Azure prereqs, capability menu | `make-ai-teammate` (AI Teammate path) or `make-a365-agent` (other paths) |
+| `make-ai-teammate` | Transform an agent into an AI Teammate (Teams / Copilot publish) | `instrument-observability` (auto), `add-workiq-tools` (offered) |
+| `make-a365-agent` | Non-AI-Teammate blueprint provisioning (Register / Observability paths) | `instrument-observability`, `add-workiq-tools` (optional) |
+| `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
+| `instrument-observability` | OTel + A365 tracing exporter wiring | — |
+| `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
+
+Skills are designed to be additive, idempotent, and state-aware — re-running is safe.
 
 ---
 
@@ -14,8 +28,8 @@ between phases instead of asking permission.
 
 **Only pause at these explicit interaction points:**
 - `a365-setup`: capabilities menu; authMode (non-AI-Teammate only); install confirmations for missing tools; Azure login.
-- `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
 - `make-ai-teammate`: Phase 0B confirm; 0C row-8 sub-question; 9.6 WorkIQ offer; 9.7.1a Reuse/Re-run/Fresh; 9.7.2 Run Target + 9.7.2b hosting.
+- `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
 - `add-workiq-tools`: MCP server selection; Word @mention offer (only when `mcp_WordServer` is selected and stack is Node.js LangChain).
 - `instrument-observability`: agent kind + auth mode (only if not in cache).
 - `test-local`: confirm before launching.
@@ -23,41 +37,6 @@ between phases instead of asking permission.
 CLI `Allow / Skip` prompts are the chat client's permission flow — not stopping conditions.
 Manual browser steps (Teams Dev Portal, M365 Admin Center, GA consent) are surfaced with
 URL + action, then you continue to the next non-blocking phase.
-
----
-
-## Skill: make-ai-teammate
-
-**Full instructions:** [plugins/agent365/skills/make-ai-teammate/SKILL.md](../plugins/agent365/skills/make-ai-teammate/SKILL.md)
-
-**Trigger phrases:**
-- "make this agent an ai teammate"
-- "transform this agent into an ai teammate"
-- "publish this agent to teams"
-- "make this agent available in microsoft teams"
-- "publish this agent to microsoft copilot"
-- "add teams support to this agent"
-- "set up ai teammate hosting for this agent"
-- "convert this agent to a teams agent"
-- "make this agent work with microsoft 365"
-
-**Summary of what this skill does:**
-1. Detects the agent language/framework across all supported stacks: .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). If no agent is found in the folder, offers to clone a sample agent from Agent365-Samples and continues from there.
-2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (.NET), or aiohttp (Python)
-3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
-4. Updates required environment variables. **Does NOT create `ToolingManifest.json`** — that file is owned by `add-workiq-tools`, which writes it via `a365 develop add-mcp-servers` using the live catalog from `a365 develop list-available` (keeps `url`, `audience`, `scope` authoritative; pre-populating here would silently bypass the WorkIQ offer at Phase 9.6).
-5. Runs `a365 setup all --aiteammate --m365` — creates the Blueprint and Agentic User identity in Entra ID, and registers the agent in the M365 admin center. `--m365` is **always passed** for AI Teammate; no user question.
-6. **State-matrix routing (Phase 0C):** detects three primary skill-state flags — `has_obs`, `has_workiq`, `disk_blueprint_present` — and routes through an **8-row matrix**. Skip-gates: Phase 9.5 (Observability) is skipped if `has_obs = true`; Phase 9.6 (WorkIQ) is skipped if `has_workiq = true`. **Phase 9.7.1a is the verification gate for the blueprint dimension** — `disk_blueprint_present` (derived from disk at read-time) is advisory only; the user is always asked explicitly (**Reuse / Re-run / Fresh**) before any skip/reuse decision (handles cases where disk lies about tenant state). Row 8 (T/T/T) shows an additional Phase 0C sub-question: **Re-publish** or **Verify only**. The skill is idempotent — re-run safely and it will skip whatever's already wired.
-
-7. **Verifies** `manifest.json` (read-only — does NOT hand-edit) — the CLI generates the v1.22+ schema, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents` marker, and `validDomains` end-to-end via `a365 setup all --aiteammate` and `a365 publish`. **Phase 9.7.2 Run Target decision** (Prod vs Local) is asked after Step 9.7.1 with remember-with-confirm on re-runs (value persisted in `.a365-workspace-detection.local.json`). For `runTarget = "prod"`: a **Phase 9.7.2b hosting sub-question** follows — *dev tunnel* (Microsoft Dev Tunnel exposing localhost for in-Teams testing) or *cloud endpoint* (Azure App Service/Container Apps/Functions, AWS App Runner/Lambda + API Gateway/ECS, or Google Cloud Run/App Engine/Cloud Functions). The user supplies (or the skill derives) an HTTPS URL stored as `chosenEndpoint`. Phase 9.7.2c reconciles `chosenEndpoint` with the blueprint's `messagingEndpoint` via `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` when they differ (`--m365` is required — without it the CLI silently skips the Teams Graph re-registration). Then runs `a365 publish` to package the manifest into `manifest.zip` (or `appPackage.zip` for Teams Toolkit) — `publish` does NOT upload (upload to M365 Admin Center is always manual) and does NOT touch the bot endpoint. Then walks the user through **two required manual steps**: (a) Teams Developer Portal config at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration` (Agent Type=API Based, Notification URL = the reconciled `chosenEndpoint`/`messagingEndpoint` — required for Teams to deliver messages), and (b) instance request from Teams Apps + admin approval at admin.cloud.microsoft. For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default) — all publish/Dev-Portal/MAC-upload/instance steps are skipped — the skill routes directly to AgentsPlayground for smoke testing. **Phase 9.7.2d** validates env configuration before either path proceeds: confirms agentic-auth + LLM + observability vars are present in `.env` / `appsettings.json`; for prod, verifies `a365.generated.config.json` has `completed: true` and non-empty `resourceConsents` (else surfaces the GA-consent PowerShell handoff) and reminds the user that cloud env vars must be set at the cloud platform (`az webapp config appsettings set` / `eb setenv` / `gcloud run services update --set-env-vars`), not just locally; for local, confirms AgentsPlayground and `.m365agentsplayground.yml`. On any manifest validation error, re-runs `a365 setup all --aiteammate` rather than hand-editing. Authoritative Microsoft Learn references: [Create agent instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance), [Testing](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/testing), [test-with-devtunnels](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels), [deploy-agent-azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure), [deploy-agent-aws](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws), [deploy-agent-gcp](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp).
-8. Runs `instrument-observability` automatically when `has_obs = false` — part of the AI Teammate package. **Skipped when `has_obs = true`** (already wired).
-9. Offers `add-workiq-tools` as optional when `has_workiq = false` — asks the user; can be run later via `/agent365:add-workiq-tools`. **Skipped when `has_workiq = true`** (already wired).
-
-**Reference patterns:**
-- Node.js: [plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md)
-- Node.js notifications: [plugins/agent365/skills/make-ai-teammate/references/nodejs-notifications.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-notifications.md)
-- .NET: [plugins/agent365/skills/make-ai-teammate/references/dotnet-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/dotnet-ai-teammate.md)
-- Python: [plugins/agent365/skills/make-ai-teammate/references/python-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/python-ai-teammate.md)
 
 ---
 
@@ -90,6 +69,54 @@ URL + action, then you continue to the next non-blocking phase.
 6. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths — passes `reuseBlueprint` and `existingBlueprintId` when the developer chose to reuse an existing blueprint
 
 **This skill does NOT:** run `a365 setup all` itself — it delegates that to `make-ai-teammate` or `make-a365-agent`.
+
+---
+
+## Skill: make-ai-teammate
+
+**Full instructions:** [plugins/agent365/skills/make-ai-teammate/SKILL.md](../plugins/agent365/skills/make-ai-teammate/SKILL.md)
+
+**Trigger phrases:**
+- "make this agent an ai teammate"
+- "transform this agent into an ai teammate"
+- "publish this agent to teams"
+- "make this agent available in microsoft teams"
+- "publish this agent to microsoft copilot"
+- "add teams support to this agent"
+- "set up ai teammate hosting for this agent"
+- "convert this agent to a teams agent"
+- "make this agent work with microsoft 365"
+
+**Summary of what this skill does:**
+1. Detects the agent language/framework across all supported stacks: .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). If no agent is found in the folder, offers to clone a sample agent from Agent365-Samples and continues from there.
+2. Adds the hosting layer — Express + CloudAdapter (Node.js), ASP.NET Core (.NET), or aiohttp (Python)
+3. Creates the AgentApplication subclass with message routing, typing indicators, and email notification handling
+4. Updates required environment variables. **Does NOT create `ToolingManifest.json`** — that file is owned by `add-workiq-tools`, which writes it via `a365 develop add-mcp-servers` using the live catalog from `a365 develop list-available` (keeps `url`, `audience`, `scope` authoritative; pre-populating here would silently bypass the WorkIQ offer at Phase 9.6).
+5. Runs `a365 setup all --aiteammate --m365` — creates the Blueprint and Agentic User identity in Entra ID, and registers the agent in the M365 admin center. `--m365` is **always passed** for AI Teammate; no user question.
+6. **State-matrix routing (Phase 0C):** detects three primary skill-state flags — `has_obs`, `has_workiq`, `disk_blueprint_present` — and routes through an **8-row matrix**. Skip-gates: Phase 9.5 (Observability) is skipped if `has_obs = true`; Phase 9.6 (WorkIQ) is skipped if `has_workiq = true`. **Phase 9.7.1a is the verification gate for the blueprint dimension** — `disk_blueprint_present` (derived from disk at read-time) is advisory only; the user is always asked explicitly (**Reuse / Re-run / Fresh**) before any skip/reuse decision (handles cases where disk lies about tenant state). Row 8 (T/T/T) shows an additional Phase 0C sub-question: **Re-publish** or **Verify only**. The skill is idempotent — re-run safely and it will skip whatever's already wired.
+
+7. **Run Target + Publish pipeline.** Phase 9.7.2 asks **Prod vs Local** (remembered in `.a365-workspace-detection.local.json` with confirm-on-rerun).
+
+   For `runTarget = "prod"`:
+   - **Phase 9.7.2b — Hosting:** *dev tunnel* (devtunnel exposes localhost for in-Teams testing) or *cloud endpoint* (Azure App Service / Container Apps / Functions; AWS App Runner / Lambda + API Gateway / ECS; Google Cloud Run / App Engine / Cloud Functions). Stored as `chosenEndpoint`.
+   - **Phase 9.7.2c — Endpoint reconciliation:** `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` when `chosenEndpoint` differs from the blueprint's `messagingEndpoint`. `--m365` is required — without it the CLI silently skips the Teams Graph re-registration.
+   - **Phase 9.7.2d — Env validation:** confirms agentic-auth + LLM + observability vars in `.env` / `appsettings.json`; verifies `a365.generated.config.json` has `completed: true` + non-empty `resourceConsents` (else surfaces the GA-consent PowerShell handoff); reminds the user that cloud env vars must be set at the platform level (`az webapp config appsettings set` / `eb setenv` / `gcloud run services update --set-env-vars`), not just locally.
+   - **Verify manifest** (read-only, never hand-edit — re-run `a365 setup all --aiteammate` on validation errors). CLI owns the v1.22+ schema, `bots[0].botId`, `webApplicationInfo.id`, `copilotAgents.customEngineAgents`, `validDomains`.
+   - **`a365 publish`** packages into `manifest.zip` (or `appPackage.zip` for Teams Toolkit). Does NOT upload — M365 Admin Center upload is always manual. Does NOT touch the bot endpoint.
+   - **Manual step (a) — Teams Dev Portal config** at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`: Agent Type = API Based, Notification URL = the reconciled `messagingEndpoint`. Required for Teams to deliver messages.
+   - **Manual step (b) — Instance request** from Teams Apps + admin approval at admin.cloud.microsoft.
+
+   For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default). All publish / Dev-Portal / MAC-upload / instance steps are skipped — routes directly to AgentsPlayground. Phase 9.7.2d still runs to confirm AgentsPlayground is installed and `.m365agentsplayground.yml` is present.
+
+   **Microsoft Learn refs:** [create-instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance) · [testing](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/testing) · [test-with-devtunnels](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels) · [deploy-agent-azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure) · [aws](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws) · [gcp](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp).
+8. Runs `instrument-observability` automatically when `has_obs = false` — part of the AI Teammate package. **Skipped when `has_obs = true`** (already wired).
+9. Offers `add-workiq-tools` as optional when `has_workiq = false` — asks the user; can be run later via `/agent365:add-workiq-tools`. **Skipped when `has_workiq = true`** (already wired).
+
+**Reference patterns:**
+- Node.js: [plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-ai-teammate.md)
+- Node.js notifications: [plugins/agent365/skills/make-ai-teammate/references/nodejs-notifications.md](../plugins/agent365/skills/make-ai-teammate/references/nodejs-notifications.md)
+- .NET: [plugins/agent365/skills/make-ai-teammate/references/dotnet-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/dotnet-ai-teammate.md)
+- Python: [plugins/agent365/skills/make-ai-teammate/references/python-ai-teammate.md](../plugins/agent365/skills/make-ai-teammate/references/python-ai-teammate.md)
 
 ---
 

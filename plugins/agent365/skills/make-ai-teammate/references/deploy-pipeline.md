@@ -206,8 +206,9 @@ Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-w
      ```
      Confirm the agent printed `Server listening on http://...` (Node.js / Python) or `Now listening on: http://...` (.NET) before continuing. If it fails to bind to the port, surface the verbatim error and stop.
   7. **Store `chosenEndpoint`** = `<tunnel URL>/api/messages` (forward slashes — never `\`). Tell the user verbatim: *"Dev tunnel started at `<URL>` (relay → local HTTP), agent listening on port `<port>`. Both running in the background — leave this session open. Using this endpoint for reconcile + publish."*
+  8. **Write `.vscode/` workspace files** so the user can `Ctrl+Shift+B` on subsequent sessions to restart the tunnel + agent without re-running this skill. See [Step 9.7.2f — VS Code workspace files](#step-9-7-2f--vs-code-workspace-files) below for the templates.
 
-- **`runTargetHosting = "cloud"`:** ask the user for the full messaging endpoint URL (must be HTTPS and end in `/api/messages`). If they don't have one yet, point them at the appropriate deploy guide above for their chosen platform. Store as `chosenEndpoint`.
+- **`runTargetHosting = "cloud"`:** ask the user for the full messaging endpoint URL (must be HTTPS and end in `/api/messages`). If they don't have one yet, point them at the appropriate deploy guide above for their chosen platform. Store as `chosenEndpoint`. Then write `.vscode/` workspace files (see [Step 9.7.2f](#step-9-7-2f--vs-code-workspace-files) — the cloud variant omits the devtunnel task but still includes Publish + Open Dev Portal).
 
 ### Step 9.7.2c — Reconcile endpoint with the blueprint
 
@@ -293,8 +294,143 @@ If any check fails, STOP and surface the exact failure to the user. Do not conti
 5. **`BEARER_TOKEN` is local-only.** If `BEARER_TOKEN` or `BEARER_TOKEN_<SERVER_NAME>` is set for local dev (via `a365 develop get-token`), make sure these are NEVER carried into prod cloud config.
 
 **Routing:**
-- **`runTarget = "prod"`** → continue with Step 9.7.3 (Verify manifest) and the full publish / Dev Portal / instance pipeline. Dev Portal Notification URL (Step 9.7.5) = the reconciled `messagingEndpoint`.
-- **`runTarget = "local"`** → skip Steps 9.7.3 – 9.7.6 entirely. Jump directly to Step 9.7.7 — AgentsPlayground only.
+- **`runTarget = "prod"`** → continue with Step 9.7.2f (write VS Code workspace files) then Step 9.7.3 (Verify manifest).
+- **`runTarget = "local"`** → skip Steps 9.7.3 – 9.7.6 entirely. Run Step 9.7.2f first (it's useful for local dev too — `Ctrl+Shift+B` becomes "Start Agent + AgentsPlayground"), then jump to Step 9.7.7.
+
+---
+
+### Step 9.7.2f — Workspace files for VS Code AND Claude Code (`.vscode/*` + `.claude/*`)
+
+Write workspace files at the user's project root so subsequent dev sessions don't re-run the skill, and so the chat agent can invoke dev-loop commands **directly without permission prompts** (collapsing 8–10 mid-flow pauses to 0).
+
+**Two surfaces, two file sets** — write both. They cover different chat clients:
+
+| File | Reader | Effect |
+|---|---|---|
+| `.vscode/tasks.json` | VS Code (Tasks system + Copilot Chat agent mode) | `Ctrl+Shift+B` runs "A365: Start Tunnel + Agent"; Copilot Chat invokes tasks without prompting |
+| `.vscode/settings.json` | VS Code (Copilot Chat) | `chat.tools.terminal.autoApprove` skips Allow/Skip on listed commands |
+| `.vscode/extensions.json` | VS Code | Recommends Copilot, Claude Code, markdownlint, etc. |
+| `.claude/settings.json` | Claude Code (CLI + IDE-embedded) | `permissions.allow` skips permission prompts on listed Bash patterns |
+
+**Idempotency rule:** all four files are additive — if they already exist, merge non-destructively. Never overwrite a user's existing entry. Show a one-line summary: *"Updated .vscode/tasks.json (+5 tasks), .vscode/settings.json (+3 keys), .vscode/extensions.json (+4 recs), .claude/settings.json (+12 allow rules)"*.
+
+**`tasks.json`** — language- and run-target-aware. Pick the `agentCommand` row based on `programmingLanguage` from the detection cache. Omit the *A365: Devtunnel* + *A365: Start Tunnel + Agent* tasks for `runTargetHosting = "cloud"`.
+
+| Language | `agentCommand` |
+|---|---|
+| `NodeJS` | `npm run build && node dist/index.js` |
+| `Python` | `python host_agent_server.py` (or `python3` on macOS/Linux) |
+| `DotNet` | `dotnet run` |
+
+```jsonc
+{
+  "version": "2.0.0",
+  "inputs": [
+    { "id": "agentName", "type": "promptString", "description": "Agent name (from a365.generated.config.json)", "default": "<agent-name>" }
+  ],
+  "tasks": [
+    {
+      "label": "A365: Start Tunnel + Agent",
+      "dependsOrder": "parallel",
+      "dependsOn": ["A365: Devtunnel", "A365: Agent"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "A365: Devtunnel",
+      "type": "shell",
+      "command": "devtunnel host ${input:agentName}-tunnel",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": { "pattern": [{ "regexp": "." }], "background": { "activeOnStart": true, "beginsPattern": "Hosting", "endsPattern": "Listening" } }
+    },
+    {
+      "label": "A365: Agent",
+      "type": "shell",
+      "command": "<agentCommand from table above>",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": []
+    },
+    { "label": "A365: Publish",          "type": "shell", "command": "a365 publish",                    "problemMatcher": [] },
+    { "label": "A365: Setup All",         "type": "shell", "command": "a365 setup all --aiteammate --m365", "problemMatcher": [] },
+    { "label": "A365: Open Dev Portal",   "type": "shell", "command": "start \"\" https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration", "windows": { "command": "start \"\" https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration" }, "problemMatcher": [] }
+  ]
+}
+```
+
+Substitute `<agent-name>` with the agent name from session context; `<agentCommand>` with the language-appropriate row; `<agentBlueprintId>` with the blueprint ID from `a365.generated.config.json` (use a fallback `${env:AGENT_BLUEPRINT_ID}` if the file isn't readable at write-time).
+
+**`settings.json`** — auto-approve known-safe commands so Copilot Chat's agent mode runs them without prompting. Merge with existing keys; never override user-set values.
+
+```jsonc
+{
+  "chat.tools.terminal.autoApprove": {
+    "a365": true,
+    "devtunnel": true,
+    "dotnet": true,
+    "npm": true,
+    "node": true,
+    "python": true,
+    "python3": true
+  },
+  "chat.agentSkillsLocations": { ".agents/skills": true },
+  "files.associations": {
+    "*.local.json": "jsonc",
+    "a365.config.json": "jsonc",
+    "a365.generated.config.json": "jsonc"
+  }
+}
+```
+
+**`extensions.json`** — recommend the toolchain. Language-specific extensions per `programmingLanguage`:
+
+```jsonc
+{
+  "recommendations": [
+    "github.copilot",
+    "github.copilot-chat",
+    "anthropic.claude-code",
+    "davidanson.vscode-markdownlint",
+    "editorconfig.editorconfig"
+    // + "dbaeumer.vscode-eslint" (NodeJS)
+    // + "ms-dotnettools.csharp" (DotNet)
+    // + "ms-python.python", "ms-python.vscode-pylance" (Python)
+  ]
+}
+```
+
+**`.claude/settings.json`** — Claude Code's permission allowlist for the same set of commands the VS Code `autoApprove` covers. Merge with existing `permissions.allow` array; deduplicate.
+
+```jsonc
+{
+  "permissions": {
+    "allow": [
+      "Bash(a365 *)",
+      "Bash(devtunnel *)",
+      "Bash(dotnet *)",
+      "Bash(npm *)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(uv *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(az account show)",
+      "Bash(az webapp config appsettings list *)"
+    ]
+  }
+}
+```
+
+> ⚠️ The `allow` list deliberately omits destructive commands (`git push`, `git reset --hard`, `az group delete`, `dotnet ef migrations remove`, `npm uninstall`, etc.) — those still prompt. The skill is granting auto-approval for the *known dev loop*, not blanket trust.
+
+**Verification:** after writing, run `code --list-extensions 2>/dev/null` (or just tell the user "open VS Code → Tasks: Run Task → you should see `A365: Start Tunnel + Agent`"). If the user is in VS Code already, suggest `Developer: Reload Window` to pick up the new associations. For Claude Code users, the new permission rules apply on the next prompt — no restart needed.
+
+**Why this matters:** chat agents read these files to decide which commands run without prompts. Without them, every `a365 publish` / `devtunnel host` / `npm run build` triggers an *Allow / Skip* prompt — the #1 source of the mid-flow pauses users reported in 1.0.0. With them, the same commands flow through silently on **both VS Code Copilot Chat AND Claude Code (CLI + IDE)**.
 
 ---
 
