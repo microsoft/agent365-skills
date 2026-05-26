@@ -58,9 +58,16 @@ describe('validate-workiq — ToolingManifest', () => {
 describe('validate-workiq — Node.js', () => {
   test('valid wiring → ok', () => {
     const dir = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ programmingLanguage: 'NodeJS', agentStack: 'LangChain' }),
       'ToolingManifest.json': MANIFEST_VALID,
-      'package.json': JSON.stringify({ name: 'my-agent', dependencies: { '@microsoft/agents-a365-tooling': '^1.0.0' } }),
-      'index.ts': `import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling';`,
+      'package.json': JSON.stringify({
+        name: 'my-agent',
+        dependencies: {
+          '@microsoft/agents-a365-tooling': '^1.0.0',
+          '@microsoft/agents-a365-tooling-extensions-langchain': '^1.0.0',
+        },
+      }),
+      'index.ts': `import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';`,
     });
     try {
       const r = runValidator(VALIDATOR, dir);
@@ -70,14 +77,15 @@ describe('validate-workiq — Node.js', () => {
 
   test('missing tooling package in package.json → reports package', () => {
     const dir = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ programmingLanguage: 'NodeJS', agentStack: 'LangChain' }),
       'ToolingManifest.json': MANIFEST_VALID,
       'package.json': JSON.stringify({ name: 'my-agent', dependencies: {} }),
-      'index.ts': `import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling';`,
+      'index.ts': `import { McpToolRegistrationService } from '@microsoft/agents-a365-tooling-extensions-langchain';`,
     });
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
-      assert.match(r.reason, /agents-a365-tooling is not in package\.json/);
+      assert.match(r.reason, /agents-a365-tooling.*not in package\.json/);
     } finally { cleanup(dir); }
   });
 

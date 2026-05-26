@@ -14,8 +14,9 @@ Official sample:
 # See all available MCP servers in the catalog
 a365 develop list-available
 
-# Add selected WorkIQ servers (updates ToolingManifest.json only — no permissions yet)
-a365 develop add-mcp-servers "Work IQ Mail" "Work IQ Calendar" "Work IQ Teams"
+# Add selected WorkIQ servers — names MUST match exact mcpServerName from list-available.
+# V2 catalog names shown; pull current values from your `a365 develop list-available` output.
+a365 develop add-mcp-servers "mcp_MailTools" "mcp_CalendarTools" "mcp_TeamsTools"
 
 # Verify what is now configured
 a365 develop list-configured
@@ -52,18 +53,20 @@ Token variable naming: `BEARER_TOKEN_<UPPERCASE_SERVER_UNIQUE_NAME>` — e.g. `m
 
 ---
 
-## Available WorkIQ Servers (from a365 develop list-available)
+## Available WorkIQ Capabilities
 
-| Display Name | Category |
+Run `a365 develop list-available` for the live catalog — these are capability categories, not the exact CLI argument names (V2 names look like `mcp_MailTools`, `mcp_CalendarTools`, etc.).
+
+| Capability | Category |
 |---|---|
-| Work IQ Mail | Email |
-| Work IQ Calendar | Calendar |
-| Work IQ Teams | Teams chat |
-| Work IQ SharePoint | Documents |
-| Work IQ OneDrive | File storage |
-| Work IQ Word | Documents |
-| Work IQ User | Profile / presence |
-| Work IQ Copilot | M365 Copilot |
+| Mail | Email |
+| Calendar | Calendar |
+| Teams | Teams chat |
+| SharePoint | Documents |
+| OneDrive | File storage |
+| Word | Documents |
+| User / Presence | Profile / presence |
+| Copilot | M365 Copilot |
 | Dataverse and Dynamics 365 | Business data |
 
 ---
@@ -91,9 +94,18 @@ dotnet add package Microsoft.Agents.A365.Tooling.Extensions.AgentFramework
 
 ## Program.cs — Service Registration
 
-Both AF and SK extensions ship an `AddMcpServices()` extension method that registers both interfaces as **Scoped** in one line. The official samples currently use the two-line `AddSingleton` form below (both work); the one-liner is the canonical option going forward.
+Use the two-line `AddSingleton` form — it matches the verified `Agent365-Samples` AF sample and the lifetime aligns with `AgentApplication`'s singleton agent host.
 
-**Recommended (one-liner):**
+**Recommended (matches the verified sample):**
+```csharp
+// A365 WorkIQ — added by add-workiq-tools skill
+using Microsoft.Agents.A365.Tooling;
+
+builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
+builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
+```
+
+**Alternative (one-liner — Scoped lifetimes):**
 ```csharp
 // A365 WorkIQ — added by add-workiq-tools skill
 using Microsoft.Agents.A365.Tooling;
@@ -103,16 +115,7 @@ using Microsoft.Agents.A365.Tooling;
 builder.Services.AddMcpServices();
 ```
 
-**Alternative (matches the official samples):**
-```csharp
-// A365 WorkIQ — added by add-workiq-tools skill
-using Microsoft.Agents.A365.Tooling;
-
-builder.Services.AddSingleton<IMcpToolRegistrationService, McpToolRegistrationService>();
-builder.Services.AddSingleton<IMcpToolServerConfigurationService, McpToolServerConfigurationService>();
-```
-
-> **Lifetime note:** `AddMcpServices()` uses `Scoped` registrations; the sample pattern uses `Singleton`. Both work for the standard request-scoped agent host. If you change to a long-lived background worker, prefer `Scoped` to keep the `IMcpToolServerConfigurationService` aligned with per-request lifetime.
+> **Lifetime note:** `AddMcpServices()` uses `Scoped` registrations; the verified AF sample uses `Singleton`. **Prefer `AddSingleton`** because `AgentApplication`'s agent host is itself a Singleton — if it captures a Scoped `IMcpToolRegistrationService`, you hit captive-dependency issues (the agent retains a stale scope when the request finishes). The `AddMcpServices()` Scoped form is reasonable only for long-lived background workers where the consuming service is itself Scoped.
 
 ---
 
@@ -219,19 +222,7 @@ The GA must run `a365 setup permissions mcp` from the project directory (where `
 
 ### Permissions per server
 
-All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the Graph scopes below are granted at the Entra app level.
-
-| WorkIQ Server | V1/V2 | Graph Delegated Scopes |
-|---------------|-------|------------------------|
-| Work IQ Mail | V2 | `Mail.ReadWrite`, `Mail.Send` |
-| Work IQ Calendar | V2 | `Calendars.ReadWrite` |
-| Work IQ Teams | V2 | `ChannelMessage.Read.All`, `Team.ReadBasic.All` |
-| Work IQ SharePoint | V2 | `Sites.ReadWrite.All`, `Files.ReadWrite.All` |
-| Work IQ OneDrive | V2 | `Files.ReadWrite.All` |
-| Work IQ Word | V2 | `Files.ReadWrite.All` |
-| Work IQ User | V2 | `User.Read`, `Presence.Read.All` |
-| Work IQ Copilot | V2 | `AiEnterpriseInteraction.ReadWrite.All` |
-| Dataverse & Dynamics 365 | V1/V2 | `user_impersonation` (Dataverse resource) |
+All WorkIQ servers use **delegated** scopes — they require an OBO token (signed-in user or Agentic User). The agent code wires `Tools.ListInvoke.All`; the per-server Graph scopes are granted at the Entra app level by `a365 setup permissions mcp`, which reads them from the live catalog. Run `a365 develop list-available` to see the current scopes required per server — we don't reproduce them here because the catalog evolves.
 
 ---
 

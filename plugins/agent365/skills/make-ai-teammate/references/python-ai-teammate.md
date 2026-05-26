@@ -23,7 +23,7 @@ dependencies = [
     # "semantic-kernel",                                  # Semantic Kernel
 
     # Microsoft Agents SDK — hosting and integration
-    "microsoft-agents-hosting-aiohttp >= 0.9.1",
+    "microsoft-agents-hosting-aiohttp >= 1.0.0",
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
@@ -53,7 +53,7 @@ dependencies = [
     # "microsoft-agents-a365-tooling-extensions-openai >= 1.0.0",
     # "microsoft-agents-a365-tooling-extensions-claude >= 1.0.0",
 
-    "microsoft-opentelemetry >= 0.1.0a3",
+    "microsoft-opentelemetry >= 1.2.0",
 ]
 
 [tool.uv]
@@ -66,6 +66,30 @@ uv sync
 # or
 pip install -e .
 ```
+
+---
+
+## Tested-against version matrix
+
+Patterns in this reference are validated against these versions. pip excludes pre-releases by default (unlike npm's `latest` dist-tag behavior), so a plain `pip install` is safer than the Node.js equivalent — but `[tool.uv] prerelease = "allow"` flips that, so be aware that uv will pick up pre-releases of the A365 packages.
+
+| Package | Tested version | Pin |
+|---------|----------------|-----|
+| `microsoft-agents-hosting-aiohttp` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-hosting-core` | 0.9.x | unpinned |
+| `microsoft-agents-authentication-msal` | 0.9.x | unpinned |
+| `microsoft-agents-activity` | 0.9.x | unpinned |
+| `microsoft-agents-a365-runtime` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-a365-notifications` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-a365-observability-core` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-a365-observability-hosting` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-a365-tooling` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-agents-a365-tooling-extensions-agentframework` | 1.0.0 | `>= 1.0.0` |
+| `microsoft-opentelemetry` | 1.2.0 | `>= 1.2.0` |
+
+> If you want to **block** preview upgrades while uv has `prerelease = "allow"`, change the constraint to `== 1.0.0` (exact pin) on the A365 packages. Removing the `[tool.uv] prerelease = "allow"` line is now safe — `microsoft-opentelemetry` reached GA at `1.2.0`, so plain `pip install` / `uv sync` resolves stable versions without `--pre`.
+
+> **Preview package workarounds:** if you end up on a `microsoft-agents-a365-*` pre-release, expect type shapes to drift from the GA AgentInterface contract. Common compile-break: `add_tool_servers_to_agent` may require `initial_tools=[]` as a positional arg in preview vs keyword in GA. Pass `initial_tools=[]` explicitly to be safe. Downgrade to `== 1.0.0` if drift becomes painful.
 
 ---
 
@@ -312,7 +336,26 @@ class GenericAgentHost:
         await asyncio.Event().wait()  # keep running
 
     async def _handle_messages(self, request: web.Request) -> web.Response:
-        return await self._adapter.process(request)
+        # Per-request log — cheap "did Teams reach us?" debugging default.
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        text = (body.get("text") or "")[:60]
+        logger.info(
+            f"[/api/messages] type={body.get('type')} "
+            f"from={(body.get('from') or {}).get('name')} text={text}"
+        )
+        # Belt-and-suspenders: if the SDK exposes an on_turn_error hook on the adapter
+        # (Bot-Framework convention), configure it in start_server(). The outer try/except
+        # here catches anything that escapes — auth/context-setup errors or hook-internal
+        # throws — and returns 500 so we don't crash the aiohttp event loop.
+        try:
+            return await self._adapter.process(request)
+        except Exception as err:
+            logger.exception("[/api/messages] adapter.process raised", exc_info=err)
+            return web.Response(status=500, text='{"error":"Internal server error"}',
+                                content_type="application/json")
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         import json
@@ -460,47 +503,78 @@ def extract_turn_context_details(
 
 ## .env template
 
-```dotenv
-# A365 Authentication
-# AUTH_HANDLER_NAME picks the auth handler at runtime. For prod (Teams /
-# Copilot reachable) this MUST be AGENTIC — leaving it empty causes every
-# incoming Teams message to fail token exchange.
-AUTH_HANDLER_NAME=AGENTIC
-# BEARER_TOKEN is local-dev only (acquired via `a365 develop get-token`).
-# Do NOT carry this into prod cloud config.
-BEARER_TOKEN=
+Every key below is consumed by something specific. Comments indicate run-target applicability so the skill can flip values based on `runTarget` from `.a365-workspace-detection.local.json`.
 
+### What reads what (canonical mapping)
+
+| Key | Consumer | Required when |
+|---|---|---|
+| `AZURE_OPENAI_*` / `OPENAI_API_KEY` | `agent.py` LLM client constructor | always |
+| `PORT` | `host_agent_server.py` (`web.TCPSite`) | always |
+| `PYTHON_ENVIRONMENT` | App code convention (`Development` / `Production`). Python SDK does NOT have a NODE_ENV-style silent-401 gate, so this is mostly informational. | annotate target |
+| `AUTH_HANDLER_NAME` | Python agent code at runtime to pick the active handler. `AGENTIC` in prod; empty leaves the agent with no handler. | prod / dev tunnel |
+| `USE_AGENTIC_AUTH` | Per-project sample code (NOT the SDK) — switches between agentic-auth and `BEARER_TOKEN` paths for MCP. `true` for prod, `false` for local. | always (project-dependent) |
+| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__{CLIENTID,CLIENTSECRET,TENANTID}` | `MsalConnectionManager.from_environment()` → outbound auth for Teams replies | prod / dev tunnel |
+| `CONNECTIONSMAP_0_{SERVICEURL,CONNECTION}` | Connection routing | prod / dev tunnel |
+| `AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__{TYPE,SCOPES}` | Auth-handler settings | prod / dev tunnel |
+| `ENABLE_A365_OBSERVABILITY_EXPORTER` | `microsoft-opentelemetry` distro (single canonical read) | prod (`=true`) / local (`=false`) |
+| `agent365Observability__agentId`, `__tenantId` | Stamped by `a365 setup all`; read by observability wiring for `AgentDetails` → MAC portal grouping | prod / dev tunnel |
+| `agent365Observability__agentName`, `__agentDescription` | Optional span attributes | optional |
+| `BEARER_TOKEN` | Local MCP testing only (`a365 develop get-token`) | local-only — empty in prod |
+
+> **What's NOT in this template** (parity with Node.js): `agent365Observability__agentBlueprintId` / `__clientId` / `__clientSecret` / `__sponsorUser*` — none of these are written by `a365 setup all` for Python or read by `microsoft-opentelemetry`. The `sponsorUser*` keys are S2S-only per `instrument-observability/SKILL.md`; AI Teammate uses `agentic-user`, where `CallerDetails` come from the turn context.
+
+### The template
+
+```dotenv
+# ── LLM (always required — pick one stack) ─────────────────────────────────
 # Azure OpenAI
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_DEPLOYMENT=
 AZURE_OPENAI_API_VERSION=2024-05-01-preview
+# OR: OPENAI_API_KEY=
 
-# A365 Connections
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=
-CONNECTIONS__SERVICE_CONNECTION__SETTINGS__SCOPES=
+# ── Server (always required) ────────────────────────────────────────────────
+PORT=3978
+# Skill rewrites this based on runTarget — informational marker, not a silent-401 gate (unlike Node.js NODE_ENV).
+PYTHON_ENVIRONMENT=Production
+LOG_LEVEL=INFO
 
-CONNECTIONSMAP_0_SERVICEURL=*
-CONNECTIONSMAP_0_CONNECTION=SERVICE_CONNECTION
-
-# Agentic auth settings
+# ── Agentic auth handler (prod / dev tunnel) ────────────────────────────────
+AUTH_HANDLER_NAME=AGENTIC
 USE_AGENTIC_AUTH=true
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__TYPE=AgenticUserAuthorization
 AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__SCOPES=https://graph.microsoft.com/.default
 
-# A365 Observability
-# Required for prod — sends spans to Agent 365 portal + Microsoft Defender.
-# Set to `false` for local dev (console-only). The full set of observability
-# vars (sponsor identity etc.) is wired by `instrument-observability`.
-ENABLE_A365_OBSERVABILITY_EXPORTER=true
+# ── Bot Framework outbound auth (prod / dev tunnel) ─────────────────────────
+# Populated by `a365 setup all --aiteammate --m365` from a365.generated.config.json.
+CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=
+CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=
+CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=
+CONNECTIONSMAP_0_SERVICEURL=*
+CONNECTIONSMAP_0_CONNECTION=SERVICE_CONNECTION
 
-# Server
-PORT=3978
-PYTHON_ENVIRONMENT=development
-LOG_LEVEL=INFO
+# ── Observability (prod / dev tunnel) ───────────────────────────────────────
+ENABLE_A365_OBSERVABILITY_EXPORTER=true
+agent365Observability__agentId=
+agent365Observability__tenantId=
+agent365Observability__agentName=
+agent365Observability__agentDescription=
+
+# ── Local-only (AgentsPlayground / local MCP testing) ───────────────────────
+# Leave empty in prod — agentic identity handles MCP auth at runtime.
+BEARER_TOKEN=
 ```
+
+### Skill behavior — rewriting based on `runTarget`
+
+When `make-ai-teammate` Phase 8 runs for a Python project, the skill reads `runTarget` from `.a365-workspace-detection.local.json` and rewrites these keys (the rest are additive-only):
+
+| Run target | `PYTHON_ENVIRONMENT` | `USE_AGENTIC_AUTH` | `ENABLE_A365_OBSERVABILITY_EXPORTER` |
+|---|---|---|---|
+| `runTarget=prod` AND `runTargetHosting ∈ {devtunnel, cloud}` | `Production` | `true` | `true` |
+| `runTarget=local` (AgentsPlayground) | `Development` | `false` | `false` |
 
 ---
 
@@ -513,6 +587,8 @@ LOG_LEVEL=INFO
 | `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
+| Outer `try/except` around `self._adapter.process(request)` in `_handle_messages` | Bot-Framework convention exposes an `on_turn_error` hook on adapters that catches errors inside the turn lifecycle. If your `microsoft-agents-hosting` version exposes that hook, configure it in `start_server()` (`self._adapter.on_turn_error = ...`). The outer try/except in `_handle_messages` is the belt-and-suspenders fallback that catches anything escaping the hook (pre-turn auth failures, hook-internal throws), preventing the aiohttp event loop from crashing on `unhandled exception`. |
+| Per-request log line in `_handle_messages` | Cheap "did Teams reach us?" debugging default. Removable in prod if log volume matters. |
 
 ---
 

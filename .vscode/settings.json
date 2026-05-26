@@ -1,5 +1,14 @@
 {
   "chat.agentSkillsLocations": {
     "plugins/agent365/skills": true
+  },
+  "files.associations": {
+    "SKILL.md": "markdown",
+    "*.local.json": "jsonc"
+  },
+  "markdownlint.config": {
+    "MD013": false,
+    "MD033": false,
+    "MD041": false
   }
 }

@@ -77,12 +77,12 @@
     {
       "id": 3,
       "prompt": "Add Work IQ Mail and Work IQ Calendar to this agent",
-      "description": "User specifies exact server names — selective install",
-      "expected_output": "The skill uses the user-provided server names directly, runs a365 develop add-mcp-servers with those two servers, wires agent code per the framework-specific branch from Phase 4, and explains only the permissions relevant to Mail and Calendar.",
+      "description": "User specifies capability intent in natural language — skill maps to exact catalog names",
+      "expected_output": "The skill runs a365 develop list-available, maps the user's natural-language intent ('Work IQ Mail', 'Work IQ Calendar') to the catalog's exact mcpServerName values (e.g. mcp_MailTools, mcp_CalendarTools — current V2 names), runs a365 develop add-mcp-servers with those names, wires agent code per the framework-specific branch from Phase 4, and explains only the permissions relevant to the selected capabilities.",
       "files": [],
       "expectations": [
-        "Phase 2: User-provided server names ('Work IQ Mail', 'Work IQ Calendar') are used directly without re-prompting",
-        "Phase 3: a365 develop add-mcp-servers 'Work IQ Mail' 'Work IQ Calendar' is run as a single command",
+        "Phase 2: a365 develop list-available is run; user's natural-language intent is mapped to the catalog's exact mcpServerName values without re-prompting",
+        "Phase 3: a365 develop add-mcp-servers is run as a single command with the catalog-derived names (e.g. 'mcp_MailTools' 'mcp_CalendarTools'), NOT the user's natural-language strings",
         "Phase 3: Both servers appear in a365 develop list-configured output",
         "Phase 4: Agent code is wired per the framework-specific branch (§4.1–§4.11 depending on agentStack)",
         "Phase 8: Summary lists only the two selected servers"
@@ -132,8 +132,8 @@
         "Phase 1: a365 develop list-configured is run",
         "Phase 1: a365.generated.config.json is found with a non-empty agentBlueprintId",
         "Phase 2: a365 develop list-available is run and output is shown",
-        "Phase 2: User-provided server names ('Work IQ Mail', 'Work IQ Calendar') are used directly",
-        "Phase 3: a365 develop add-mcp-servers 'Work IQ Mail' 'Work IQ Calendar' is run as a single command",
+        "Phase 2: User's natural-language intent ('Work IQ Mail', 'Work IQ Calendar') is mapped to the catalog's exact mcpServerName values without re-prompting",
+        "Phase 3: a365 develop add-mcp-servers is run as a single command with catalog-derived names (e.g. 'mcp_MailTools' 'mcp_CalendarTools'), NOT the user's natural-language strings",
         "Phase 3: ToolingManifest.json is updated by CLI — not hand-edited",
         "Phase 4: Routed to §4.7 Python Agent Framework branch",
         "Phase 4: pip install microsoft-agents-a365-tooling microsoft-agents-a365-tooling-extensions-agentframework runs if missing (note: single-word suffix — '-agent-framework' with dash is NOT a valid pip name)",
@@ -229,6 +229,33 @@
         "Phase 4: EVERY new line is marked: # A365 WorkIQ — best-effort wiring (verify against SDK source before production)",
         "Phase 8: Summary includes a prominent best-effort callout pointing at the SDK source URL: https://github.com/microsoft/Agent365-python/blob/main/libraries/microsoft-agents-a365-tooling-extensions-semantickernel/microsoft_agents_a365/tooling/extensions/semantickernel/services/mcp_tool_registration_service.py",
         "Stop hook validator: Python SK is in the looser best-effort branch — symbol check passes if any microsoft_agents_a365 / McpToolRegistrationService / add_tool_servers_to_agent reference is present; package check requires the semantickernel suffix"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Add WorkIQ tools including Word for this Node.js LangChain agent",
+      "description": "Phase 4.5 gated @mention offer — both gates pass (NodeJS + LangChain AND mcp_WordServer in selection)",
+      "expected_output": "Standard add-workiq-tools flow through Phase 4 wiring. Phase 4.5 fires BOTH gate checks explicitly: gate 1 (framework: NodeJS + LangChain from .a365-workspace-detection.local.json) passes, gate 2 (grep ToolingManifest.json for mcp_WordServer) finds a match. Skill asks via AskUserQuestion: 'You added mcp_WordServer. Do you want this AI Teammate to also notify and reply when someone @mentions it on a Word comment?' On Yes, reads nodejs-workiq.md § Word @mention; edits src/agent.ts to add proactive: {} to AgentApplication super() if missing, adds userKeyToConversationId Map + userKeysFor helper, adds trackConversationForProactive private method called from BOTH message handler AND installationUpdate(add) handler, adds case NotificationType.WpxComment + handleWpxCommentNotification method. Every new line marked best-effort. User shown the 3 gotchas verbatim.",
+      "files": [],
+      "expectations": [
+        "Phase 0C: TaskCreate list includes 'Offer Word @mention handler (if applicable)'",
+        "Phase 3: a365 develop add-mcp-servers includes mcp_WordServer in the argument list",
+        "Phase 3: ToolingManifest.json contains an entry with mcpServerName=mcp_WordServer after Phase 3 completes",
+        "Phase 4: Routed to §4.4 Node.js LangChain branch (standard wiring runs first)",
+        "Phase 4: §4.4 step 4 points to Phase 4.5 — does NOT inline the @mention logic",
+        "Phase 4.5: Gate 1 (framework check) reads cache and verifies programmingLanguage=NodeJS, agentStack=LangChain — passes",
+        "Phase 4.5: Gate 2 (WordServer grep) runs grep -i 'mcpServerName.*mcp_WordServer' ToolingManifest.json — match found — passes",
+        "Phase 4.5: AskUserQuestion fires with the @mention offer — Yes/No options",
+        "Phase 4.5 on Yes: nodejs-workiq.md § Word @mention notification handling (LangChain — BEST-EFFORT) is read",
+        "Phase 4.5 on Yes: src/agent.ts AgentApplication super(...) call is checked for proactive: {} — if missing, added",
+        "Phase 4.5 on Yes: userKeyToConversationId Map + userKeysFor helper added to src/agent.ts",
+        "Phase 4.5 on Yes: trackConversationForProactive private method added; called from BOTH the message handler AND the installationUpdate(add) handler",
+        "Phase 4.5 on Yes: case NotificationType.WpxComment branch + handleWpxCommentNotification method added",
+        "Phase 4.5 on Yes: every new line marked '// A365 WorkIQ — best-effort wiring (verify against SDK source before production)'",
+        "Phase 4.5 on Yes: user is told the 3 gotchas verbatim (document URL on activity.attachments not wpxCommentNotification; proactive DM requires prior install; LLM must be told to use reply tool not AddComment)",
+        "Phase 4.5: SKIPPED with N/A note when agentStack != LangChain (e.g., on OpenAI or Claude SDK stack — Phase 4.5 task completes with note 'N/A — only Node.js LangChain has a verified proactive @mention pattern')",
+        "Phase 4.5: SKIPPED with N/A note when mcp_WordServer is NOT in the selected servers (Phase 4.5 task completes with note 'N/A — mcp_WordServer was not in the selected servers')",
+        "Stop hook validator: passes (Phase 4.5 wiring is optional — validator only checks Phase 4 core wiring)"
       ]
     }
   ]

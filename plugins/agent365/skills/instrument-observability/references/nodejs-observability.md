@@ -8,6 +8,8 @@ into a Node.js agent. Aligned with `@microsoft/opentelemetry` **GA 1.0.x** (upda
 > `@microsoft/agents-a365-runtime`) are **deprecated**. Everything ships from a single
 > package now: `@microsoft/opentelemetry`. See `MIGRATION_A365.md` in the distro repo
 > for the authoritative migration guide.
+>
+> **Sample-lag note (2026-05):** `Agent365-Samples/nodejs/langchain/sample-agent` has migrated to `@microsoft/opentelemetry` and matches the patterns in this reference. `Agent365-Samples/nodejs/openai/sample-agent` still imports from the legacy `@microsoft/agents-a365-observability*` packages as of this writing — the skill direction (unified `@microsoft/opentelemetry`) is forward-looking. If a user's project already has the legacy imports from following the OpenAI sample literally, the skill should migrate them to `@microsoft/opentelemetry` during the wiring step rather than co-existing.
 
 ---
 
@@ -71,18 +73,22 @@ import {
 import { resourceFromAttributes } from '@opentelemetry/resources';
 
 useMicrosoftOpenTelemetry({
-  // Optional: also dump spans to stdout (useful in production for quick triage
-  // alongside the Agent365 backend export).
-  enableConsoleExporters: true,
+  // Console exporter floods prod logs — gate on NODE_ENV and Azure App Service's
+  // WEBSITE_SITE_NAME (the canonical "running on Azure" signal). True in local dev,
+  // false in any deployed environment.
+  enableConsoleExporters: process.env.NODE_ENV !== 'production' && !process.env.WEBSITE_SITE_NAME,
   resource: resourceFromAttributes({
     'service.name': process.env.SERVICE_NAME ?? 'my-agent',
   }),
   a365: {
+    // BOTH flags are required for spans to reach the A365 backend in GA 1.0+:
+    //   - enabled: true                       → registers A365SpanProcessor (enrichment only)
+    //   - enableObservabilityExporter: true   → registers Agent365Exporter (actually sends spans)
+    // Setting only `enabled: true` means spans get baggage enrichment but are NEVER exported.
+    // (You can equivalently set ENABLE_A365_OBSERVABILITY_EXPORTER=true in .env instead of
+    // the code flag — but at least one of the two must be true or no spans reach MAC.)
     enabled: true,
-    // enableObservabilityExporter is OPTIONAL when `ENABLE_A365_OBSERVABILITY_EXPORTER=true`
-    // is set in .env (auto-stamped by `a365 setup all`). Setting it in code is the more
-    // explicit path; either route activates the A365 exporter.
-    // enableObservabilityExporter: true,
+    enableObservabilityExporter: true,
     tokenResolver: (agentId, tenantId) =>
       AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? '',
   },
@@ -91,12 +97,11 @@ useMicrosoftOpenTelemetry({
 });
 ```
 
-> **Exporter activation (GA 1.0):** `a365.enabled: true` registers the
-> `A365SpanProcessor`. To actually send spans to A365 you also need
-> `enableObservabilityExporter: true` **or** the env var
-> `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (auto-stamped into `.env` by
-> `a365 setup all`). Either path works — the env-var route is what production
-> A365 samples ship with.
+> **Exporter activation (GA 1.0+):** TWO toggles are involved and BOTH must resolve to true:
+> - `a365.enabled: true` (code) → registers the `A365SpanProcessor` for baggage/attribute enrichment. **Without export.**
+> - `a365.enableObservabilityExporter: true` (code) **OR** `ENABLE_A365_OBSERVABILITY_EXPORTER=true` (env, auto-stamped by `a365 setup all`) → registers the `Agent365Exporter`. **This is what actually sends spans to MAC.**
+>
+> Setting only `enabled: true` is the #1 silent-failure mode: spans get processed but never exported. Always emit BOTH flags in generated code (or rely on the env var stamp). Source: [A365ConfigurationOptions.ts](https://github.com/microsoft/opentelemetry-distro-javascript/blob/main/src/a365/configuration/A365ConfigurationOptions.ts).
 
 > **OpenAI Agents / LangChain auto-instrumentation is now ON by default.**
 > Do NOT call `OpenAIAgentsTraceInstrumentor.enable()` or
@@ -403,14 +408,19 @@ configureA365Hosting(adapter, {
 
 ## Message Handler
 
-With `configureA365Hosting({ enableBaggage: true })` registered at startup, the handler
-does NOT build baggage manually. Per-turn behavior differs by auth mode.
+**Per-stack patterns — they differ.** Verified against `Agent365-Samples/nodejs/{langchain,openai,claude}/sample-agent`:
 
-> **Alternative pattern (still supported in GA 1.0):** if you prefer per-turn baggage construction over the middleware,
-> `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).sessionDescription(...).build()`
-> is still in the public API. Working langchain sample uses this pattern. The `as any` cast is needed because the
-> GA `TurnContextLike` shape declares `activity.getAgenticTenantId()` as `string` while `@microsoft/agents-hosting`'s
-> `TurnContext` returns `string | undefined`.
+| Stack | Pattern | Where the scope lives |
+|---|---|---|
+| **LangChain** | Canonical wrapping: `preloadObservabilityToken` → outer `baggageScope.run` → `InvokeAgentScope.start` + `InferenceScope.start` INSIDE | `src/agent.ts` message handler |
+| **OpenAI Agents SDK** | Same as LangChain — canonical wrapping | `src/agent.ts` message handler |
+| **Claude SDK** | **`InferenceScope.start` only** — no outer baggageScope, no `InvokeAgentScope`. The Claude sample wraps each LLM call individually inside `src/client.ts`; the handler does not open scopes. | `src/client.ts` query wrapper |
+
+Use the matching pattern for the user's stack. Mixing them produces either silent span drops (LangChain pattern on Claude won't work — Claude sample architecture doesn't reach the handler scopes the same way) or double-instrumentation. The rest of this section describes the **LangChain / OpenAI canonical pattern** — see `Agent365-Samples/nodejs/claude/sample-agent/src/client.ts` for the Claude-specific InferenceScope-only wrapping.
+
+> **`configureA365Hosting({ enableBaggage: true })` middleware (Phase 3) is a fallback** — it auto-populates baggage on the incoming request span, but the spans you'll create later in `InvokeAgentScope.start(...)` are not automatically wrapped by the middleware unless they happen inside the request's async context. In practice this is fragile and leads to the silent `Partitioned into 0 identity groups (N spans skipped)` failure mode. **Prefer the manual outer wrapping below.**
+>
+> The `as any` cast on `turnContext` is needed because the GA `TurnContextLike` shape declares `activity.getAgenticTenantId()` as `string` while `@microsoft/agents-hosting`'s `TurnContext` returns `string | undefined`.
 
 ### OBO and agentic-user — refresh exporter token per turn
 
@@ -427,13 +437,29 @@ configured in your `AgentApplication` decides which identity the token exchange 
 ```typescript
 // A365 Observability — best-effort instrumentation (verify against official sample)
 // A365 auth mode: agentic-user  (or: obo)
-import { AgenticTokenCacheInstance } from '@microsoft/opentelemetry';
+import { AgenticTokenCacheInstance, BaggageBuilder, BaggageBuilderUtils } from '@microsoft/opentelemetry';
 
 async function handleMessage(turnContext: TurnContext, state: ApplicationTurnState) {
-  // BaggageMiddleware (from configureA365Hosting) already populated baggage from TurnContext.
+  // STEP 1 — refresh the exporter token BEFORE entering the baggage scope. Skipping this on
+  // a cold turn means the first export attempt sees an empty token, retries until timeout,
+  // and the span is silently dropped. The token cache is in-memory and lives for the
+  // process lifetime, so this is a no-op on warm turns.
   await preloadObservabilityToken(turnContext);
 
-  // ... your LangChain / OpenAI / agent invocation goes here ...
+  // STEP 2 — build outer baggage scope from TurnContext. This populates microsoft.tenant.id
+  // and gen_ai.agent.id baggage on every span created inside the run() callback. Without
+  // this wrapping, the exporter filters spans as "Partitioned into 0 identity groups
+  // (N spans skipped)" and they are silently dropped — the #1 first-run failure mode.
+  const baggageScope = BaggageBuilderUtils
+    .fromTurnContext(new BaggageBuilder(), turnContext as any)
+    .sessionDescription('agent-turn')
+    .build();
+
+  await baggageScope.run(async () => {
+    // STEP 3 — your InvokeAgentScope + InferenceScope + agent invocation go here.
+    // Nested scopes inherit the outer baggage automatically.
+    // ... LangChain / OpenAI / agent invocation ...
+  });
 }
 
 async function preloadObservabilityToken(turnContext: TurnContext): Promise<void> {
@@ -552,21 +578,36 @@ const callerDetails: CallerDetails = {
   } as UserDetails,
 };
 
-const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails);
+// CANONICAL PATTERN: outer baggage scope MUST wrap InvokeAgentScope + InferenceScope.
+// Without this, the exporter sees spans with no `microsoft.tenant.id` / `gen_ai.agent.id`
+// baggage attached and filters them out as "Partitioned into 0 identity groups (N spans skipped)" —
+// the spans are silently dropped. The working Agent365-Samples LangChain sample uses this exact wrapping.
+import { BaggageBuilder, BaggageBuilderUtils } from '@microsoft/opentelemetry';
 
-try {
-  await scope.withActiveSpanAsync(async () => {
-    scope.recordInputMessages(['Please help me organize my emails']);
-    const response = await invokeAgent(request.content);
-    scope.recordOutputMessages(['I found 15 urgent emails', 'Here is your organized inbox']);
-  });
-} catch (error) {
-  scope.recordError(error as Error);
-  throw error;
-} finally {
-  scope.dispose();
-}
+const baggageScope = BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any)
+  .sessionDescription('email-assistant-turn')
+  .build();
+
+await baggageScope.run(async () => {
+  const scope = InvokeAgentScope.start(request, scopeDetails, agentDetails, callerDetails);
+  try {
+    await scope.withActiveSpanAsync(async () => {
+      scope.recordInputMessages(['Please help me organize my emails']);
+      // Nested InferenceScope / ExecuteToolScope go HERE — they inherit the baggage
+      // from the outer scope, so the exporter sees them as part of the same identity group.
+      const response = await invokeAgent(request.content);
+      scope.recordOutputMessages(['I found 15 urgent emails', 'Here is your organized inbox']);
+    });
+  } catch (error) {
+    scope.recordError(error as Error);
+    throw error;
+  } finally {
+    scope.dispose();
+  }
+});
 ```
+
+> **Why the outer `baggageScope.run` matters:** the A365 exporter groups spans by `(tenantId, agentId)` from baggage before exporting. Spans created outside an active baggage scope have no identity → exporter logs `Partitioned into 0 identity groups (N spans skipped)` → silent drop. This is the #1 first-run failure mode reported by Node.js LangChain users. The `as any` cast on `turnContext` is needed because the GA `TurnContextLike` is stricter than `@microsoft/agents-hosting`'s `TurnContext` type.
 
 > **TIP:** For S2S agents, export `callerDetails` and `userDetails` from the entry
 > point module so all scope files import them alongside `agentDetails`.
@@ -720,15 +761,16 @@ useMicrosoftOpenTelemetry({
     enabled: true,
     enableObservabilityExporter: true,
     tokenResolver: ...,
-    logger: {
-      info: (msg, ...args) => myLogger.info(msg, ...args),
-      warn: (msg, ...args) => myLogger.warn(msg, ...args),
-      error: (msg, ...args) => myLogger.error(msg, ...args),
-    },
+    // `logLevel` is the only logger-related option on A365Options — a pipe-separated
+    // list of levels to emit. There is NO `logger: { info, warn, error }` callback hook
+    // on A365Options in 1.0.x; routing exporter logs through your own logger requires
+    // setting OTEL's diag logger via @opentelemetry/api, not a per-A365 logger option.
     logLevel: 'info|warn|error',
   },
 });
 ```
+
+> **Want exporter logs to flow through your app logger?** A365Options has no `logger` callback. Use `diag.setLogger(...)` from `@opentelemetry/api` before `useMicrosoftOpenTelemetry()` — that pipes the entire OTel SDK (including the A365 exporter) through your custom diag logger.
 
 ---
 
@@ -736,16 +778,35 @@ useMicrosoftOpenTelemetry({
 
 ```dotenv
 # ── A365 Observability ────────────────────────────────────────────────────────
-# Turns on the A365 exporter. In 1.0+ this works only when a365 options are
-# configured programmatically — it cannot activate A365 on its own.
+# REQUIRED for spans to actually export to MAC (auto-stamped by `a365 setup all`).
+# Equivalent to setting `a365.enableObservabilityExporter: true` in code — at least
+# ONE of the two must be true or no spans reach the A365 backend. Setting only
+# `a365.enabled: true` in code without this env var (or the code flag) is the #1
+# silent-export-failure mode.
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
 
 # OpenTelemetry resource service.name (alternative: use OTEL_RESOURCE_ATTRIBUTES)
 SERVICE_NAME=my-agent
 # OTEL_RESOURCE_ATTRIBUTES=service.name=my-agent,service.version=1.0.0
 
-# Log level: pipe-separated list of levels to emit.
-A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
+# ── Observability verbose logging ───────────────────────────────────────────
+# These are COMMENTED OUT by default — uncomment both to debug exporter activity.
+# Without them, the A365 exporter logs through a wrapped getA365Logger() that
+# defaults to 'none' — you see nothing in stdout, even with OTEL_LOG_LEVEL=INFO.
+# Both vars are required together to see [Agent365Exporter] activity:
+#   - OTEL_LOG_LEVEL=INFO          → OTel SDK internal logger
+#   - A365_OBSERVABILITY_LOG_LEVEL → A365 exporter's own logger
+# After enabling, grep for "exported successfully" to confirm spans are flowing.
+# OTEL_LOG_LEVEL=INFO
+# A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
+
+# ── Runtime agent identity vs blueprint id ──────────────────────────────────
+# The `a365 setup all` CLI writes `agent365Observability__agentId=<blueprint-id>` into
+# .env, but that value is the BLUEPRINT id, NOT the runtime AUID. The exporter
+# resolves the runtime AUID from `turnContext.activity.recipient.agenticAppId`
+# on each turn — that's what shows up in MAC Advanced Hunting (`CloudAppEvents`,
+# `AgentId` column). If you write a KQL filter using the blueprint id, you'll get
+# empty results. Filter by AUID, not blueprint id.
 
 # Sponsor / CallerDetails for MAC portal trace visibility (S2S agents — no signed-in user).
 agent365Observability__sponsorUserId=<<Blueprint ID>>
@@ -785,6 +846,7 @@ useMicrosoftOpenTelemetry({
 To investigate export failures, enable verbose logging:
 ```bash
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
+OTEL_LOG_LEVEL=INFO
 A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
 ```
 
@@ -829,7 +891,8 @@ Key console messages:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | No console traces | `useMicrosoftOpenTelemetry()` not initialized early enough | Call it in the entry point before importing LLM or agent modules |
-| Traces not in Admin Center | Missing `enableObservabilityExporter: true` (1.0 breaking change) | Set `enableObservabilityExporter: true` in `a365` options, or `ENABLE_A365_OBSERVABILITY_EXPORTER=true` in env |
+| Traces not in Admin Center | Four common causes, in order of likelihood: (1) `a365.enableObservabilityExporter: true` (or env `ENABLE_A365_OBSERVABILITY_EXPORTER=true`) missing — spans enriched but never exported; (2) missing outer `BaggageBuilderUtils.fromTurnContext(...).build()` wrapping `InvokeAgentScope` — spans have no identity baggage and get filtered; (3) instance not yet approved at admin.cloud.microsoft (no `AgentInstance.UPN` to attribute to); (4) MAC indexing lag (15–90 min after first export). | (1) Add the exporter flag (code) or env var; (2) verify the canonical wrapping pattern in your handler (see Manual Instrumentation Scopes above); (3) confirm instance approval + Agentic User UPN issued; (4) filter your MAC KQL by AUID (`recipient.agenticAppId`), not blueprint id — wait for indexing. |
+| `Partitioned into 0 identity groups (N spans skipped)` in exporter logs | **Expected for spans outside an active baggage scope** — framework / middleware spans created during startup, devtunnel health pings, etc. carry no `microsoft.tenant.id` / `gen_ai.agent.id` baggage and are filtered. NOT an error. | Only worry if the count is non-zero on actual turn spans. The log line you actually want to see for turn spans is `export-group succeeded ... 1 chunk(s) exported successfully` — that confirms a real identity-group reached the backend. |
 | Duplicate spans for OpenAI/LangChain calls | Manual `.enable()` / `.instrument()` call after migration | Remove manual instrumentor calls; auto-instrumentation is ON by default |
 | Spans missing baggage | `configureA365Hosting()` not called | Add `configureA365Hosting(adapter, { enableBaggage: true })` once at startup |
 | Token resolver always returns `''` | `refreshObservabilityToken` not called per turn (OBO) | Call `AgenticTokenCacheInstance.refreshObservabilityToken(...)` at the start of each handler turn |

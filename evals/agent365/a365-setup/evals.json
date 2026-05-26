@@ -24,7 +24,7 @@
         "Step 1: .NET SDK 8+ — if ❌ missing, winget install Microsoft.DotNet.SDK.8 offered with user prompt; if ✅ skip section",
         "Step 1: a365 CLI — if ❌ missing, dotnet tool install offered; if ❌ outdated, dotnet tool update offered; if ✅ skip section",
         "Step 1: Azure CLI — if ❌ missing, winget install Microsoft.AzureCLI offered; if ✅ skip section",
-        "Step 1: a365 setup requirements run and any issues resolved",
+        "Step 1.9: tenant readiness verified via one of (a) tenantReady=true cached, (b) `a365 develop list-available` smoke probe passes and tenantReady=true is written to cache, (c) `a365 setup requirements` runs to completion, or (d) non-admin handoff is surfaced (Application Admin / Cloud App Admin / GA all acceptable)",
         "Step 2: az login --allow-no-subscriptions used — NOT plain az login",
         "Step 2: az account show confirms correct account and tenant after login",
         "Step 2: Entra ID roles confirmed (Agent ID Admin/Developer)",
@@ -222,7 +222,7 @@
         "Step 1: Git install offered — winget install Git.Git (Windows) or platform equivalent",
         "Step 1: Node.js + npm install offered for Node.js agent — winget install OpenJS.NodeJS.LTS",
         "Step 1: After all installs confirmed, a365 -h run to verify CLI is on PATH",
-        "Step 1: a365 setup requirements run to validate environment completeness",
+        "Step 1.9: tenant readiness verified — smoke probe or `a365 setup requirements` or non-admin handoff (Application Admin / Cloud App Admin / GA all acceptable)",
         "Step 2: az login run — user prompted to authenticate",
         "Step 3: Delegates to appropriate skill"
       ]
@@ -243,7 +243,7 @@
         "Phase 1B: authMode and capabilities questions still asked after blueprint decision",
         "Phase 1C: reuseBlueprint=true and existingBlueprintId stored and passed to make-a365-agent",
         "Step 1: Quick scan shows all tools ✅ — no individual tool sections entered or re-prompted",
-        "Step 1: a365 setup requirements still run to validate environment",
+        "Step 1.9: tenant readiness check still performed (smoke probe or configurator); tenantReady cached if probe passes",
         "Step 2: Azure prerequisites confirmed",
         "Step 3: Delegates to make-a365-agent with reuseBlueprint=true",
         "make-a365-agent: Phase 2 (a365 setup all) is skipped when reuseBlueprint=true",
@@ -306,7 +306,7 @@
     {
       "id": 16,
       "prompt": "Set up A365 for this agent",
-      "description": "Row F/F/T at a365-setup — blueprint exists (has_setup=true), no observability or workiq yet; capabilities menu shows Register, Observability, WorkIQ, AI Teammate (no flags trigger hiding)",
+      "description": "Row F/F/T at a365-setup — blueprint exists on disk (disk_blueprint_present=true), no observability or workiq yet; capabilities menu shows Register, Observability, WorkIQ, AI Teammate (no flags trigger hiding)",
       "expected_output": "Phase 1A Step 5 detects has_aiteammate_structure=false, has_obs=false, has_workiq=false; Phase 1A Step 4 detects hasBlueprintConfig=1 (blueprint already provisioned). Phase 1B presents the full 4-option capabilities menu — none are hidden. Blueprint question is asked (reuse vs fresh). Cache writer stores the three primary flags and hasBlueprintConfig; not hasAITeammateChanges.",
       "files": [],
       "expectations": [
