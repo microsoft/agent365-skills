@@ -406,14 +406,11 @@ configureA365Hosting(adapter, {
 
 ## Message Handler
 
-With `configureA365Hosting({ enableBaggage: true })` registered at startup, the handler
-does NOT build baggage manually. Per-turn behavior differs by auth mode.
+**The canonical pattern** (verified against the working Agent365-Samples LangChain sample, and the only one proven to produce spans that surface in MAC) builds baggage manually per-turn using `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).build()` and runs `InvokeAgentScope.start(...)` INSIDE `baggageScope.run(...)`. See the message handler sample below for the exact shape.
 
-> **Alternative pattern (still supported in GA 1.0):** if you prefer per-turn baggage construction over the middleware,
-> `BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).sessionDescription(...).build()`
-> is still in the public API. Working langchain sample uses this pattern. The `as any` cast is needed because the
-> GA `TurnContextLike` shape declares `activity.getAgenticTenantId()` as `string` while `@microsoft/agents-hosting`'s
-> `TurnContext` returns `string | undefined`.
+> **`configureA365Hosting({ enableBaggage: true })` middleware (Phase 3) is a fallback** — it auto-populates baggage on the incoming request span, but the spans you'll create later in `InvokeAgentScope.start(...)` are not automatically wrapped by the middleware unless they happen inside the request's async context. In practice this is fragile and leads to the silent `Partitioned into 0 identity groups (N spans skipped)` failure mode. **Prefer the manual outer wrapping below.**
+>
+> The `as any` cast on `turnContext` is needed because the GA `TurnContextLike` shape declares `activity.getAgenticTenantId()` as `string` while `@microsoft/agents-hosting`'s `TurnContext` returns `string | undefined`.
 
 ### OBO and agentic-user — refresh exporter token per turn
 
