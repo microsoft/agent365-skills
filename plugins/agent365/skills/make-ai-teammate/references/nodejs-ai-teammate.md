@@ -10,38 +10,41 @@ nodejs samples.
 
 ### A365 SDK packages (all frameworks)
 
-All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01. **Always pin the install line to `~1.0.0`** — the packages' `latest` npm dist-tag points at `1.1.0-preview.7`, so an unpinned `npm install @microsoft/agents-a365-*` pulls preview by default. Preview drifts from the GA's type shapes (see "Preview package workarounds" below).
+All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01, with the **`1.1.0-preview.7`** preview line published 2026-05-21. **Pin the install line to `~1.1.0-preview.7`** — GA `~1.0.0` has a runtime bug in the WorkIQ tooling gateway path (`rawServers.map is not a function`) fixed in preview.7 ([PR #255](https://github.com/microsoft/Agent365-nodejs/commit/a9c03f2)). The packages' `latest` npm dist-tag already points at `1.1.0-preview.7`, so unpinned `npm install` resolves correctly, but explicit pins protect against future dist-tag changes. Preview also carries a minor `TurnContextLike` type drift — see "Preview package workarounds" below for the one-line cast.
 
 ```bash
 npm install \
   @microsoft/agents-hosting@^1.2.2 \
   @microsoft/agents-activity \
-  @microsoft/agents-a365-runtime@~1.0.0 \
-  @microsoft/agents-a365-notifications@~1.0.0 \
-  @microsoft/agents-a365-tooling@~1.0.0 \
+  @microsoft/agents-a365-runtime@~1.1.0-preview.7 \
+  @microsoft/agents-a365-notifications@~1.1.0-preview.7 \
+  @microsoft/agents-a365-tooling@~1.1.0-preview.7 \
   dotenv \
   express
 ```
+
+> **Why `~1.1.0-preview.7` and not `~1.0.0` GA?** GA `1.0.x` has a runtime bug — `rawServers.map is not a function` — when the WorkIQ tooling gateway returns the envelope shape `{ mcpServers: [...] }` instead of a top-level array. Fixed in `@microsoft/agents-a365-tooling@1.1.0-preview.7` ([PR #255](https://github.com/microsoft/Agent365-nodejs/commit/a9c03f2), 2026-05-21). All A365 packages move together — pinning the core to preview without the runtime and notifications pins causes resolver drift.
 
 ### MCP tooling adapter (install one for your framework)
 
 For parity with the .NET pattern (`IMcpToolRegistrationService` DI hook in `Program.cs`), Node.js uses a module-level `McpToolRegistrationService` singleton from the framework-specific extension package. Install the one matching your LLM stack:
 
 ```bash
-# LangChain — pin A365 tooling extension to ~1.0.0 (GA) and core+langgraph to v1 so
-# npm resolves peer deps cleanly even if the project's lockfile has @langchain/core@0.3.x
-# (mcp-adapters@1.x peer-requires ^1.0.0). Unpinned A365 packages pull 1.1.0-preview.7 via `latest`.
+# LangChain — pin A365 extensions to ~1.1.0-preview.7 (matches core/runtime above; fixes
+# the rawServers.map gateway-envelope bug). @langchain/core+langgraph stay on v1 so npm
+# resolves peer deps cleanly even when the project's lockfile has @langchain/core@0.3.x
+# (mcp-adapters@1.x peer-requires ^1.0.0).
 npm install \
-  @microsoft/agents-a365-tooling-extensions-langchain@~1.0.0 \
+  @microsoft/agents-a365-tooling-extensions-langchain@~1.1.0-preview.7 \
   @langchain/mcp-adapters@^1.0.0 \
   @langchain/core@^1.0.0 \
   @langchain/langgraph@^1.0.0
 
 # OpenAI Agents SDK
-npm install @microsoft/agents-a365-tooling-extensions-openai@~1.0.0
+npm install @microsoft/agents-a365-tooling-extensions-openai@~1.1.0-preview.7
 
 # Claude SDK
-npm install @microsoft/agents-a365-tooling-extensions-claude@~1.0.0
+npm install @microsoft/agents-a365-tooling-extensions-claude@~1.1.0-preview.7
 ```
 
 Dev dependencies (all frameworks):
@@ -84,12 +87,12 @@ Patterns in this reference are validated against these versions. Newer versions 
 |---------|----------------|-----|
 | `@microsoft/agents-hosting` | 1.3.x | `^1.2.2` |
 | `@microsoft/agents-activity` | 1.5.x | unpinned (`latest` is stable) |
-| `@microsoft/agents-a365-runtime` | 1.0.0 | `~1.0.0` |
-| `@microsoft/agents-a365-notifications` | 1.0.0 | `~1.0.0` |
-| `@microsoft/agents-a365-tooling` | 1.0.0 | `~1.0.0` |
-| `@microsoft/agents-a365-tooling-extensions-langchain` | 1.0.0 | `~1.0.0` |
-| `@microsoft/agents-a365-tooling-extensions-openai` | 1.0.0 | `~1.0.0` |
-| `@microsoft/agents-a365-tooling-extensions-claude` | 1.0.0 | `~1.0.0` |
+| `@microsoft/agents-a365-runtime` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
+| `@microsoft/agents-a365-notifications` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
+| `@microsoft/agents-a365-tooling` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
+| `@microsoft/agents-a365-tooling-extensions-langchain` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
+| `@microsoft/agents-a365-tooling-extensions-openai` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
+| `@microsoft/agents-a365-tooling-extensions-claude` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
 | `@langchain/core` | 1.1.x | `^1.0.0` |
 | `@langchain/mcp-adapters` | 1.1.x | `^1.0.0` |
 | `@langchain/langgraph` | 1.2.x | `^1.0.0` |
@@ -871,7 +874,7 @@ const baggage = new BaggageBuilder()
   .Build();
 ```
 
-**Cleaner fix:** downgrade to GA with `npm install @microsoft/agents-a365-tooling-extensions-langchain@~1.0.0 @microsoft/agents-a365-runtime@~1.0.0 @microsoft/agents-a365-tooling@~1.0.0` — GA has no type drift. Use casts only when you can't downgrade.
+**Fix:** keep the `as TurnContextLike` cast shown above. Do **NOT** downgrade `@microsoft/agents-a365-tooling` / `-runtime` / `-extensions-*` to `~1.0.0` GA — those versions have a known runtime bug (`Failed to read MCP servers from endpoint: UNKNOWN rawServers.map is not a function`) when the WorkIQ gateway returns the envelope response shape. The fix landed in `1.1.0-preview.7` ([PR #255](https://github.com/microsoft/Agent365-nodejs/commit/a9c03f2)) — staying on preview is the correct trade-off.
 
 ---
 
