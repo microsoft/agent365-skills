@@ -228,6 +228,8 @@ Show the full dry-run output to the user, then ask:
 
 ### 2.2 — Apply setup
 
+> ⚠️ **`a365 setup all` is long-running and block-buffers under chat-tool execution.** If output stalls, see [AGENTS.md § CLI output buffering under chat-tool execution](../../../../AGENTS.md#cli-output-buffering-under-chat-tool-execution) — preferred remediation is `run_in_background: true` (Claude Code Bash tool); fallback is hand-off to a separate terminal.
+
 Choose the right flags based on the detected agent type:
 
 ```bash

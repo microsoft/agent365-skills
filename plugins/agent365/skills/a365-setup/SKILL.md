@@ -618,6 +618,8 @@ a365 setup requirements
 
 The command is **interactive** — it shows a `(y/N)` confirmation prompt before modifying the app registration. Use `--yes` for CI. Works without `a365.config.json`. Single-category re-runs: `--category Azure|Authentication|PowerShell`.
 
+> ⚠️ **Long-running command — output may buffer under chat-tool execution.** If output stalls, see [AGENTS.md § CLI output buffering under chat-tool execution](../../../../AGENTS.md#cli-output-buffering-under-chat-tool-execution).
+
 **1.9.4 — If the user lacks an admin role**, the CLI detects this via the `wids` claim in the access token and falls back to printing PowerShell handoff scripts. Surface a clean handoff rather than just dumping CLI output:
 
 > ⚠️ **Tenant prerequisites need a one-time admin run.** Most developers don't have admin — that's expected. Ask your tenant admin to run this once:

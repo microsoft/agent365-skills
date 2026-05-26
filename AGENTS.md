@@ -47,7 +47,7 @@ test-local  (no prerequisite)
 **Phase 9.7.2d** validates environment configuration before either path proceeds. For prod: confirms `a365.generated.config.json` has `completed: true` and non-empty `resourceConsents` (else GA consent handoff is pending); confirms `.env`/`appsettings.json` has agentic-auth + LLM + observability vars; reminds the user that cloud env vars must be set at the cloud platform (`az webapp config appsettings set` / `eb setenv` / `gcloud run services update --set-env-vars`), not just locally; confirms HTTPS messaging endpoint. For local: confirms AgentsPlayground is installed and `.m365agentsplayground.yml` is configured when using agentic auth. Authoritative Microsoft Learn refs: [test-with-devtunnels](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels), [testing](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/testing), [deploy-agent-azure](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-azure), [deploy-agent-aws](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-aws), [deploy-agent-gcp](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/deploy-agent-gcp). **Automatically** runs `instrument-observability` (only when `has_obs = false`) and **optionally** offers `add-workiq-tools` (only when `has_workiq = false`). The skill does NOT hand-edit `manifest.json`. Reference: [Create agent instance — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
 `a365-setup` outputs a mandatory intro message, detects stack/language/CEA/`hasBlueprintConfig`, and the three skill-state flags **`has_aiteammate_structure`**, **`has_obs`**, **`has_workiq`** (the same primary flags that drive `make-ai-teammate` Phase 0C's 8-row matrix). Always updates the a365 CLI to latest (explicit exception to the ✅-skip rule), checks for an existing Azure CLI session before logging in, shows a ✅/❌ prerequisite summary and only processes ❌ missing tools. **Step 1.9 — tenant readiness:** reads `tenantReady` from `.a365-workspace-detection.local.json`; if absent, smoke-probes via `a365 develop list-available`; on probe pass, writes `tenantReady=true` and skips the configurator. If probe fails AND user lacks an admin role (Application Admin / Cloud App Admin / GA — see [custom-client-app-registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration)), surfaces a clean handoff for the admin to run `a365 setup requirements --yes` once — most developers inherit ready state from teammates and never hit this. Asks the blueprint question (reuse vs fresh) then asks **capabilities first** — capability options are auto-filtered: Observability is hidden if `has_obs = true`, WorkIQ is hidden if `has_workiq = true`, the menu collapses to Register + WorkIQ when `(has_aiteammate_structure && has_obs)` (legacy "already an AI Teammate" route, computed inline — the legacy `hasAITeammateChanges` field is **derived, no longer stored**). If AI Teammate is selected, auth mode is skipped (always `agentic-user`); if non-AI Teammate, asks `obo` or `s2s`. Cache fields written: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, `existingBlueprintId`, **`tenantReady`**. Delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
 `make-a365-agent` checks for an existing blueprint config before collecting inputs — if found, asks the developer whether to reuse (skips `a365 setup all`) or create fresh. Runs `a365 setup all --authmode obo|s2s` for non-AI Teammate paths; add `--m365` for CEA agents and follow with `a365 setup permissions bot`. `Agent365.Observability.OtelWrite` is auto-granted at provisioning, but other permission grants (Graph, Bot API, custom resources) require Global Administrator consent — when the developer isn't a GA, `a365 setup all` automatically prints next-steps (typically a PowerShell script) for a GA to complete. There is no separate `setup admin` subcommand. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
-`add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.local.json` to skip re-detection and verify prerequisites. `add-workiq-tools` Phase 0B includes a **framework support guard** that hard-stops on unsupported `(programmingLanguage, agentStack)` pairs (Python LangChain / Claude / CrewAI; Node.js Semantic Kernel / Google ADK) before any CLI command runs. Phase 4 branches on the cached `agentStack` into 11 framework-specific sub-sections (§4.1 .NET Agent Framework through §4.11 Python Azure AI Foundry); the stop-hook validator (`validate-add-workiq-tools.js`) is also framework-aware and requires the framework-matching symbol (e.g., `AddToolServersToAgentAsync` for .NET SK, `add_tool_servers_to_agent` for Python). Best-effort branches (Python SK, Python/.NET Azure AI Foundry) mark all generated lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)` because no Microsoft sample is published.
+`add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.local.json` to skip re-detection and verify prerequisites. `add-workiq-tools` Phase 0B includes a **framework support guard** that hard-stops on unsupported `(programmingLanguage, agentStack)` pairs (Python LangChain / Claude / CrewAI; Node.js Semantic Kernel / Google ADK) before any CLI command runs. Phase 4 branches on the cached `agentStack` into 11 framework-specific sub-sections (§4.1 .NET Agent Framework through §4.11 Python Azure AI Foundry); the stop-hook validator (`validate-add-workiq-tools.js`) is also framework-aware and requires the framework-matching symbol (e.g., `AddToolServersToAgentAsync` for .NET SK, `add_tool_servers_to_agent` for Python). **Phase 4.5 (gated)** offers the Word `@mention` notification handler when *both* gates pass: `programmingLanguage = NodeJS && agentStack = LangChain`, AND `mcp_WordServer` is in `ToolingManifest.json`. Wires `proactive: {}`, per-user conversation index, and a `NotificationType.WpxComment` branch — best-effort because no Microsoft Node.js sample is published yet. Best-effort branches (Python SK, Python/.NET Azure AI Foundry, and the Phase 4.5 @mention handler) mark all generated lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -284,6 +284,36 @@ CLI `Allow / Skip` prompts and manual browser steps (Teams Dev Portal, M365 Admi
 GA consent) are not stopping conditions — surface them with URL + action and continue.
 When adding a new interaction point to a SKILL.md, mirror it in [CLAUDE.md](CLAUDE.md)
 and [.github/copilot-instructions.md](.github/copilot-instructions.md) so all three stay in sync.
+
+---
+
+## CLI output buffering under chat-tool execution
+
+The `a365` CLI is a .NET tool. When invoked from Claude Code's Bash tool, VS Code Copilot Chat,
+or GitHub Copilot CLI, stdout is captured (not a TTY), so the .NET runtime switches to
+**block-buffered** output. Long-running commands (`a365 publish`, `a365 setup all`,
+`a365 setup requirements` when configuring a tenant) appear hung — output stalls until the
+buffer fills. Users have reported *"the pipe is buffering output, killing and re-running
+without the pipe"* as a workaround.
+
+Three remediations, in order of preference. Any skill invoking a long-running `a365` command
+should pick one:
+
+1. **Run in background mode** — Claude Code Bash tool with `run_in_background: true`. The
+   harness streams stdout line-by-line via `BashOutput` polling instead of waiting for the
+   buffer flush. Best UX; works on all platforms.
+2. **Prefix with `stdbuf -oL`** (Linux / macOS / WSL) to force line-buffered stdout:
+   ```bash
+   stdbuf -oL a365 publish
+   ```
+   Not natively available on Windows — use `unbuffer` from the `expect` package, or fall
+   through to option 3.
+3. **Hand off to a separate terminal.** Tell the user verbatim: *"`<command>` buffers under
+   chat-tool execution. Please open a new terminal in this project directory, run `<command>`
+   there, then paste the final output back here."* Foolproof — works on every platform.
+
+Skill SKILL.md files that run long `a365` commands should reference this section rather than
+duplicating the remediation block: see [deploy-pipeline.md § Step 9.7.4](plugins/agent365/skills/make-ai-teammate/references/deploy-pipeline.md) for the canonical inline use.
 
 ---
 

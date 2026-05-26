@@ -475,6 +475,11 @@ Stop until the user confirms whether to continue.
 
 **Run only when `runTarget = "prod"`.** Skip entirely for `runTarget = "local"`.
 
+> ⚠️ **CLI buffering gotcha when invoked from a chat tool.** `a365 publish` is a long-running .NET command that block-buffers its output when stdout is captured (Claude Code Bash tool, Copilot Chat, GitHub Copilot CLI) — progress messages stall and the command looks hung. If a user reports *"the pipe is buffering output"* or has to *"kill and re-run without the pipe"*, that's this issue.
+>
+> Three remediations in order of preference: (1) `run_in_background: true` for Claude Code's Bash tool, (2) `stdbuf -oL a365 publish` on Linux/macOS/WSL, (3) hand off to a separate terminal with this verbatim message: *"`a365 publish` buffers under chat-tool execution. Please open a new terminal in this project directory, run `a365 publish` there, then paste the final output (the lines mentioning `manifest.zip` / `appPackage.zip` and any warnings) back here."*
+>
+> See [AGENTS.md § CLI output buffering under chat-tool execution](../../../../../AGENTS.md#cli-output-buffering-under-chat-tool-execution) for the canonical full block — keep this inline summary in sync.
 
 ```bash
 a365 publish
