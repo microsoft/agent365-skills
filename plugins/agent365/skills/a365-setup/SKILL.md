@@ -29,7 +29,7 @@ hooks:
         Before ending, verify ALL of the following:
         1. All required system prerequisites were checked: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
         2. a365 CLI is installed and confirmed with a365 -h.
-        3. a365 setup requirements was run and any reported issues were resolved.
+        3. Tenant readiness verified — accept ANY of these terminal states: (a) cache had tenantReady=true at session start, (b) smoke probe `a365 develop list-available` returned the catalog cleanly and tenantReady was written to the cache, (c) `a365 setup requirements` ran and any reported issues were resolved, (d) user lacked an admin role (Application Admin / Cloud App Admin / GA) and the skill surfaced a clean handoff — this is a valid terminal state; the user re-runs after their admin completes the one-time setup.
         4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
         5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.local.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
         6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
