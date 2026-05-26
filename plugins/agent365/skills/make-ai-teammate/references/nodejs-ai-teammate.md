@@ -14,7 +14,7 @@ All `@microsoft/agents-a365-*` packages went **GA at 1.0.0** on 2026-05-01, with
 
 ```bash
 npm install \
-  @microsoft/agents-hosting@^1.2.2 \
+  @microsoft/agents-hosting@^1.5.3 \
   @microsoft/agents-activity \
   @microsoft/agents-a365-runtime@~1.1.0-preview.7 \
   @microsoft/agents-a365-notifications@~1.1.0-preview.7 \
@@ -85,7 +85,7 @@ Patterns in this reference are validated against these versions. Newer versions 
 
 | Package | Tested version | Pin |
 |---------|----------------|-----|
-| `@microsoft/agents-hosting` | 1.3.x | `^1.2.2` |
+| `@microsoft/agents-hosting` | 1.5.x | `^1.5.3` |
 | `@microsoft/agents-activity` | 1.5.x | unpinned (`latest` is stable) |
 | `@microsoft/agents-a365-runtime` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
 | `@microsoft/agents-a365-notifications` | 1.1.0-preview.7 | `~1.1.0-preview.7` |
