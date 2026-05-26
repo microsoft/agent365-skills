@@ -178,22 +178,34 @@ How is your agent hosted?
 
 Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-workspace-detection.local.json`.
 
-- **`runTargetHosting = "devtunnel"`:** **auto-start the tunnel — do NOT ask the user to paste a URL.** Use the agent name from session context (or cache) as the tunnel name so the URL is stable across restarts ([reference](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels)):
+- **`runTargetHosting = "devtunnel"`:** **auto-start the tunnel AND the local agent — do NOT ask the user to paste a URL.** Use the agent name from session context (or cache) as the tunnel name so the URL is stable across restarts ([reference](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/test-with-devtunnels)). The order matters: **tunnel up → agent up → reconcile endpoint → publish.** Bringing publish online before the local server is listening leaves Teams pointing at a dead endpoint.
 
-  1. **Verify CLI is installed:** `devtunnel --version`. If it fails, install with `winget install Microsoft.devtunnel` (Windows), `brew install --cask devtunnel` (macOS), or `curl -sL https://aka.ms/DevTunnelCliInstall | bash` (Linux), and stop until the user confirms install is complete.
+  1. **Verify CLI is installed and current.** Run `devtunnel --version` — if it fails, install with `winget install Microsoft.devtunnel` (Windows), `brew install --cask devtunnel` (macOS), or `curl -sL https://aka.ms/DevTunnelCliInstall | bash` (Linux). If it succeeds, also offer to update to latest (idempotent — same install command on Windows/macOS/Linux re-installs the latest build; older devtunnel CLIs are known to silently default to `https` on `port create`, which causes the 502 below). Stop until the user confirms install/update is complete.
   2. **Verify login:** `devtunnel user show`. If it exits non-zero or prints "not logged in", run `devtunnel user login` (or `devtunnel user login --device-code` on headless machines), wait for the user to complete sign-in, then retry `devtunnel user show`.
-  3. **Create the tunnel** (idempotent — treat "already exists" as success). Pick the port from `programmingLanguage` in `.a365-workspace-detection.local.json`: `3978` for Node.js / Python, the .NET project's launch port for .NET (default `5000`).
+  3. **Create the tunnel and the port — `--protocol http`, NOT `https`** (idempotent — treat "already exists" as success). Pick the port from `programmingLanguage` in `.a365-workspace-detection.local.json`: `3978` for Node.js / Python, the .NET project's launch port for .NET (default `5000`).
      ```bash
      devtunnel create <agent-name>-tunnel --allow-anonymous
-     devtunnel port create <agent-name>-tunnel -p <port>
+     devtunnel port create <agent-name>-tunnel -p <port> --protocol http
      ```
-     Parse the **Tunnel ID** from the create output — format is `<id>.<cluster>` (e.g. `abc123xy.usw3`).
-  4. **Start hosting in the background** — this is a long-running process, run with `run_in_background=true` so the tunnel keeps running while the skill continues. The user does NOT need to open a separate terminal.
+     > ⚠️ **`--protocol http` is required.** The local agent listens over plain HTTP. If the port is registered as `https` (the CLI's default on some versions), the devtunnel relay attempts a TLS handshake against the local server and fails with **HTTP 502 Bad Gateway**. If you hit a 502 after the tunnel starts, delete the port (`devtunnel port delete <agent-name>-tunnel -p <port>`) and recreate it with `--protocol http`. The public-facing URL the relay exposes is still HTTPS — the protocol flag controls only how the relay talks to your local process.
+     >
+     > Parse the **Tunnel ID** from the create output — format is `<id>.<cluster>` (e.g. `abc123xy.usw3`).
+  4. **Start tunnel hosting in the background** — long-running, run with `run_in_background=true` so it keeps running while the skill continues. The user does NOT need to open a separate terminal.
      ```bash
      devtunnel host <agent-name>-tunnel
      ```
-  5. **Resolve the public URL deterministically** — it is `https://<id-without-cluster>-<port>.<cluster>.devtunnels.ms`. Example: tunnel ID `abc123xy.usw3` + port `3978` → `https://abc123xy-3978.usw3.devtunnels.ms`. Sanity-check by running `devtunnel show <agent-name>-tunnel` and confirming the printed Access URL matches.
-  6. **Store `chosenEndpoint`** = `<tunnel URL>/api/messages`. Tell the user verbatim: *"Dev tunnel started at `<URL>`. Hosting in the background — leave this session open. Using this endpoint for the rest of the flow."*
+  5. **Resolve the public URL deterministically** — `https://<id-without-cluster>-<port>.<cluster>.devtunnels.ms`. Example: tunnel ID `abc123xy.usw3` + port `3978` → `https://abc123xy-3978.usw3.devtunnels.ms`. Sanity-check by running `devtunnel show <agent-name>-tunnel` and confirming the printed Access URL matches.
+  6. **Start the agent locally in the background** — same rationale (`run_in_background=true`). The agent MUST be listening before Step 9.7.2c (reconcile endpoint) and 9.7.3 (publish) run; otherwise the published manifest points at a tunnel that 502s every request.
+     ```bash
+     # Node.js (Express)
+     npm run build && node dist/index.js
+     # Python (aiohttp)
+     python host_agent_server.py
+     # .NET (Kestrel)
+     dotnet run
+     ```
+     Confirm the agent printed `Server listening on http://...` (Node.js / Python) or `Now listening on: http://...` (.NET) before continuing. If it fails to bind to the port, surface the verbatim error and stop.
+  7. **Store `chosenEndpoint`** = `<tunnel URL>/api/messages` (forward slashes — never `\`). Tell the user verbatim: *"Dev tunnel started at `<URL>` (relay → local HTTP), agent listening on port `<port>`. Both running in the background — leave this session open. Using this endpoint for reconcile + publish."*
 
 - **`runTargetHosting = "cloud"`:** ask the user for the full messaging endpoint URL (must be HTTPS and end in `/api/messages`). If they don't have one yet, point them at the appropriate deploy guide above for their chosen platform. Store as `chosenEndpoint`.
 
@@ -436,8 +448,10 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 | Agent appears in Teams Apps search but `Request Instance` is disabled or no instance after admin approval | Microsoft Agent 365 Frontier not enabled for the tenant | Tenant admin must enable Frontier. See [What is Frontier](https://support.microsoft.com/en-us/topic/what-is-frontier-17c671e0-1906-4d9d-892c-68e11fbff4c7). |
 | No welcome / first message from agent in Teams chat | Blueprint missing `Chat.Create` inheritable permission. `Chat.Create` is needed to create a new 1:1 chat; without it the agent can't send the first message until the user initiates one. | Add `Chat.Create` to the blueprint's inheritable permissions (Entra → App registrations → Blueprint app → API permissions), then re-provision the agent instance. See [Configure inheritable permissions](https://learn.microsoft.com/en-us/entra/agent-id/identity-professional/configure-inheritable-permissions-blueprints). |
 | `401 Unauthorized` in logs | App ID / secret mismatch | Confirm `MICROSOFT_APP_ID` and `MICROSOFT_APP_PASSWORD` in `.env` match the registered app |
-| `Connection refused` on tunnel | Tunnel not running | `devtunnel host <name> --port 3978` |
+| `Connection refused` on tunnel | Tunnel not running | `devtunnel host <name>` |
 | `404` on `/api/messages` | Agent not started | `npm start` / `dotnet run` / `python host_agent_server.py` |
+| `HTTP 502 Bad Gateway` from tunnel URL | Port registered as `https` — relay attempts TLS handshake against local plain-HTTP server | `devtunnel port delete <name> -p <port>` then `devtunnel port create <name> -p <port> --protocol http`; restart `devtunnel host <name>` |
+| `devtunnel: command not found` after install | Shell PATH not refreshed | Restart the terminal; on Windows also run `refreshenv` if using Chocolatey |
 
 
 ---
