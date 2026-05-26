@@ -133,8 +133,10 @@ I'll build you a new Agent 365 AI Teammate from scratch. Here's the plan:
      manager via Microsoft Graph on first install) and create two env files
      for credentials
   6. Pause so you can paste in your model credentials
-  7. Wire observability and WorkIQ MCP tools
-  8. Run `a365 setup all --aiteammate` to register the blueprint
+  7. Run `a365 setup all --aiteammate --agent-name <agentName>` to register
+     the blueprint and populate `.env` with the service-connection creds
+  8. Wire observability and WorkIQ MCP tools (now reads the real blueprint
+     id, client id/secret, and tenant id that setup just wrote)
   9. Run `a365 validate` locally and iteratively fix any issues it reports
      (this builds, boots, and tests the agent locally) until it passes
   10. Set up a devtunnel, run `a365 publish`, then walk through the manual
@@ -207,7 +209,7 @@ scaffold in Phase 8 will automatically include a dedicated `AGENT_LIFECYCLE`
 handler that introduces the teammate to the user's manager via Microsoft
 Graph (1:1 Teams chat) on first install. No question needed — the required
 Graph scopes (`Chat.ReadWrite`, `User.Read.All`) are already consented for
-AI Teammates by `a365 setup all --aiteammate` in Phase 11.
+AI Teammates by `a365 setup all --aiteammate` in Phase 9.
 
 ---
 
@@ -390,7 +392,7 @@ scaffolding:
    `microsoft-agents-*` (Python). These pin the hosting layer.
 3. **A365 observability distro** for the chosen language — latest stable
    version of `Microsoft.OpenTelemetry` (.NET) / `@microsoft/opentelemetry`
-   (TypeScript) / `microsoft-opentelemetry` (Python). Used by Phase 9.
+   (TypeScript) / `microsoft-opentelemetry` (Python). Used by Phase 10.
 4. **Model provider SDK + required environment variables** for the chosen
    `modelProvider` (e.g. Azure OpenAI, Bedrock, Anthropic, Vertex / Gemini,
    OpenAI direct). Search the provider's official docs / SDK readme and
@@ -541,6 +543,55 @@ moving on.
 > family to the **same major version** (e.g. all `^1.0.0`). Mixing 0.x and
 > 1.x will produce unresolvable peer conflicts.
 
+### Telemetry / observability package allowlist (CRITICAL)
+
+When scaffolding `*.csproj` / `package.json` / `pyproject.toml`, only add
+**these** observability-adjacent packages — nothing else:
+
+| Category | C# / .NET | Node.js / TypeScript | Python |
+|---|---|---|---|
+| **OpenTelemetry distro (required)** | `Microsoft.OpenTelemetry` | `@microsoft/opentelemetry` | `microsoft-opentelemetry` |
+| **Microsoft Agents hosting (required)** | `Microsoft.Agents.Hosting.*`, `Microsoft.Agents.Builder`, `Microsoft.Agents.Activity`, `Microsoft.Agents.Authentication.Msal` | `@microsoft/agents-hosting`, `@microsoft/agents-activity`, etc. | `microsoft-agents-hosting-core`, `microsoft-agents-authentication-msal`, `microsoft-agents-activity` |
+| **A365 SDK (required)** | `Microsoft.Agents.A365.Notifications`, `Microsoft.Agents.A365.Tooling.Extensions.<framework>`, `Microsoft.Agents.A365.Runtime` | `@microsoft/agents-a365-notifications`, `@microsoft/agents-a365-tooling-extensions-<framework>`, `@microsoft/agents-a365-runtime` | `microsoft-agents-a365-notifications`, `microsoft-agents-a365-tooling-extensions-<framework>`, `microsoft-agents-a365-runtime` |
+
+**Forbidden — do NOT install or import any of these:**
+
+- `@microsoft/agents-telemetry` (Node.js) and any equivalent Agents-SDK standalone telemetry side-package in other languages — do not install or import.
+- `Microsoft.Agents.A365.Observability.Runtime` / `Microsoft.Agents.A365.Observability.Hosting`
+  (and the Node.js `@microsoft/agents-a365-observability` /
+  Python `microsoft-agents-a365-observability` equivalents) — these are the
+  **legacy SDK-native** observability packages. The unified
+  `Microsoft.OpenTelemetry` / `@microsoft/opentelemetry` /
+  `microsoft-opentelemetry` distro **re-exports every type they expose**
+  (`BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `ExecuteToolScope`,
+  `IExporterTokenCache`, `AgentDetails`, `CallerDetails`, etc.). Installing
+  both produces:
+  - .NET: CS0433 *"The type ... exists in both ... and ..."* duplicate-type
+    errors at compile time.
+  - Node.js / Python: at runtime, two separate exporter instances post the
+    same span twice and compete for the per-turn token, so traces silently
+    double-up or vanish.
+  Only install the legacy packages when the user has **explicitly** opted
+  out of the distro in Phase 10 (the "SDK-native opt-out" path).
+- `OpenTelemetry.*` standalone packages (`OpenTelemetry.Exporter.OpenTelemetryProtocol`,
+  `@opentelemetry/sdk-node`, `opentelemetry-sdk` raw, etc.) for the *purpose
+  of A365 export*. The distro already brings in the OTel SDK + every
+  auto-instrumentation (AspNetCore, HttpClient, OpenAI, LangChain,
+  SemanticKernel, AgentFramework) — adding them again at the project level
+  pins a second copy that will diverge from what the distro expects.
+  *Exception:* a standalone OTel package is fine if it's a peer dep pulled
+  in transitively by another library you legitimately need — let the package
+  manager resolve it; never add it to your top-level manifest.
+- Application-Insights / Azure Monitor / Jaeger / Zipkin direct exporters.
+  A365 traces go to the **A365 exporter** built into the distro — that's
+  the only supported pipeline. If the user separately wants APM-style export
+  to App Insights, that's a post-deployment configuration concern, not
+  something this scaffold wires.
+
+> **Verify before leaving Phase 8** — `grep` the manifest for the forbidden
+> package names; if any matches, remove them and re-run install. Surface to
+> the user any package the scaffold removed and why, so they don't add it
+> back by hand.
 
 ### AGENT_LIFECYCLE handler (always include — AI Teammate default)
 
@@ -669,7 +720,61 @@ to flip them is owned by Phase 14:
 
 ---
 
-## Phase 9 — Instrument observability
+## Phase 9 — A365 setup (AI Teammate + blueprint)
+
+> **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/a365-setup/SKILL.md`
+
+**Do NOT enter this phase until Phase 8 (scaffold) is complete.** Setup
+runs *before* observability and WorkIQ wiring so that the blueprint ID,
+service-principal client id/secret, and tenant id are written into `.env`
+*before* observability/MCP code reads them — that way both subsequent
+phases can be smoke-tested locally against real values.
+
+**Skip the detection and prerequisite-checking phases** — assume:
+- `agentType` = AI Teammate
+- All prerequisites already verified in Phases 1–2
+
+Run (always pass `--agent-name <agentName>` — the CLI errors out with
+*"Run 'a365 setup all --agent-name <name>' to set up for the new tenant"*
+when the agent name isn't on the command line, even though the blueprint
+display name is otherwise inferred):
+
+```bash
+a365 setup all --aiteammate --agent-name <agentName>
+```
+
+Use the directory name the user picked in Phase 4 (e.g. `pirate-agent`) as
+`<agentName>`. The blueprint will be created as `<agentName> Blueprint`.
+
+When complete, read `a365.generated.config.json` and confirm `agentBlueprintId`
+is present. Show the Setup Summary table verbatim. The blueprint must exist
+before `a365 validate` (Phase 12) can authenticate observability exports.
+
+`a365 setup all --aiteammate` stamps the observability identity fallbacks
+into `.env` (Python / Node.js) or `appsettings.json` (.NET):
+
+- `AGENT365OBSERVABILITY__TENANTID`
+- `AGENT365OBSERVABILITY__AGENTID`
+- `AGENT365OBSERVABILITY__AGENTBLUEPRINTID`
+
+Verify all three are present after `setup all` returns. If any is missing,
+copy the value from `a365.generated.config.json` (`tenantId`, `agentId`,
+`agentBlueprintId`) into the env file manually. These are the fallbacks
+the Phase 10 identity resolver reads when the activity recipient is empty
+— do not write them anywhere else and do not invent alternate names. The
+namespaced `AGENT365OBSERVABILITY__*` prefix is what the CLI emits and
+what survives the `a365 validate` subprocess environment (plain `TENANT_ID`
+is clobbered by the validator harness).
+
+Because MCP permissions are part of `a365 setup all`, the user must
+complete admin consent now (the CLI opens the browser; if the 180s timeout
+fires, surface each `consentUrl` from `a365.generated.config.json` to the
+user and ask them to grant before continuing). MCP code wiring in Phase 11
+assumes the permissions hand-off is done.
+
+---
+
+## Phase 10 — Instrument observability
 
 > **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/instrument-observability/SKILL.md`
 > and the matching language file under `references/`.
@@ -694,10 +799,10 @@ as the blueprint id — produces wrong telemetry attribution:
 
 | Field | Source | Notes |
 |---|---|---|
-| `tenant_id` | `recipient.tenant_id` (turn context) | Per-tenant, comes from incoming activity |
-| `agent_id` (per-install instance) | `activity.get_agentic_instance_id()` → fallback `recipient.agentic_app_id` → fallback `AGENT_ID` env | Varies per installation/user. This IS the per-install app instance id |
+| `tenant_id` | `recipient.tenant_id` (turn context) → fallback **`AGENT365OBSERVABILITY__TENANTID` env var** | Per-tenant, comes from the incoming activity. Required env fallback because `a365 validate` (anonymous local mode) synthesizes activities with no `recipient.tenant_id` — without the fallback the A365 exporter silently drops every span. The CLI stamps `AGENT365OBSERVABILITY__TENANTID` during `a365 setup all --aiteammate` (Phase 9). Use this namespaced name — NOT plain `TENANT_ID`, which the validator harness clobbers with empty in the subprocess environment. |
+| `agent_id` (per-install instance) | `activity.get_agentic_instance_id()` → `recipient.agentic_app_id` → fallback **`AGENT365OBSERVABILITY__AGENTID` env var** | Varies per installation/user. This IS the per-install app instance id. The CLI stamps `AGENT365OBSERVABILITY__AGENTID` during `a365 setup all --aiteammate`. Same validator-clobber rule as tenant — use the namespaced name. |
 | `agentic_user_id` | `recipient.agentic_user_id` (turn context) | The agentic user identity for the install |
-| `agent_blueprint_id` | **`AGENT365_BLUEPRINT_ID` env var** (or `AGENT365OBSERVABILITY__AGENTBLUEPRINTID`) — populated from `a365.generated.config.json` by `a365 setup all --aiteammate` | **Stable** per agent registration. Do **NOT** use `recipient.agentic_app_id` — that's the per-install instance, not the blueprint. |
+| `agent_blueprint_id` | **`AGENT365OBSERVABILITY__AGENTBLUEPRINTID` env var** — populated from `a365.generated.config.json` by `a365 setup all --aiteammate` | **Stable** per agent registration. Do **NOT** use `recipient.agentic_app_id` — that's the per-install instance, not the blueprint. |
 | `agent_name` / `agent_description` | `AGENT365_AGENT_NAME` / `AGENT365_AGENT_DESCRIPTION` env vars | From `.env` populated by `a365 setup` |
 
 Make sure the scaffolded `turn_context_utils` (or language equivalent)
@@ -771,9 +876,13 @@ generated agent emits useful logs the moment it boots:
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
 # Python ONLY: also gates A365 span creation — without this scopes are no-ops
 ENABLE_A365_OBSERVABILITY=true
-A365_OBSERVABILITY_LOG_LEVEL=info
+A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
 OTEL_LOG_LEVEL=Debug
 ```
+
+The `A365_OBSERVABILITY_LOG_LEVEL` value MUST be the full pipe-separated
+list `info|warn|error` (all three levels). Single-level values like `info`
+or `warn` are rejected by the distro.
 
 If the reference template suggests `ENABLE_A365_OBSERVABILITY_EXPORTER=false`,
 override it to `true` here. (.NET samples don't use these env vars — the
@@ -819,7 +928,7 @@ Build at the end to confirm no compile errors.
 
 ---
 
-## Phase 10 — Add WorkIQ MCP tools
+## Phase 11 — Add WorkIQ MCP tools
 
 > **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/add-workiq-tools/SKILL.md`
 > and the matching language file under `references/`.
@@ -834,33 +943,51 @@ agent code per the reference.
 > Always verify the actual API surface from the reference docs — do not guess
 > method names.
 
-Inform the user about the permissions hand-off (`a365 setup permissions mcp`
-or `a365 setup all`) and how to fetch a dev token (`a365 develop get-token`).
-Do not run those — they will be run as part of Phase 11.
+> **Python + Microsoft Agent Framework only — agent class check.** The
+> SDK's `add_tool_servers_to_agent(...)` returns a **`RawAgent`** by design.
+> Do NOT rewrap it with `Agent(...)` / `chat_client.as_agent(...)` on the
+> MCP path — `Agent`'s telemetry layer emits spans outside `BaggageBuilder`
+> and breaks A365 trace export. (`Agent` is fine in the
+> `DISABLE_MCP_TOOLS=true` fallback branch only.) Quick verify:
+> `python -c "import inspect; from microsoft_agents_a365.tooling.extensions.agentframework.services.mcp_tool_registration_service import McpToolRegistrationService; print(inspect.signature(McpToolRegistrationService.add_tool_servers_to_agent).return_annotation)"`
+> must print `RawAgent`.
 
-Build to confirm the wiring compiles.
+The MCP permissions were already granted as part of Phase 9
+(`a365 setup all --aiteammate`); no separate `a365 setup permissions mcp`
+run is needed here.
 
----
+### Fetch the local-development MCP bearer tokens
 
-## Phase 11 — A365 setup (AI Teammate + blueprint)
-
-> **Reference:** `${AGENT365_SKILLS}/plugins/agent365/skills/a365-setup/SKILL.md`
-
-**Do NOT enter this phase until Phases 8, 9, AND 10 are all complete.**
-
-**Skip the detection and prerequisite-checking phases** — assume:
-- `agentType` = AI Teammate
-- All prerequisites already verified in Phases 1–2
-
-Run:
+For local runs (Phase 12 `a365 validate` and any manual smoke tests), the
+agent needs a delegated MCP token per server because it isn't yet receiving
+real user OBO tokens from Teams. Run:
 
 ```bash
-a365 setup all --aiteammate
+a365 develop get-token
 ```
 
-When complete, read `a365.generated.config.json` and confirm `agentBlueprintId`
-is present. Show the Setup Summary table verbatim. The blueprint must exist
-before `a365 validate` (Phase 12) can authenticate observability exports.
+This command reads `ToolingManifest.json` and **automatically stamps**
+`BEARER_TOKEN_MCP_<SERVER>=<token>` lines into the local env file (e.g.
+`BEARER_TOKEN_MCP_MAILTOOLS=eyJ0eXAi...`) — one per MCP server in the
+manifest. No manual copy/paste is needed.
+
+Make sure the env file already contains the matching **empty** placeholders
+before running `get-token` so the scaffolded code knows which vars to read.
+Add one `BEARER_TOKEN_MCP_<SERVER>=` line per entry in
+`ToolingManifest.json` (uppercase the server short name, strip the `mcp_`
+prefix). Example for a manifest with `mcp_MailTools` and `mcp_W365ComputerUse`:
+
+```
+BEARER_TOKEN_MCP_MAILTOOLS=
+BEARER_TOKEN_MCP_W365COMPUTERUSE=
+```
+
+The tokens are short-lived. If local validation later fails with a 401 from
+an MCP endpoint, just re-run `a365 develop get-token` — it overwrites the
+existing stamped values in place. This step is **not** required for Phase
+14 tenant validation; real Teams traffic supplies the OBO token at runtime.
+
+Build to confirm the wiring compiles.
 
 ---
 
@@ -926,7 +1053,11 @@ tier where `ok = false`:
   `researchedVersions.modelProvider.envVars`) are set in both env files.
 - `tiers.conversation.ok = false` → if reachable, the issue is in the
   message handler or LLM client; consult the **diagnostic pattern table
-  in Phase 14.3** for log-symptom-to-fix mappings.
+  in Phase 14.3** for log-symptom-to-fix mappings. If the log shows a 401
+  from `https://agent365.svc.cloud.microsoft/agents/servers/mcp_*`, the
+  local MCP bearer tokens have expired — re-run `a365 develop get-token`
+  to re-stamp fresh `BEARER_TOKEN_MCP_*` values into the env file, then
+  restart the agent and re-validate.
 
 After applying a fix, re-run `a365 validate` and re-evaluate the report.
 **Do not skip ahead** — stay in this loop until `summary.ok = true`.
@@ -1061,7 +1192,7 @@ validation passes.
 ```
 ENABLE_A365_OBSERVABILITY_EXPORTER=true
 ENABLE_A365_OBSERVABILITY=true            # Python: required second flag
-A365_OBSERVABILITY_LOG_LEVEL=info
+A365_OBSERVABILITY_LOG_LEVEL=info|warn|error
 OTEL_LOG_LEVEL=Debug
 LOG_LEVEL=DEBUG                           # or PYTHON_ENVIRONMENT=development
 ```
@@ -1081,7 +1212,7 @@ LOG_LEVEL=DEBUG                           # or PYTHON_ENVIRONMENT=development
 ```
 
 If this is a fresh devtunnel session and the agent process is still running
-from Phase 11/13, **restart it** so the new env vars take effect. Confirm
+from Phase 12/13, **restart it** so the new env vars take effect. Confirm
 startup banner contains:
 - ✅ `appId` / `clientId` shows the blueprint ID (NOT `undefined` / empty)
 - ✅ Bound to `0.0.0.0` (NOT `127.0.0.1` — devtunnel can't reach localhost-only)
@@ -1134,14 +1265,20 @@ local conversation tier is exercised.
 |---|---|---|
 | `WARNING ... ⚠️ No auth env vars; running anonymous` | `AUTH_HANDLER_NAME` empty in `.env.local` overriding `.env` (dotenv load-order pitfall — see Phase 8) | Either delete the empty `KEY=` line in `.env.local` or set `AUTH_HANDLER_NAME=AGENTIC` there. Same for `CLIENT_ID`/`TENANT_ID`/`CLIENT_SECRET`. Restart. |
 | User sees `Got it — working on it…` but no follow-up | Stuck tool / MCP call in `agent.run()` | Set `DISABLE_MCP_TOOLS=true` in `.env`, restart, retest. If now works → MCP server is the cause; debug separately. Also confirm `AGENT_RUN_TIMEOUT_SECONDS` is wired so future stalls produce a user-facing timeout instead of silence. |
-| `httpx: POST https://agent365.svc.cloud.microsoft/agents/servers/mcp_* HTTP/1.1 4xx` | WorkIQ MCP server rejected the agentic token | Confirm `a365 develop list-available` succeeds; re-run `a365 setup permissions mcp` if needed. Use `DISABLE_MCP_TOOLS=true` to unblock the user while debugging. |
+| `httpx: POST https://agent365.svc.cloud.microsoft/agents/servers/mcp_* HTTP/1.1 401` (or any 4xx) — agent reply contains `Failed to enter context manager ... HTTPStatusError("Client error '401 Unauthorized' for url 'https://agent365.svc.cloud.microsoft/agents/servers/mcp_*')` | Local-dev MCP bearer token in `.env` (e.g. `BEARER_TOKEN_MCP_MAILTOOLS`) has expired — they're short-lived | First, re-run `a365 develop get-token` to re-stamp every `BEARER_TOKEN_MCP_<SERVER>=…` value in `.env`, restart the agent, and re-validate. If 401s persist, confirm `a365 develop list-available` succeeds and re-run `a365 setup permissions mcp`. Use `DISABLE_MCP_TOOLS=true` to unblock the user while debugging. |
+| Boot: `AttributeError: type object 'MsalConnectionManager' has no attribute 'from_environment'` | Older scaffold used a method that doesn't exist on the current SDK | Replace with `MsalConnectionManager(**load_configuration_from_env(os.environ))` (Python) — import `load_configuration_from_env` from `microsoft_agents.activity`. |
+| Boot: `AttributeError: 'CloudAdapter' object has no attribute 'on_activity'` | Activity decorators were placed on the adapter; they belong on `AgentApplication` | Construct `AgentApplication[TurnState](storage=MemoryStorage(), adapter=adapter, authorization=auth)`, move all `@adapter.on_activity(...)` decorators to `@app.activity(...)` on that instance, and route POST `/api/messages` through `start_agent_process(request, app, adapter)` instead of `adapter.process(request)`. |
+| Boot: `AttributeError: module 'microsoft_agents_a365.notifications' has no attribute 'on_agent_notification'` (or `'agent_notification' has no attribute …`) | `AgentNotification` was used as a module, not a class | Import the class: `from microsoft_agents_a365.notifications import AgentNotification`. Instantiate as `notifications = AgentNotification(app)`, then decorate handlers with `@notifications.on_agent_notification(channel_id=ChannelId(...))`. |
+| `Conversation` tier: agent reply contains `'dict' object has no attribute 'channel_id' and no __dict__ for setting new attributes` | A handler called `context.send_activity({"type": "typing"})` — `send_activity` requires an `Activity`, not a dict | Replace every `send_activity({"type": "typing"})` with `send_activity(Activity(type=ActivityTypes.typing))` (import `Activity, ActivityTypes` from `microsoft_agents.activity`). `AgentApplication` already emits a built-in typing indicator, so the manual sends can also simply be deleted. |
 | Repeated `📬 NotificationTypes.AGENT_LIFECYCLE` followed by `connector_client: Error replying to activity: 502` storm; user message turn hangs for minutes | AGENT_LIFECYCLE retry storm starving the event loop because dedupe runs *after* `await` calls | Confirm Phase 8 lifecycle handler does its dedupe **before any await**. Confirm `_SuppressLifecycleConnectorErrors` filter is registered. The 502s on `agentOnboarding` are expected; they should be silently dropped. |
 | `'AgentNotificationActivity' object has no attribute 'text'` in lifecycle path | Generic notification handler accessed `.text` on a lifecycle activity | Confirm Phase 8 routes `NotificationTypes.AGENT_LIFECYCLE` to the dedicated Graph manager-greeting helper instead of the generic dispatch. |
 | `microsoft.opentelemetry.a365.core.exporters.agent365_exporter: No spans with tenant/agent identity found; nothing exported.` | Spans being created outside `BaggageBuilder` context, OR using raw HTTP (aiohttp/requests) which OTel doesn't auto-instrument | Confirm `BaggageBuilder().tenant_id(...).agent_id(...).build()` wraps the message handler. For onboarding/Graph calls, wrap each step in an explicit `tracer.start_as_current_span(...)`. |
+| (Python + Agent Framework) Duplicate `agent.run` / `invoke_agent` spans in the same trace, or A365 exporter drops MCP-turn spans even though `BaggageBuilder` wraps the handler | MCP path wraps the SDK's `RawAgent` with `Agent(...)` / `chat_client.as_agent(...)`, so `AgentTelemetryLayer` emits an extra span outside the baggage scope | Return the `RawAgent` from `add_tool_servers_to_agent(...)` directly — no rewrapping. `Agent` is only allowed on the `DISABLE_MCP_TOOLS=true` fallback branch. See Phase 11 agent-class check. |
 | Spans appear to run but exporter says nothing exported (Python only) | Missing `ENABLE_A365_OBSERVABILITY=true` env var | Add it. Without this second flag, scopes are no-ops even though `configure()` succeeded. |
 | Exporter `HTTP 401 ... Correlation ID: ...` | OBO token missing or wrong audience; OR `OtelWrite` role not granted to Agent Identity SP | Confirm per-turn `auth.exchange_token(scopes=get_observability_authentication_scope(), auth_handler_id=...)` runs and caches. If still 401, follow the `Agent365.Observability.OtelWrite` Global Admin grant from `instrument-observability/SKILL.md` "S2S Known Issues". |
-| Exporter `HTTP 400 ... TenantIdInvalid` | Wrong/empty `tenant_id` in `AgentDetails` | Confirm `tenant_id` comes from `recipient.tenant_id` (turn context), not env. |
-| Telemetry shows the wrong blueprint — every install gets a different blueprint id | Using `recipient.agentic_app_id` for `agent_blueprint_id` (per-install instance, not blueprint) | Read `AGENT365_BLUEPRINT_ID` from env (populated by `a365 setup all --aiteammate`). See Phase 9 "Identity sources" table. |
+| Exporter logs `Agent365Exporter] 1 spans skipped due to missing tenant or agent ID` followed by `No eligible genAI spans to export; nothing exported.` | `recipient.tenant_id` / `recipient.agentic_app_id` are empty on the incoming activity (very common under `a365 validate` anonymous mode), and the resolver had no env fallback | Confirm `a365 setup all --aiteammate` stamped `AGENT365OBSERVABILITY__TENANTID` and `AGENT365OBSERVABILITY__AGENTID` into `.env`/`appsettings.json`, and that `extract_agent_identity()` falls back to them when the recipient fields are empty. Use the namespaced `AGENT365OBSERVABILITY__*` names — plain `TENANT_ID` is overwritten with empty by the validator harness. See Phase 10 "Identity sources" table. |
+| Exporter `HTTP 400 ... TenantIdInvalid` (response body literally says `"Tenant id  is invalid."`) with the URL already containing the correct tenant GUID | Server validates tenant from the **OBO token claims**, not the URL; no token = empty tenant claim = 400. This is the anonymous-validate ceiling — there is no signed-in user to mint an OBO token | Expected when running `a365 validate` without `--with-tenant`. The telemetry tier cannot pass in anonymous local mode for AI Teammates (`client_credentials` is blocked by Entra with `AADSTS82001` for agentic apps). Confirm `AGENT365OBSERVABILITY__TENANTID` is set so the URL is correct, then validate telemetry under `a365 validate --with-tenant` (Phase 14) where Teams provides a real user OBO token. |
+| Telemetry shows the wrong blueprint — every install gets a different blueprint id | Using `recipient.agentic_app_id` for `agent_blueprint_id` (per-install instance, not blueprint) | Read `AGENT365OBSERVABILITY__AGENTBLUEPRINTID` from env (stamped by `a365 setup all --aiteammate`). See Phase 10 "Identity sources" table. |
 | Exporter logs `invoke_agent` spans only — no sibling `inference` or `execute_tool` spans in the same trace (rule `store_publishing_scopes_present`) | LLM call or tool dispatch isn't wrapped in `InferenceScope` / `ExecuteToolScope` | `InvokeAgentScope` is present but no `InferenceScope` or `ExecuteToolScope` was found in the same trace. Both are required for store publishing — see `instrument-observability` Phase 5.5. |
 | S2S exporter posts succeed (`HTTP 200`) but nothing surfaces in the MAC portal; trace has no `microsoft.a365.caller.*` / `gen_ai.caller.*` attributes (rule `s2s_caller_details_required`) | `CallerDetails` not passed to `InvokeAgentScope.Start()` | S2S agents must populate `CallerDetails` on `InvokeAgentScope.Start()`; without it, traces reach the API (200) but stay invisible in the MAC portal. |
 | Exporter URL contains `/observability/` instead of `/observabilityService/` (rule `s2s_endpoint_path`) | S2S endpoint flag not set | S2S agent posted to `/observability/` instead of `/observabilityService/` — set `Agent365.Exporter.UseS2SEndpoint=true` (.NET) or `AGENT365_USE_S2S_ENDPOINT=true` (Node.js). |
@@ -1174,7 +1311,7 @@ Once `a365 validate --with-tenant` returns `summary.ok = true`, restore
 quieter log levels for steady-state operation:
 
 ```
-A365_OBSERVABILITY_LOG_LEVEL=warn
+A365_OBSERVABILITY_LOG_LEVEL=info|warn|error  # must include all three pipe-separated
 OTEL_LOG_LEVEL=Info
 LOG_LEVEL=INFO
 ```
