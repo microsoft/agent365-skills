@@ -1347,7 +1347,19 @@ Do NOT proceed to the devtunnel steps until all three checks pass.
    > **Integrated apps** → **Upload custom apps** → upload the
    > `manifest.zip` produced by `a365 publish`.
 
-4. **Set the messaging endpoint in Teams Developer Portal**
+4. **Activate the agent for all users in MAC**
+
+   After the upload succeeds, the agent is uploaded but **not yet available
+   to users**. It must be explicitly activated. Tell the user:
+
+   > Still in the [Microsoft 365 Admin Center](https://admin.cloud.microsoft) →
+   > **Integrated apps** → find the agent you just uploaded → open its
+   > details pane → **Users** tab → set **Assign users** to
+   > **Entire organization** (or a specific group/users if you want to
+   > scope the rollout) → **Update** / **Save**. Without this step the
+   > agent is uploaded but no one — including you — can find it in Teams.
+
+5. **Set the messaging endpoint in Teams Developer Portal**
 
    Read `agentBlueprintId` from `a365.generated.config.json` and construct
    the direct configuration URL:
@@ -1364,7 +1376,7 @@ Do NOT proceed to the devtunnel steps until all three checks pass.
    > `<devtunnel-url>/api/messages` and save. This is required for Teams
    > to deliver messages to your agent.
 
-5. **Create an agent instance through Teams**
+6. **Create an agent instance through Teams**
 
    > In Microsoft Teams → **Apps** → find your published agent → add it
    > to your account. If admin approval is required, request it from the
@@ -1373,12 +1385,13 @@ Do NOT proceed to the devtunnel steps until all three checks pass.
 
 ### 13.x — WAIT FOR USER CONFIRMATION
 
-After listing the five steps, **stop and explicitly ask** the user to
+After listing the six steps, **stop and explicitly ask** the user to
 confirm:
 
-> Have you completed all five steps above (publish, devtunnel host,
-> MAC upload, Teams Dev Portal endpoint set to `<devtunnel-url>/api/messages`,
-> and agent instance created/approved in Teams)?
+> Have you completed all six steps above (publish, devtunnel host,
+> MAC upload, MAC activation for users, Teams Dev Portal endpoint set to
+> `<devtunnel-url>/api/messages`, and agent instance created/approved in
+> Teams)?
 
 **Do NOT proceed to Phase 14 until the user answers "yes" to all of them.**
 If they say no, ask which steps are pending and wait. The next phase
