@@ -113,6 +113,42 @@ be inferred.
 When you do ask, ask **one focused question at a time** with a `choices` array
 where applicable.
 
+**Do NOT add catch-all choices** like `Custom (I'll describe it)`, `Other`,
+`Something else`, `Custom — type below`, or similar. The CLI surfaces a
+built-in **"Type something"** freeform input on every question automatically.
+Adding your own catch-all option produces a duplicate that confuses the user.
+When the user types a freeform value via the built-in input, treat it the
+same as if they had picked the explicit `Other` / custom path documented in
+each phase (e.g. set `languageIsCustom = true`, `frameworkIsCustom = true`,
+`modelProviderIsCustom = true`, or, for Phase 3 agent purpose, record the
+freeform text verbatim as `agentPurpose`).
+
+---
+
+## Command-invention rule (never invent CLI commands)
+
+Only suggest CLI commands that are **documented in this skill, the sibling
+skill SKILL.md files, the references under `references/`, or confirmed by a
+real `--help` / `-h` output you have just observed in this session**. If
+you have not seen evidence that a command, subcommand, or flag exists, you
+must NOT mention it — not even as advisory guidance, recovery steps, or
+"you can also run …" suggestions.
+
+Specifically forbidden patterns:
+- Inventing `a365` subcommands (e.g. `a365 setup blueprint --rotate-secret`,
+  `a365 reset-token` — none of these exist unless you have verified them
+  with `a365 -h` / `a365 <cmd> -h` in the current session).
+- Inventing `az` subcommands (e.g. `az ad app rotate-secret`).
+- Inventing `dotnet` / `npm` / `pip` flags you have not seen documented.
+
+When you need to advise the user to perform an action there is no real
+command for (e.g. rotating a leaked secret, recreating a blueprint,
+removing a wrongly-granted permission), describe the action as a **manual
+portal step** with a link to the relevant admin surface (Azure Portal,
+Entra admin center, Microsoft 365 Admin Center, Teams Developer Portal),
+not as a fake CLI command. If you genuinely don't know how to do it, say
+so and ask the user — never make one up.
+
 ---
 
 ## Phase 0 — Intro + task list
@@ -124,26 +160,28 @@ I'll build you a new Agent 365 AI Teammate from scratch. Here's the plan:
 
   1. Sign in to Azure
   2. Make sure the A365 CLI is installed
-  3. Confirm what your agent should do, the MCP servers it needs, and your
+  3. Confirm the signed-in user has a Microsoft 365 E7 license (required
+     to use Agent 365)
+  4. Confirm what your agent should do, the MCP servers it needs, and your
      language / framework / model provider
-  4. Look up the latest stable docs and package versions for that stack on
+  5. Look up the latest stable docs and package versions for that stack on
      the web, so the scaffold uses current SDKs
-  5. Scaffold the agent project (with notification handlers, plus an
+  6. Scaffold the agent project (with notification handlers, plus an
      AGENT_LIFECYCLE handler that introduces your AI Teammate to the user's
      manager via Microsoft Graph on first install) and create two env files
      for credentials
-  6. Pause so you can paste in your model credentials
-  7. Run `a365 setup all --aiteammate --agent-name <agentName>` to register
+  7. Pause so you can paste in your model credentials
+  8. Run `a365 setup all --aiteammate --agent-name <agentName>` to register
      the blueprint and populate `.env` with the service-connection creds
-  8. Wire observability and WorkIQ MCP tools (now reads the real blueprint
+  9. Wire observability and WorkIQ MCP tools (now reads the real blueprint
      id, client id/secret, and tenant id that setup just wrote)
-  9. Run `a365 validate` locally and iteratively fix any issues it reports
-     (this builds, boots, and tests the agent locally) until it passes
-  10. Set up a devtunnel, run `a365 publish`, then walk through the manual
+  10. Run `a365 validate` locally and iteratively fix any issues it reports
+      (this builds, boots, and tests the agent locally) until it passes
+  11. Set up a devtunnel, run `a365 publish`, then walk through the manual
       steps (upload manifest to MAC, set the messaging endpoint in Teams
       Dev Portal to the devtunnel, create an agent instance via Teams) —
       pause for your confirmation
-  11. Run `a365 validate --with-tenant` to exercise live Teams + email
+  12. Run `a365 validate --with-tenant` to exercise live Teams + email
       traffic via the devtunnel; iteratively fix any issues until it
       passes, then confirm you're ready for deployment
 
@@ -192,6 +230,49 @@ a365 -h
   When it finishes, tell the user **"A365 CLI installed."** Re-run `a365 -h`
   to confirm. If `dotnet` itself is missing, surface that as a hard prerequisite
   and stop.
+
+---
+
+## Phase 2.5 — Microsoft 365 E7 license check
+
+Agent 365 requires the signed-in user to have a **Microsoft 365 Copilot** license
+(commonly licensed via the **Microsoft 365 E7** SKU, `skuPartNumber` matching
+`Microsoft_365_E7` / `M365_E7_*`). Without it, blueprint registration and
+tenant validation will fail later. Verify this **before** wasting time on
+scaffolding.
+
+Run (PowerShell):
+
+```powershell
+az rest --method GET --uri "https://graph.microsoft.com/v1.0/me/licenseDetails" | ConvertFrom-Json | Select-Object -ExpandProperty value | Select-Object skuPartNumber, skuId
+```
+
+Inspect the returned list of SKUs:
+
+- **Pass** — at least one `skuPartNumber` contains `E7` (case-insensitive).
+  Tell the user **"Microsoft 365 E7 license detected — proceeding."** and
+  continue to Phase 3.
+- **Fail** — no `E7` SKU present. Print the full SKU list verbatim so the
+  user can confirm, then stop with:
+
+  > ❌ I don't see a Microsoft 365 E7 license on the signed-in account.
+  > Agent 365 requires a Microsoft 365 E7 license.
+  >
+  > Options:
+  >   1. Sign in with a different account that has E7 (`az logout` then
+  >      `az login`), then re-run this skill.
+  >   2. Ask your tenant admin to assign you an E7 license, then re-run.
+  >
+  > Which would you like to do?
+
+  Do **not** continue past this phase until an E7 SKU is detected. Re-run
+  the `az rest` command after the user signs in with a different account or
+  confirms a license was assigned.
+
+- **Command error** — if `az rest` returns 401 / 403 / `InvalidAuthenticationToken`,
+  the Azure CLI session is missing Microsoft Graph scope. Tell the user to run
+  `az login --scope https://graph.microsoft.com/.default` and retry. If the
+  command returns an empty `value` array, treat it the same as Fail above.
 
 ---
 
@@ -281,10 +362,10 @@ If not inferable, ask:
 > - C#
 > - Python
 > - TypeScript
-> - Other
 
-Record as `language`. If the user picks **Other**, prompt for the freeform
-value and set `languageIsCustom = true`. Warn briefly:
+Record as `language`. If the user types a freeform value via the CLI's
+built-in "Type something" option, set `languageIsCustom = true` and warn
+briefly:
 
 > ⚠️ `${language}` isn't a first-party Agent 365 SDK target. A sidecar
 > approach is planned to support arbitrary languages — for now, continuing
@@ -316,11 +397,10 @@ can review the framework before choosing. Example phrasing:
 > - **CrewAI** — https://github.com/crewAIInc/crewAI
 > - **Claude Agent SDK** — https://code.claude.com/docs/en/agent-sdk/overview
 > - …(only show rows whose `language` column is checked)
-> - **Other**
 
 If not inferable, ask with the filtered list as `choices`. Record as
-`framework`. If the user picks **Other**, prompt for the freeform value and
-set `frameworkIsCustom = true`. Warn briefly:
+`framework`. If the user types a freeform value via the CLI's built-in
+"Type something" option, set `frameworkIsCustom = true` and warn briefly:
 
 > ⚠️ `${framework}` isn't on the curated list — best-effort wiring only.
 
@@ -337,14 +417,13 @@ If not inferable, ask:
 > - Anthropic Console
 > - Google Gemini Enterprise Agent Platform
 > - Direct API key
-> - Other
 
 Record as `modelProvider`. If the user picks **Direct API key**, prompt for
-the provider name and the env-var name holding the key. If the user picks
-**Other**, prompt for the freeform value and set `modelProviderIsCustom =
-true`; ask which env vars its SDK expects so Phase 8 can wire them
-correctly.Use this to pick the correct env-var names in
-Phase 8 (e.g. `AZURE_OPENAI_*`, `AWS_*` + `BEDROCK_*`, `ANTHROPIC_API_KEY`,
+the provider name and the env-var name holding the key. If the user types a
+freeform value via the CLI's built-in "Type something" option, set
+`modelProviderIsCustom = true` and ask which env vars its SDK expects so
+Phase 8 can wire them correctly. Use this to pick the correct env-var names
+in Phase 8 (e.g. `AZURE_OPENAI_*`, `AWS_*` + `BEDROCK_*`, `ANTHROPIC_API_KEY`,
 `GOOGLE_APPLICATION_CREDENTIALS` + `VERTEX_*`).
 
 ### Azure OpenAI — auth is fixed (do NOT prompt)
@@ -370,8 +449,8 @@ Concretely in Phase 8:
 
 **Before scaffolding (Phase 8), search the web** for up-to-date documentation
 and current stable package versions for the chosen orchestration stack. Do
-this for **every** orchestration framework — including curated, "Other", and
-custom (`frameworkIsCustom = true`) selections. The reference markdown under
+this for **every** orchestration framework — including curated and custom
+(`frameworkIsCustom = true`) selections. The reference markdown under
 `make-ai-teammate/references/` is the structural source of truth (project
 layout, hosting wiring, notification dispatch), but package version pins
 there may be stale; the web is the source of truth for versions.
@@ -700,11 +779,28 @@ file does not).
 
 ### Pause for credentials
 
-After scaffolding finishes, **pause** and tell the user:
+After scaffolding finishes, **pause** and tell the user. The message must
+make clear that **only one file needs editing** — the production env file
+(`.env` for Python/Node.js, `appsettings.json` for .NET). The local override
+file (`.env.local` / `appsettings.Development.json`) intentionally inherits
+all model credentials from the production file and must NOT contain empty
+`KEY=` lines for those credentials (the dotenv load-order pitfall above
+would silently shadow the production value).
 
-> The agent is scaffolded. Open both `<file-1>` and `<file-2>` and add your
-> model credentials (API key, endpoint, deployment name, etc.). Reply when
-> you've added them to both files and we'll continue.
+Use this exact phrasing (substitute `<production-env-file>` with the actual
+file name and `<credentials>` with the specific keys the chosen provider
+requires — e.g. `ANTHROPIC_API_KEY` for Anthropic, or
+`AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_DEPLOYMENT`
+for Azure OpenAI):
+
+> The agent is scaffolded. Open **`<production-env-file>`** and fill in
+> your model credentials:
+>
+> ```
+> <credentials>
+> ```
+>
+> Reply when you've added the credentials and we'll continue.
 
 Wait for explicit confirmation before moving on.
 
