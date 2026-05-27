@@ -927,7 +927,7 @@ SemanticKernel, OpenAI, AgentFramework, etc. is built in (all default `true`).
 |--------------|-------------------------------------------------------------------------------------------------------------------|
 11| C# / .NET    | `builder.UseMicrosoftOpenTelemetry(o => { o.Exporters = builder.Environment.IsDevelopment() ? ExportTarget.Agent365 \| ExportTarget.Otlp \| ExportTarget.Console : ExportTarget.Agent365 \| ExportTarget.Otlp; })` (OBO path — distro auto-registers `IExporterTokenCache<AgenticTokenStruct>`; no separate `AddAgenticTracingExporter()` / `AddA365Tracing()` call needed). For S2S, also set `o.Agent365.Exporter.UseS2SEndpoint = true` and supply `o.Agent365.Exporter.TokenResolver`. |
 | Node.js      | `useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, tokenResolver } })` from `@microsoft/opentelemetry`. For S2S, also set `useS2SEndpoint: true`. |
-| Python       | `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)` from `microsoft_opentelemetry`. For S2S, also pass `a365_use_s2s_endpoint=True`. |
+| Python       | `use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=...)` from `microsoft.opentelemetry` (note the **dot** — the PyPI package `microsoft-opentelemetry` installs into the `microsoft` namespace package, not `microsoft_opentelemetry`). For S2S, also pass `a365_use_s2s_endpoint=True`. |
 
 Also wire `.UseOpenTelemetry()` on the `IChatClient` (.NET) / equivalent on the
 chosen AI SDK — that's what makes the SDK emit `gen_ai.inference` / `gen_ai.tool`
@@ -1095,7 +1095,7 @@ changing `OTEL_EXPORTER_OTLP_ENDPOINT` to the collector's endpoint URL.
 > **Don't pin the observability logger below the env var.** Wire your host so
 > that the observability logger reads its level from `A365_OBSERVABILITY_LOG_LEVEL`.
 > Logger categories depend on which path you chose:
-> - **Distro (default):** `microsoft_opentelemetry` (Python) / `@microsoft/opentelemetry` (Node.js) / `Microsoft.OpenTelemetry` (.NET)
+> - **Distro (default):** `microsoft.opentelemetry` (Python — namespace package) / `@microsoft/opentelemetry` (Node.js) / `Microsoft.OpenTelemetry` (.NET)
 > - **SDK-native (opt-out):** `microsoft_agents_a365.observability` (Python) / `@microsoft/agents-a365-observability` (Node.js) / `Microsoft.Agents.A365.Observability` (.NET)
 >
 > Hardcoding to `ERROR` makes "is observability working?" unanswerable in Phase 14 because success messages live at INFO/DEBUG.

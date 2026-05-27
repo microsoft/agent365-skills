@@ -3,6 +3,13 @@
 Authoritative code patterns for the `make-ai-teammate` skill — Python AgentFramework variant.
 Source: [Agent365-Samples/python/agent-framework/sample-agent](https://github.com/microsoft/Agent365-Samples/tree/main/python/agent-framework/sample-agent)
 
+> **SDK-wide module-path conventions** (apply to every variant in this file):
+> - PyPI `microsoft-agents-hosting-*` → Python `microsoft_agents.hosting.*` *(namespace package — dashes become dots, not underscores)*
+> - PyPI `microsoft-agents-a365-*` → Python `microsoft_agents_a365.*` *(underscore between `agents` and `a365`, dot before the leaf)*
+> - PyPI `microsoft-opentelemetry` → Python `microsoft.opentelemetry` *(also namespaced under `microsoft`)*
+>
+> Do NOT use the all-underscore form (`microsoft_agents_hosting_aiohttp`, `microsoft_opentelemetry`, `microsoft_agents_a365_notifications`) — those will `ModuleNotFoundError` at runtime even though the dist-info directory is named that way.
+
 ---
 
 ## Required Dependencies (pyproject.toml)
@@ -44,8 +51,6 @@ dependencies = [
     # Microsoft Agent 365 SDK packages (GA 1.0.0)
     "microsoft-agents-a365-runtime >= 1.0.0",
     "microsoft-agents-a365-notifications >= 1.0.0",
-    "microsoft-agents-a365-observability-core >= 1.0.0",
-    "microsoft-agents-a365-observability-hosting >= 1.0.0",
     "microsoft-agents-a365-tooling >= 1.0.0",
 
     # MCP tooling adapter (install one matching your framework — parity with .NET IMcpToolRegistrationService)
@@ -53,6 +58,11 @@ dependencies = [
     # "microsoft-agents-a365-tooling-extensions-openai >= 1.0.0",
     # "microsoft-agents-a365-tooling-extensions-claude >= 1.0.0",
 
+    # Unified OpenTelemetry distro (re-exports BaggageBuilder / InvokeAgentScope / etc.
+    # via microsoft.opentelemetry.a365.core). Do NOT also install
+    # microsoft-agents-a365-observability-core / -hosting — the distro re-exports
+    # everything those expose, and installing both causes duplicate-type imports
+    # and span double-export.
     "microsoft-opentelemetry >= 1.2.0",
 ]
 
@@ -81,8 +91,6 @@ Patterns in this reference are validated against these versions. pip excludes pr
 | `microsoft-agents-activity` | 0.9.x | unpinned |
 | `microsoft-agents-a365-runtime` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-a365-notifications` | 1.0.0 | `>= 1.0.0` |
-| `microsoft-agents-a365-observability-core` | 1.0.0 | `>= 1.0.0` |
-| `microsoft-agents-a365-observability-hosting` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-a365-tooling` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-agents-a365-tooling-extensions-agentframework` | 1.0.0 | `>= 1.0.0` |
 | `microsoft-opentelemetry` | 1.2.0 | `>= 1.2.0` |
@@ -108,7 +116,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +197,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             # Read email via WorkIQ Mail, then generate reply
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
@@ -212,167 +220,466 @@ class MyAgent(AgentInterface):
 
 ## host_agent_server.py — aiohttp Server + A365 Routing
 
+Source of truth: [`Agent365-Samples/python/agent-framework/sample-agent/host_agent_server.py`](https://github.com/microsoft/Agent365-Samples/blob/main/python/agent-framework/sample-agent/host_agent_server.py).
+
+The file below is the published sample, with **two skill-driven adjustments** called out inline:
+- `PORT` default — the sample uses Bot Framework's legacy `3978`; this skill aligns to **`5000`** because that's what `a365 validate`'s harness probes for all stacks.
+- `BaggageBuilder` import — the sample uses the SDK-native path (`microsoft_agents_a365.observability.core.middleware.baggage_builder`). This skill prefers the **unified distro re-export** (`microsoft.opentelemetry.a365.core.BaggageBuilder`) so the project doesn't need to install the legacy `microsoft-agents-a365-observability-*` packages alongside the distro (the build skill flags that combination as forbidden — duplicate-type / double-export hazard).
+
+Everything else is verbatim from the sample. The companion `token_cache.py` (used by `cache_agentic_token` / `get_cached_agentic_token`) is a small per-project helper — copy from the sample's repo or re-implement against your preferred cache.
+
 ```python
-# Copyright (c) Microsoft Corporation. All rights reserved.
+# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+
+"""Generic Agent Host Server - Hosts agents implementing AgentInterface"""
+
+# --- Imports ---
 
 import asyncio
 import logging
 import os
-from typing import Type
+import socket
+from os import environ
+from aiohttp.web import Application, Request, Response, json_response, run_app
+from aiohttp.web_middlewares import middleware as web_middleware
 from dotenv import load_dotenv
-
-load_dotenv()
-
-from agent_interface import AgentInterface
-from microsoft_agents.hosting.core import Authorization
-
-from aiohttp import web
-from microsoft_agents_hosting_aiohttp import CloudAdapter
-from microsoft_agents_hosting_core import ActivityTypes
-from microsoft_agents.hosting.core.authorization import MsalConnectionManager
-from microsoft_agents_a365_notifications import (
-    agent_notification,
+from agent_interface import AgentInterface, check_agent_inheritance
+from microsoft_agents.activity import (
+    load_configuration_from_env,
+    Activity,
+    ActivityTypes,
     ChannelId,
-    NotificationType,
 )
+from microsoft_agents.authentication.msal import MsalConnectionManager
+from microsoft_agents.hosting.aiohttp import (
+    CloudAdapter,
+    jwt_authorization_middleware,
+    start_agent_process,
+)
+from microsoft_agents.hosting.core import (
+    AgentApplication,
+    AgentAuthConfiguration,
+    AuthenticationConstants,
+    Authorization,
+    ClaimsIdentity,
+    MemoryStorage,
+    TurnContext,
+    TurnState,
+)
+from microsoft_agents_a365.notifications import (
+    AgentNotification,
+    AgentNotificationActivity,
+    EmailResponse,
+    NotificationTypes,
+)
+from microsoft.opentelemetry import use_microsoft_opentelemetry
+# Skill adjustment: BaggageBuilder via the unified distro re-export — avoids
+# needing microsoft-agents-a365-observability-core installed alongside the distro.
+from microsoft.opentelemetry.a365.core import BaggageBuilder
+from microsoft_agents_a365.runtime.environment_utils import (
+    get_observability_authentication_scope,
+)
+from token_cache import cache_agentic_token, get_cached_agentic_token
+
+# --- Configuration ---
+
+ms_agents_logger = logging.getLogger("microsoft_agents")
+ms_agents_logger.addHandler(logging.StreamHandler())
+ms_agents_logger.setLevel(logging.INFO)
+
+observability_logger = logging.getLogger("microsoft_agents_a365.observability")
+observability_logger.setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
-AUTH_HANDLER_NAME = os.getenv("AUTH_HANDLER_NAME", "")
+load_dotenv()
 
+agents_sdk_config = load_configuration_from_env(environ)
+
+# --- Public API ---
+
+def create_and_run_host(
+    agent_class: type[AgentInterface], *agent_args, **agent_kwargs
+):
+    """Create and run a generic agent host"""
+    if not check_agent_inheritance(agent_class):
+        raise TypeError(
+            f"Agent class {agent_class.__name__} must inherit from AgentInterface"
+        )
+
+    # Initialize Microsoft OpenTelemetry distro for observability.
+    use_microsoft_opentelemetry(
+        enable_a365=True,
+        enable_azure_monitor=False,
+        a365_token_resolver=lambda agent_id, tenant_id: get_cached_agentic_token(
+            tenant_id, agent_id
+        )
+        or "",
+    )
+
+    host = GenericAgentHost(agent_class, *agent_args, **agent_kwargs)
+    auth_config = host.create_auth_configuration()
+    host.start_server(auth_config)
+
+# --- Generic Agent Host ---
 
 class GenericAgentHost:
-    def __init__(self, agent: AgentInterface):
-        self._agent = agent
-        self._adapter: CloudAdapter | None = None
-        self._app: web.Application | None = None
+    """Generic host for agents implementing AgentInterface"""
+
+    # --- Initialization ---
+
+    def __init__(self, agent_class: type[AgentInterface], *agent_args, **agent_kwargs):
+        if not check_agent_inheritance(agent_class):
+            raise TypeError(
+                f"Agent class {agent_class.__name__} must inherit from AgentInterface"
+            )
+
+        # Auth handler name — set AUTH_HANDLER_NAME=AGENTIC for production agentic auth.
+        self.auth_handler_name = os.getenv("AUTH_HANDLER_NAME", "") or None
+        if self.auth_handler_name:
+            logger.info(f"🔐 Using auth handler: {self.auth_handler_name}")
+        else:
+            logger.info("🔓 No auth handler configured (AUTH_HANDLER_NAME not set)")
+
+        self.agent_class = agent_class
+        self.agent_args = agent_args
+        self.agent_kwargs = agent_kwargs
+        self.agent_instance = None
+        self.storage = MemoryStorage()
+        self.connection_manager = MsalConnectionManager(**agents_sdk_config)
+        self.adapter = CloudAdapter(connection_manager=self.connection_manager)
+        self.authorization = Authorization(
+            self.storage, self.connection_manager, **agents_sdk_config
+        )
+        self.agent_app = AgentApplication[TurnState](
+            storage=self.storage,
+            adapter=self.adapter,
+            authorization=self.authorization,
+            **agents_sdk_config,
+        )
+        self.agent_notification = AgentNotification(self.agent_app)
+        self._setup_handlers()
+        logger.info("✅ Notification handlers registered successfully")
+
+    # --- Observability ---
+
+    async def _setup_observability_token(
+        self, context: TurnContext, tenant_id: str, agent_id: str
+    ):
+        if not self.auth_handler_name:
+            logger.debug("Skipping observability token exchange (no auth handler)")
+            return
+        try:
+            exaau_token = await self.agent_app.auth.exchange_token(
+                context,
+                scopes=get_observability_authentication_scope(),
+                auth_handler_id=self.auth_handler_name,
+            )
+            cache_agentic_token(tenant_id, agent_id, exaau_token.token)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to cache observability token: {e}")
+
+    async def _validate_agent_and_setup_context(self, context: TurnContext):
+        tenant_id = context.activity.recipient.tenant_id
+        agent_id = context.activity.recipient.agentic_app_id
+
+        if not self.agent_instance:
+            logger.error("Agent not available")
+            await context.send_activity("❌ Sorry, the agent is not available.")
+            return None
+
+        await self._setup_observability_token(context, tenant_id, agent_id)
+        return tenant_id, agent_id
+
+    # --- Handlers (Messages & Notifications) ---
 
     def _setup_handlers(self):
-        """Register all activity handlers on the adapter."""
+        """Setup message and notification handlers"""
 
-        @self._adapter.on_activity(ActivityTypes.members_added)
-        async def on_members_added(context, state):
-            for member in context.activity.members_added or []:
-                if member.id != context.activity.recipient.id:
-                    await context.send_activity("Hello! I can help you today.")
-
-        @self._adapter.on_activity(ActivityTypes.installation_update)
-        async def on_installation_update(context, state):
-            action = getattr(context.activity, "action", None)
-            if action == "add":
-                await context.send_activity("Thank you for hiring me!")
-            elif action == "remove":
-                await context.send_activity("Thank you for your time!")
-
-        @self._adapter.on_activity(ActivityTypes.message)
-        async def on_message(context, state):
-            # Immediate ack
-            await context.send_activity("Got it — working on it…")
-            await context.send_activity({"type": "typing"})
-
-            # Pass the Authorization instance from the adapter (NOT a raw token string).
-            # The agent class calls authorization.exchange_token(...) per turn for OBO /
-            # agentic-user, or reads BEARER_TOKEN env when USE_AGENTIC_AUTH is false.
-            authorization = self._adapter.authorization
-
-            # Typing indicator loop
-            typing_active = True
-            async def typing_loop():
-                while typing_active:
-                    await asyncio.sleep(4)
-                    if typing_active:
-                        await context.send_activity({"type": "typing"})
-
-            typing_task = asyncio.create_task(typing_loop())
-            try:
-                reply = await self._agent.process_user_message(
-                    context.activity.text or "",
-                    authorization,
-                    AUTH_HANDLER_NAME or None,
-                    context,
-                )
-                await context.send_activity(reply)
-            finally:
-                typing_active = False
-                typing_task.cancel()
-
-        @agent_notification.on_agent_notification(
-            channel_id=ChannelId(channel="agents", sub_channel="*")
+        # Configure auth handlers - only required when auth_handler_name is set.
+        handler_config = (
+            {"auth_handlers": [self.auth_handler_name]} if self.auth_handler_name else {}
         )
-        async def on_notification(context, state):
-            notification_type = getattr(context.activity, "name", None)
-            reply = await self._agent.handle_agent_notification_activity(
-                notification_type,
-                context.activity.value,
-                context,
-                None,
-                AUTH_HANDLER_NAME or None,
+
+        async def help_handler(context: TurnContext, _: TurnState):
+            await context.send_activity(
+                f"👋 **Hi there!** I'm **{self.agent_class.__name__}**, your AI assistant.\n\n"
+                "How can I help you today?"
             )
-            if reply:
-                await context.send_activity(reply)
 
-    async def start_server(self):
-        await self._agent.initialize()
+        self.agent_app.conversation_update("membersAdded", **handler_config)(help_handler)
+        self.agent_app.message("/help", **handler_config)(help_handler)
 
-        # MsalConnectionManager reads all CONNECTIONS__* / AGENTAPPLICATION__* env vars
-        # and resolves the right token issuer per service URL. Do NOT pass raw
-        # client_id / client_secret / tenant_id to the adapter — the connection
-        # manager owns that.
-        connection_manager = MsalConnectionManager.from_environment()
-        self._adapter = CloudAdapter(connection_manager=connection_manager)
-        self._setup_handlers()
+        @self.agent_app.activity("installationUpdate")
+        async def on_installation_update(context: TurnContext, _: TurnState):
+            action = context.activity.action
+            if action == "add":
+                await context.send_activity(
+                    "Thank you for hiring me! Looking forward to assisting you in your "
+                    "professional journey!"
+                )
+            elif action == "remove":
+                await context.send_activity(
+                    "Thank you for your time, I enjoyed working with you."
+                )
 
-        self._app = web.Application()
-        self._app.router.add_post("/api/messages", self._handle_messages)
-        self._app.router.add_get("/api/health", self._handle_health)
+        @self.agent_app.activity("message", **handler_config)
+        async def on_message(context: TurnContext, _: TurnState):
+            try:
+                result = await self._validate_agent_and_setup_context(context)
+                if result is None:
+                    return
+                tenant_id, agent_id = result
 
-        port = int(os.getenv("PORT", "3978"))
-        runner = web.AppRunner(self._app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", port)
-        await site.start()
-        logger.info(f"Agent server running on port {port}")
-        await asyncio.Event().wait()  # keep running
+                with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
+                    user_message = context.activity.text or ""
+                    if not user_message.strip() or user_message.strip() == "/help":
+                        return
 
-    async def _handle_messages(self, request: web.Request) -> web.Response:
-        # Per-request log — cheap "did Teams reach us?" debugging default.
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        text = (body.get("text") or "")[:60]
-        logger.info(
-            f"[/api/messages] type={body.get('type')} "
-            f"from={(body.get('from') or {}).get('name')} text={text}"
+                    # Immediate ack message before the LLM work begins.
+                    await context.send_activity("Got it — working on it…")
+                    await context.send_activity(Activity(type="typing"))
+
+                    # Typing indicator loop — refreshes every ~4s. Teams clears the
+                    # typing indicator after ~5s, so it must be re-sent.
+                    async def _typing_loop():
+                        try:
+                            while True:
+                                await asyncio.sleep(4)
+                                await context.send_activity(Activity(type="typing"))
+                        except asyncio.CancelledError:
+                            pass
+
+                    typing_task = asyncio.create_task(_typing_loop())
+                    try:
+                        response = await self.agent_instance.process_user_message(
+                            user_message, self.agent_app.auth, self.auth_handler_name, context
+                        )
+                        await context.send_activity(response)
+                    finally:
+                        typing_task.cancel()
+                        try:
+                            await typing_task
+                        except asyncio.CancelledError:
+                            pass
+            except Exception as e:
+                logger.error(f"❌ Error: {e}")
+                await context.send_activity(f"Sorry, I encountered an error: {str(e)}")
+
+        # Wildcard notification handler — routes by notification_type internally.
+        # Handler signature is (context, state, notification_activity) — 3 params, not 2.
+        @self.agent_notification.on_agent_notification(
+            channel_id=ChannelId(channel="agents", sub_channel="*"),
+            **handler_config,
         )
-        # Belt-and-suspenders: if the SDK exposes an on_turn_error hook on the adapter
-        # (Bot-Framework convention), configure it in start_server(). The outer try/except
-        # here catches anything that escapes — auth/context-setup errors or hook-internal
-        # throws — and returns 500 so we don't crash the aiohttp event loop.
-        try:
-            return await self._adapter.process(request)
-        except Exception as err:
-            logger.exception("[/api/messages] adapter.process raised", exc_info=err)
-            return web.Response(status=500, text='{"error":"Internal server error"}',
-                                content_type="application/json")
+        async def on_notification(
+            context: TurnContext,
+            state: TurnState,
+            notification_activity: AgentNotificationActivity,
+        ):
+            try:
+                result = await self._validate_agent_and_setup_context(context)
+                if result is None:
+                    return
+                tenant_id, agent_id = result
 
-    async def _handle_health(self, request: web.Request) -> web.Response:
-        import json
-        from datetime import datetime, timezone
-        body = json.dumps({"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()})
-        return web.Response(text=body, content_type="application/json")
+                with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
+                    if not hasattr(
+                        self.agent_instance, "handle_agent_notification_activity"
+                    ):
+                        await context.send_activity(
+                            "This agent doesn't support notification handling yet."
+                        )
+                        return
+
+                    response = await self.agent_instance.handle_agent_notification_activity(
+                        notification_activity, self.agent_app.auth,
+                        self.auth_handler_name, context,
+                    )
+
+                    # Email replies must be wrapped in EmailResponse — sending plain
+                    # text to an email notification conversation does NOT reply to
+                    # the original email; it produces a separate Teams message.
+                    if notification_activity.notification_type == NotificationTypes.EMAIL_NOTIFICATION:
+                        await context.send_activity(
+                            EmailResponse.create_email_response_activity(response)
+                        )
+                        return
+
+                    await context.send_activity(response)
+            except Exception as e:
+                logger.error(f"❌ Notification error: {e}")
+                await context.send_activity(
+                    f"Sorry, I encountered an error processing the notification: {str(e)}"
+                )
+
+    # --- Agent Initialization ---
+
+    async def initialize_agent(self):
+        if self.agent_instance is None:
+            self.agent_instance = self.agent_class(*self.agent_args, **self.agent_kwargs)
+            await self.agent_instance.initialize()
+
+    # --- Authentication ---
+
+    def create_auth_configuration(self) -> AgentAuthConfiguration | None:
+        client_id = environ.get("CLIENT_ID")
+        tenant_id = environ.get("TENANT_ID")
+        client_secret = environ.get("CLIENT_SECRET")
+
+        if client_id and tenant_id and client_secret:
+            return AgentAuthConfiguration(
+                client_id=client_id,
+                tenant_id=tenant_id,
+                client_secret=client_secret,
+                scopes=["5a807f24-c9de-44ee-a3a7-329e88a00ffc/.default"],
+            )
+
+        if environ.get("BEARER_TOKEN"):
+            logger.info("🔑 Anonymous dev mode")
+        else:
+            logger.warning("⚠️ No auth env vars; running anonymous")
+
+        return None
+
+    # --- Server ---
+
+    def start_server(self, auth_configuration: AgentAuthConfiguration | None = None):
+        async def entry_point(req: Request) -> Response:
+            return await start_agent_process(
+                req, req.app["agent_app"], req.app["adapter"]
+            )
+
+        async def health(_req: Request) -> Response:
+            return json_response(
+                {
+                    "status": "ok",
+                    "agent_type": self.agent_class.__name__,
+                    "agent_initialized": self.agent_instance is not None,
+                }
+            )
+
+        middlewares = []
+
+        if auth_configuration:
+            @web_middleware
+            async def jwt_with_health_bypass(request, handler):
+                # Skip JWT for /api/health so orchestrators (ACA, AKS, App Service)
+                # can probe health without a bearer token.
+                if request.path == "/api/health":
+                    return await handler(request)
+                return await jwt_authorization_middleware(request, handler)
+            middlewares.append(jwt_with_health_bypass)
+
+        @web_middleware
+        async def anonymous_claims(request, handler):
+            if not auth_configuration:
+                request["claims_identity"] = ClaimsIdentity(
+                    {
+                        AuthenticationConstants.AUDIENCE_CLAIM: "anonymous",
+                        AuthenticationConstants.APP_ID_CLAIM: "anonymous-app",
+                    },
+                    False,
+                    "Anonymous",
+                )
+            return await handler(request)
+        middlewares.append(anonymous_claims)
+
+        app = Application(middlewares=middlewares)
+        app.router.add_post("/api/messages", entry_point)
+        app.router.add_get("/api/messages", lambda _: Response(status=200))
+        app.router.add_get("/api/health", health)
+        app["agent_configuration"] = auth_configuration
+        app["agent_app"] = self.agent_app
+        app["adapter"] = self.agent_app.adapter
+
+        app.on_startup.append(lambda app: self.initialize_agent())
+        app.on_shutdown.append(lambda app: self.cleanup())
+
+        # Skill adjustment: PORT defaults to 5000 (what a365 validate probes), not 3978.
+        desired_port = int(environ.get("PORT", 5000))
+        port = desired_port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            if s.connect_ex(("127.0.0.1", desired_port)) == 0:
+                port = desired_port + 1
+
+        print(f"🚀 Server: localhost:{port}")
+        print(f"📚 Endpoint: http://localhost:{port}/api/messages")
+        print(f"❤️ Health: http://localhost:{port}/api/health")
+
+        try:
+            run_app(app, host="localhost", port=port, handle_signals=True)
+        except KeyboardInterrupt:
+            print("\n👋 Server stopped")
+
+    # --- Cleanup ---
 
     async def cleanup(self):
-        await self._agent.cleanup()
-
-
-def create_and_run_host(agent_class: Type[AgentInterface]):
-    """Entry point — instantiates the agent class and starts the host server."""
-    agent = agent_class()
-    host = GenericAgentHost(agent)
-    asyncio.run(host.start_server())
+        if self.agent_instance:
+            try:
+                await self.agent_instance.cleanup()
+            except Exception as e:
+                logger.error(f"Cleanup error: {e}")
 ```
+
+### Notifications — canonical patterns (from [`learn.microsoft.com/.../notification?tabs=python`](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/notification?tabs=python))
+
+**Imports:**
+```python
+from microsoft_agents.hosting.core import AgentApplication, Authorization, TurnContext
+from microsoft_agents_a365.notifications import (
+    AgentNotification,
+    AgentNotificationActivity,
+    NotificationTypes,
+)
+from microsoft_agents.activity import ChannelId
+```
+
+> The published docs show `from microsoft_agents_a365 import AgentApplication` — that re-export does NOT exist in `microsoft-agents-a365-notifications==1.0.0`. Import `AgentApplication` from `microsoft_agents.hosting.core` instead.
+
+**Wildcard handler — required signature is `(context, state, notification)`:**
+```python
+agent_notification = AgentNotification(app)
+
+@agent_notification.on_agent_notification(
+    ChannelId(channel="agents", sub_channel="*")
+)
+async def handle_all_notifications(context, state, notification):
+    if notification.notification_type == NotificationTypes.EMAIL_NOTIFICATION:
+        ...
+    elif notification.notification_type == NotificationTypes.WPX_COMMENT:
+        ...
+```
+
+**Per-subchannel convenience decorators** (these all wrap the wildcard internally):
+```python
+@agent_notification.on_email()
+@agent_notification.on_word()
+@agent_notification.on_excel()
+@agent_notification.on_powerpoint()
+```
+
+**Lifecycle events** — use `on_agent_lifecycle_notification("*")`. Event types:
+| Event | Event ID |
+|---|---|
+| User Identity Created | `agenticUserIdentityCreated` |
+| Workload Onboarding Updated | `agenticUserWorkloadOnboardingUpdated` |
+| User Deleted | `agenticUserDeleted` |
+
+```python
+@agent_notification.on_agent_lifecycle_notification("*")
+async def handle_lifecycle(context, state, notification):
+    lifecycle = notification.agent_lifecycle_notification
+    if lifecycle and lifecycle.lifecycle_event_type == "agenticUserIdentityCreated":
+        ...
+```
+
+**Optional kwargs on every notification decorator:** `rank` (lower = higher priority, default `32767`) and `auto_sign_in_handlers=['agentic']` for automatic per-handler auth.
+
+> **SDK bug — `AgentNotification.on_lifecycle()` is broken in `microsoft-agents-a365-notifications==1.0.0`.** Its body calls a non-existent `self.on_lifecycle_notification(...)` and raises `AttributeError`. The published docs use `on_agent_lifecycle_notification("*")` directly — that is the supported pattern, not a workaround.
 
 ---
 
@@ -428,7 +735,7 @@ For parity with the .NET `IMcpToolRegistrationService` DI hook, Python uses a mo
 # that file; this service reads them at runtime.
 
 import logging
-from microsoft_agents_a365_tooling import McpToolServerConfigurationService
+from microsoft_agents_a365.tooling import McpToolServerConfigurationService
 
 logger = logging.getLogger(__name__)
 
@@ -514,7 +821,7 @@ Every key below is consumed by something specific. Comments indicate run-target 
 | `PYTHON_ENVIRONMENT` | App code convention (`Development` / `Production`). Python SDK does NOT have a NODE_ENV-style silent-401 gate, so this is mostly informational. | annotate target |
 | `AUTH_HANDLER_NAME` | Python agent code at runtime to pick the active handler. `AGENTIC` in prod; empty leaves the agent with no handler. | prod / dev tunnel |
 | `USE_AGENTIC_AUTH` | Per-project sample code (NOT the SDK) — switches between agentic-auth and `BEARER_TOKEN` paths for MCP. `true` for prod, `false` for local. | always (project-dependent) |
-| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__{CLIENTID,CLIENTSECRET,TENANTID}` | `MsalConnectionManager.from_environment()` → outbound auth for Teams replies | prod / dev tunnel |
+| `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__{CLIENTID,CLIENTSECRET,TENANTID}` | `MsalConnectionManager(**load_configuration_from_env(os.environ))` → outbound auth for Teams replies | prod / dev tunnel |
 | `CONNECTIONSMAP_0_{SERVICEURL,CONNECTION}` | Connection routing | prod / dev tunnel |
 | `AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__AGENTIC__SETTINGS__{TYPE,SCOPES}` | Auth-handler settings | prod / dev tunnel |
 | `ENABLE_A365_OBSERVABILITY_EXPORTER` | `microsoft-opentelemetry` distro (single canonical read) | prod (`=true`) / local (`=false`) |
@@ -536,7 +843,9 @@ AZURE_OPENAI_API_VERSION=2024-05-01-preview
 # OR: OPENAI_API_KEY=
 
 # ── Server (always required) ────────────────────────────────────────────────
-PORT=3978
+# Port 5000 — the a365 validate harness probes :5000 for ALL stacks (.NET, Python,
+# Node.js). The legacy 3978 (Bot Framework default) is not what the validator uses.
+PORT=5000
 # Skill rewrites this based on runTarget — informational marker, not a silent-401 gate (unlike Node.js NODE_ENV).
 PYTHON_ENVIRONMENT=Production
 LOG_LEVEL=INFO
@@ -584,10 +893,10 @@ When `make-ai-teammate` Phase 8 runs for a Python project, the skill reads `runT
 |------|-----|
 | `load_dotenv()` at top of `host_agent_server.py` before any imports | Env vars must be set before SDK packages read them at import time |
 | `_sanitize_display_name()` strips control characters | `context.activity.from_property.name` is user-controlled text; prevents prompt injection |
-| `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
+| `AgentNotification(app).on_agent_notification(ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email, WPX_COMMENT, and lifecycle. Handler signature is `(context, state, notification_activity)` — three params. |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
-| Outer `try/except` around `self._adapter.process(request)` in `_handle_messages` | Bot-Framework convention exposes an `on_turn_error` hook on adapters that catches errors inside the turn lifecycle. If your `microsoft-agents-hosting` version exposes that hook, configure it in `start_server()` (`self._adapter.on_turn_error = ...`). The outer try/except in `_handle_messages` is the belt-and-suspenders fallback that catches anything escaping the hook (pre-turn auth failures, hook-internal throws), preventing the aiohttp event loop from crashing on `unhandled exception`. |
+| Outer `try/except` around `start_agent_process(request, app, adapter)` in the messages route | Activities flow through `start_agent_process(request, agent_app, adapter)` from `microsoft_agents.hosting.aiohttp` — NOT `adapter.process(request)`. Wrap the call so pre-turn validation errors → 400 and any other escape → 500; never let the aiohttp event loop crash on an unhandled exception. |
 | Per-request log line in `_handle_messages` | Cheap "did Teams reach us?" debugging default. Removable in prod if log volume matters. |
 
 ---
@@ -611,7 +920,7 @@ dependencies = [
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
-    "microsoft_agents_a365_notifications >= 0.1.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
     "python-dotenv",
     "aiohttp",
 ]
@@ -630,7 +939,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agents import Agent, Runner
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -693,7 +1002,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -722,7 +1031,7 @@ dependencies = [
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
-    "microsoft_agents_a365_notifications >= 0.1.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
     "python-dotenv",
     "aiohttp",
 ]
@@ -744,7 +1053,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     TextBlock,
 )
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -808,7 +1117,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -837,7 +1146,7 @@ dependencies = [
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
-    "microsoft_agents_a365_notifications >= 0.1.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
     "python-dotenv",
     "aiohttp",
 ]
@@ -866,7 +1175,7 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -941,7 +1250,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -967,7 +1276,7 @@ dependencies = [
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
-    "microsoft_agents_a365_notifications >= 0.1.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
     "python-dotenv",
     "aiohttp",
 ]
@@ -987,7 +1296,7 @@ from microsoft_agents.hosting.core import Authorization
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1053,7 +1362,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -1078,7 +1387,7 @@ dependencies = [
     "microsoft-agents-hosting-core",
     "microsoft-agents-authentication-msal",
     "microsoft-agents-activity",
-    "microsoft_agents_a365_notifications >= 0.1.0",
+    "microsoft-agents-a365-notifications >= 1.0.0",
     "python-dotenv",
     "aiohttp",
 ]
@@ -1103,7 +1412,7 @@ from semantic_kernel.connectors.ai.open_ai import (
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.contents import ChatHistory
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1166,7 +1475,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
