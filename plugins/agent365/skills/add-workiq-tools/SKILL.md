@@ -349,6 +349,25 @@ For every branch:
 1. Mark new code with `// A365 WorkIQ — added by add-workiq-tools skill` (.NET / Node.js) or `# A365 WorkIQ — added by add-workiq-tools skill` (Python). For **best-effort** branches use `… best-effort wiring (verify against SDK source before production)` instead.
 2. **Grep** for the framework's wiring symbol (`GetMcpToolsAsync` / `AddToolServersToAgentAsync` / `addToolServersToAgent` / `add_tool_servers_to_agent` / `McpToolRegistrationService`) before editing — skip the wiring step if already present.
 
+### ⚠️ Preserve-observability rule (applies to ALL §4.x branches that edit the message-handler file)
+
+`instrument-observability` writes anchors into the **same** files §4.x will touch — for .NET / Python the WorkIQ call goes into the same method body that the observability skill wraps with `BaggageBuilder` + `InvokeAgentScope` (.NET `OnMessageAsync`, Python `process_user_message`); for Node.js Claude SDK both skills edit `src/client.ts`. A naïve `Edit` with a too-broad `old_string` will silently delete the observability wrapping. **Before any `Edit` call inside §4.x, follow this checklist:**
+
+1. **Grep the target file for the observability anchor symbols:**
+   - **.NET** (`AgentApplication` subclass): `BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `Agent365ObservabilityContext`
+   - **Node.js** (`src/agent.ts` and `src/client.ts`): `BaggageBuilder`, `BaggageBuilderUtils`, `InvokeAgentScope`, `InferenceScope`, `AgenticTokenCacheInstance`, `preloadObservabilityToken`
+   - **Python** (`agent.py`): `BaggageBuilder`, `populate_baggage`, `InvokeAgentScope`, `with builder.build()`, `AgenticTokenCache`
+
+2. **If any of those symbols are present**, scope your `Edit` `old_string` **as narrowly as possible** — anchor on the **single statement immediately before/after** the new line, never a multi-statement block, never the method signature alone, never the full method body. Examples:
+   - ✅ Good: anchor on the `var response = await chatClient.GetResponseAsync(...)` line and insert `GetMcpToolsAsync` immediately above it.
+   - ❌ Bad: anchor on `protected override async Task OnMessageAsync(...)` plus the entire body — the replacement will obliterate the `using var baggageScope = ...` and `using var invokeScope = ...` blocks observability put there.
+
+3. **After the `Edit` completes, re-grep the file** for the same observability anchors. If any disappeared, the edit clobbered observability — **revert the edit and re-apply with a narrower anchor**. Do not proceed to the next file.
+
+4. If `instrument-observability` has NOT run yet in this project (no anchor symbols anywhere), wire WorkIQ normally — there is nothing to preserve. The composite `has_obs` signal in the parent skill (`make-ai-teammate` Phase 0A.3) is what tells you which case you're in; the cache reflects it.
+
+This rule is enforced by `validate-add-workiq-tools.js` at session end: if `has_obs = true` was in the cache at session start, the validator re-checks for the observability anchors and **fails the session** if they were removed.
+
 ---
 
 ### §4.1 .NET Agent Framework

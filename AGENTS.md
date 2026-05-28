@@ -291,6 +291,22 @@ on explicit runtime checks (CLI exit codes, `a365.generated.config.json` fields 
 `completed` / `resourceConsents`, `disk_blueprint_present` derived at read-time) and
 user-confirmed steps — never on a cached tenant-readiness flag.
 
+**`has_obs` and `has_workiq` are composite signals.** `has_obs = true` requires the
+entry-point call (`useMicrosoftOpenTelemetry` / `UseMicrosoftOpenTelemetry` /
+`use_microsoft_opentelemetry`) AND a token resolver AND a handler-side baggage / scope
+anchor (`BaggageBuilder` / `InvokeAgentScope`). `has_workiq = true` requires non-empty
+`ToolingManifest.json` AND the framework's MCP wiring symbol in agent code
+(`addToolServersToAgent` / `GetMcpToolsAsync` / `AddToolServersToAgentAsync` /
+`add_tool_servers_to_agent`) AND — for Node.js LangChain + `mcp_WordServer` — the Word
+`@mention` wiring (`WpxComment` + `proactive` + `userKeyToConversationId`). Anything less
+is `has_obs_partial` / `has_workiq_partial` (read-time only, never persisted).
+`make-ai-teammate` Phase 9.5 / 9.6 must re-enter the sub-skill on partial — not silently
+skip. `add-workiq-tools` Phase 4 must preserve the observability anchors when editing
+files that overlap with the obs wrapping (.NET `OnMessageAsync`, Python
+`process_user_message`, Node.js Claude SDK `src/client.ts`);
+`validate-add-workiq-tools.js` will fail the session if the entry-point obs anchor is
+present but the handler-side anchors disappeared after WorkIQ ran.
+
 ---
 
 ## CLI output buffering under chat-tool execution

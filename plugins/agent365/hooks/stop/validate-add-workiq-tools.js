@@ -24,7 +24,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { scanProject, filterByName, fileContains } = require('../lib/project-scan');
+const { scanProject, filterByName, fileContains, anyFileContains } = require('../lib/project-scan');
 
 function runCmd(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 8000 }); } catch { return ''; }
@@ -253,6 +253,54 @@ function checkPython() {
 if (isDotnet) checkDotnet();
 if (isNodejs) checkNodejs();
 if (isPython) checkPython();
+
+// ── Check 2b: WorkIQ did not clobber observability ──────────────────────────
+// If the project has the observability entry-point call, the handler-side
+// anchors (BaggageBuilder, InvokeAgentScope) MUST also still be present.
+// Their absence after this skill ran is strong evidence Phase 4's Edit used
+// a too-broad old_string and overwrote the observability wrapping. The
+// "preserve-observability" rule in Phase 4 of add-workiq-tools/SKILL.md is
+// what this check enforces.
+
+function checkObsPreservation() {
+  if (isDotnet) {
+    const csFilesForObs = filterByName(allFiles, '.cs');
+    const hasObsEntry = anyFileContains(csFilesForObs, 'UseMicrosoftOpenTelemetry') ||
+                        anyFileContains(csFilesForObs, 'AddA365Tracing');
+    if (!hasObsEntry) return; // observability never wired — nothing to preserve
+    const hasHandlerAnchor = anyFileContains(csFilesForObs, 'BaggageBuilder') ||
+                             anyFileContains(csFilesForObs, 'BaggageTurnMiddleware') ||
+                             anyFileContains(csFilesForObs, 'InvokeAgentScope');
+    if (!hasHandlerAnchor) {
+      issues.push('Observability entry-point (UseMicrosoftOpenTelemetry / AddA365Tracing) is present in Program.cs but no .cs file has BaggageBuilder, BaggageTurnMiddleware, or InvokeAgentScope.Start — WorkIQ Phase 4 likely clobbered the observability wrapping in OnMessageAsync. Restore the BaggageBuilder + InvokeAgentScope using-scopes before ending the session');
+    }
+  }
+  if (isNodejs) {
+    const hasObsEntry = anyFileContains(tsFiles, 'useMicrosoftOpenTelemetry');
+    if (!hasObsEntry) return;
+    const hasHandlerAnchor = anyFileContains(tsFiles, 'BaggageBuilder') ||
+                             anyFileContains(tsFiles, 'BaggageBuilderUtils') ||
+                             anyFileContains(tsFiles, 'InvokeAgentScope') ||
+                             anyFileContains(tsFiles, 'InferenceScope') ||
+                             anyFileContains(tsFiles, 'configureA365Hosting');
+    if (!hasHandlerAnchor) {
+      issues.push('Observability entry-point (useMicrosoftOpenTelemetry) is present in src/ but no TS/JS file has BaggageBuilder, BaggageBuilderUtils, InvokeAgentScope, InferenceScope, or configureA365Hosting — WorkIQ Phase 4 likely clobbered the observability wrapping in the message handler or client wrapper. Restore the baggage scope + scope.start blocks before ending the session');
+    }
+  }
+  if (isPython) {
+    const hasObsEntry = anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
+    if (!hasObsEntry) return;
+    const hasHandlerAnchor = anyFileContains(pyFiles, 'BaggageBuilder') ||
+                             anyFileContains(pyFiles, 'populate_baggage') ||
+                             anyFileContains(pyFiles, 'InvokeAgentScope') ||
+                             anyFileContains(pyFiles, 'InferenceScope');
+    if (!hasHandlerAnchor) {
+      issues.push('Observability entry-point (use_microsoft_opentelemetry) is present but no .py file has BaggageBuilder, populate_baggage, InvokeAgentScope, or InferenceScope — WorkIQ Phase 4 likely clobbered the observability wrapping in process_user_message. Restore the with builder.build(): scope and InvokeAgentScope.start before ending the session');
+    }
+  }
+}
+
+checkObsPreservation();
 
 // ── Check 3: a365 develop list-configured shows WorkIQ servers ──────────────
 // (best-effort — skip if a365 CLI not installed or not authenticated)
