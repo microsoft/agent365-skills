@@ -1,0 +1,103 @@
+name: Auto-release on version bump
+
+# Watches the plugin manifest on main. When its `version` field changes,
+# creates a matching `v<version>` GitHub release. Pre-release versions
+# (anything with a `-suffix` per semver — e.g. 1.1.0-beta.1, 1.0.0-preview.7)
+# are published as pre-releases AND marked NOT-latest so they don't override
+# the stable channel that `check-version.js` reads via `gh release view`.
+#
+# Sister-workflow: validate.yml `version-parity` job blocks any PR where the
+# three manifest version fields (plugin.json, .claude-plugin/marketplace.json,
+# .github/plugin/marketplace.json) disagree. This workflow re-runs the same
+# check inline as a release-time safety net.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/agent365/.claude-plugin/plugin.json'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need previous commit to diff the version field
+
+      - name: Compare old vs new version
+        id: v
+        run: |
+          NEW=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
+          OLD=$(git show HEAD~1:plugins/agent365/.claude-plugin/plugin.json 2>/dev/null \
+                | node -e "let s=''; process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).version)}catch{process.stdout.write('')}})" || echo "")
+          echo "new=$NEW"  >> "$GITHUB_OUTPUT"
+          echo "old=$OLD"  >> "$GITHUB_OUTPUT"
+          if [ "$NEW" != "$OLD" ] && [ -n "$NEW" ]; then
+            echo "changed=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Pre-release iff version has a semver pre-release suffix
+          # ('X.Y.Z-<anything>'). 1.0.3-rc.1, 2.0.0-beta, 1.1.0-preview.7 all match.
+          if echo "$NEW" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-'; then
+            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-verify manifest version parity (release-time safety net)
+        if: steps.v.outputs.changed == 'true'
+        run: |
+          V1=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
+          V2=$(node -e "process.stdout.write(require('./.claude-plugin/marketplace.json').version)")
+          V3=$(node -e "process.stdout.write(require('./.github/plugin/marketplace.json').metadata.version)")
+          if [ "$V1" != "$V2" ] || [ "$V1" != "$V3" ]; then
+            echo "::error::Manifest versions diverged at release time. plugin.json=$V1  .claude-plugin/marketplace.json=$V2  .github/plugin/marketplace.json=$V3"
+            echo "::error::validate.yml version-parity job should have blocked the PR. Fix all three then re-merge."
+            exit 1
+          fi
+          echo "✓ All three manifests at $V1"
+
+      - name: Bail if release tag already exists
+        id: tag
+        if: steps.v.outputs.changed == 'true'
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${{ steps.v.outputs.new }}" >/dev/null 2>&1; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::Release v${{ steps.v.outputs.new }} already exists — skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create stable release
+        if: |
+          steps.v.outputs.changed == 'true'
+          && steps.tag.outputs.exists == 'false'
+          && steps.v.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.new }}" \
+            --title  "v${{ steps.v.outputs.new }}" \
+            --target main \
+            --generate-notes \
+            --latest
+
+      - name: Create pre-release
+        if: |
+          steps.v.outputs.changed == 'true'
+          && steps.tag.outputs.exists == 'false'
+          && steps.v.outputs.prerelease == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.new }}" \
+            --title  "v${{ steps.v.outputs.new }}" \
+            --target main \
+            --generate-notes \
+            --prerelease \
+            --latest=false
