@@ -68,11 +68,7 @@ agent365-skills/
 
 6. **authMode canonical values** are `obo`, `s2s`, and `agentic-user`. Read case-insensitively, write lowercase.
 
-7. **`tenantReady` is deprecated and must not be used as a setup gate.**
-   Do not read or write `tenantReady` in `.a365-workspace-detection.local.json`.
-   Setup flow decisions should rely on explicit runtime checks and user-confirmed steps.
-
-8. **`has_obs` and `has_workiq` are composite signals — entry-point symbol alone is
+7. **`has_obs` and `has_workiq` are composite signals — entry-point symbol alone is
    insufficient.** `has_obs = true` requires entry-point call AND token resolver AND
    handler-side `BaggageBuilder` / `InvokeAgentScope`. `has_workiq = true` requires
    non-empty `ToolingManifest.json` AND the framework's MCP wiring symbol
@@ -84,7 +80,7 @@ agent365-skills/
    not silently skip. `add-workiq-tools` Phase 4 must preserve obs anchors when editing
    files that overlap with the obs wrapping.
 
-9. **`.a365-workspace-detection.local.json` MUST exist before any code-edit phase.**
+8. **`.a365-workspace-detection.local.json` MUST exist before any code-edit phase.**
    Every skill's Phase 0A Step 1 triage is responsible for writing this file (via
    `a365-setup` when missing on a project with code). Phase 0A Step 2 begins with a
    hard STOP guard that refuses to proceed when the file is absent. The stop-hook
@@ -92,11 +88,11 @@ agent365-skills/
    `validate-add-workiq-tools.js`) fail the session at end if the cache wasn't
    written. Never invent default cache values — re-run `a365-setup` instead.
 
-10. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
+9. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
 
-11. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+10. **Run task lists to completion in one turn.** When a skill creates a task list, execute
    every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
    finishes. Only pause at the explicit interaction points each SKILL.md documents
    (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server
