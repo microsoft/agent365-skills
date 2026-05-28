@@ -1,7 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
 
@@ -22,7 +22,7 @@ The Agent 365 CLI requires a custom Entra ID app registration in your tenant. Th
 
 Required admin role: **Application Administrator** *(recommended — lightest)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. See [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration) for full details.
 
-If you're a developer without admin access, the skills detect this and surface a clean handoff message for your admin — no need to track down a Global Admin yourself.
+If you're a developer without admin access and the CLI reports the tenant prerequisites are missing (e.g. `403` or "tenant not ready" from `a365 setup all`), share the `a365 setup requirements` command above with your tenant admin — once they run it, you'll inherit the ready state automatically.
 
 ---
 
