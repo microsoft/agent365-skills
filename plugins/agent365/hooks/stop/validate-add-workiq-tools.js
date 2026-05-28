@@ -47,12 +47,19 @@ const issues = [];
 
 let agentStack = '';
 let cachedLanguage = '';
+// `wordMentionDeclined` is the machine-readable marker for "user explicitly
+// said No to the Phase 4.5 @mention offer in this session". When set to true,
+// the Phase 4.5 enforcement check below skips the wiring requirement — the
+// declined branch IS the valid completion state. add-workiq-tools/SKILL.md
+// Phase 4.5 "On No" writes this back to the detection cache.
+let wordMentionDeclined = false;
 try {
   const cachePath = path.join(cwd, '.a365-workspace-detection.local.json');
   if (fs.existsSync(cachePath)) {
     const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    agentStack     = normalizeStack(cache.agentStack);
-    cachedLanguage = normalizeLanguage(cache.programmingLanguage);
+    agentStack          = normalizeStack(cache.agentStack);
+    cachedLanguage      = normalizeLanguage(cache.programmingLanguage);
+    wordMentionDeclined = cache.wordMentionDeclined === true;
   }
 } catch {
   // Cache unreadable — fall through to loose detection
@@ -80,16 +87,30 @@ if (HARD_STOP_PAIRS.has(`${cachedLanguage}:${agentStack}`)) {
 
 const manifestPath = path.join(cwd, 'ToolingManifest.json');
 let manifestHasWorkIQ = false;
+// Track mcp_WordServer specifically — gates the Phase 4.5 @mention enforcement
+// later in this validator. The exact catalog name is `mcp_WordServer`; we also
+// accept any case-insensitive variant on `mcp_word*` defensively.
+let manifestHasWordServer = false;
 if (fs.existsSync(manifestPath)) {
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    const entries  = Array.isArray(manifest) ? manifest : (manifest.mcpServers ?? []);
+    // Accept all three shapes the repo's detection rules treat as valid:
+    //   - top-level array (oldest)
+    //   - { mcpServers: [...] } (current)
+    //   - { servers: [...] } (legacy v1 schema, per shared/agent-detection.md § has_workiq)
+    const entries  = Array.isArray(manifest)
+                       ? manifest
+                       : (manifest.mcpServers ?? manifest.servers ?? []);
     manifestHasWorkIQ = entries.some(entry => {
       const name = (entry.mcpServerName ?? entry.name ?? entry.uniqueName ?? '').toLowerCase();
       return name.includes('workiq') || name.includes('work_iq') || name.includes('mail') ||
              name.includes('calendar') || name.includes('teams') || name.includes('sharepoint') ||
              name.includes('onedrive') || name.includes('word') || name.includes('user') ||
              name.includes('copilot') || name.includes('dataverse');
+    });
+    manifestHasWordServer = entries.some(entry => {
+      const name = (entry.mcpServerName ?? entry.name ?? entry.uniqueName ?? '');
+      return /^mcp_word/i.test(name);
     });
   } catch {
     issues.push('ToolingManifest.json exists but could not be parsed — file may be malformed');
@@ -263,6 +284,44 @@ function checkPython() {
 if (isDotnet) checkDotnet();
 if (isNodejs) checkNodejs();
 if (isPython) checkPython();
+
+// ── Check 2a: Phase 4.5 (Word @mention) was not silently skipped ────────────
+// Phase 4.5 of add-workiq-tools/SKILL.md has two gates:
+//   Gate 1 — programmingLanguage = NodeJS AND agentStack = LangChain
+//   Gate 2 — mcp_WordServer present in ToolingManifest.json
+// When BOTH pass, the skill MUST surface the Word @mention offer to the user
+// and either wire the handler (yes branch) or explicitly record "user declined"
+// (no branch). The SKILL.md text is advisory — this validator turns it into a
+// hard session-end failure, so a model that silently jumps from Phase 4 to
+// Phase 5 (instead of falling through to Phase 4.5) can't get away with it.
+//
+// The "yes" branch writes three distinctive symbols into src/**/*.ts:
+//   - `WpxComment` — the case NotificationType.WpxComment branch
+//   - `proactive` — the AgentApplication super({ proactive: {} }) option
+//   - `userKeyToConversationId` — the per-user proactive conversation index
+// All three are required by Phase 4.5; missing any one is strong evidence the
+// gates were never run.
+
+if (cachedLanguage === 'nodejs' && agentStack === 'langchain' && manifestHasWordServer && !wordMentionDeclined) {
+  const hasWpxComment   = anyFileContains(tsFiles, 'WpxComment');
+  const hasProactive    = anyFileContains(tsFiles, 'proactive');
+  const hasUserKeyIndex = anyFileContains(tsFiles, 'userKeyToConversationId');
+  if (!hasWpxComment || !hasProactive || !hasUserKeyIndex) {
+    const missing = [
+      !hasWpxComment   && 'WpxComment notification branch',
+      !hasProactive    && 'proactive: {} in AgentApplication super()',
+      !hasUserKeyIndex && 'userKeyToConversationId Map',
+    ].filter(Boolean).join('; ');
+    issues.push(
+      'Phase 4.5 (Word @mention) was silently skipped: ToolingManifest.json contains mcp_WordServer ' +
+      'AND the cached stack is Node.js LangChain — both gates pass, so the @mention offer was required. ' +
+      'Missing wiring: ' + missing + '. Either re-enter Phase 4.5 and wire the @mention handler (per ' +
+      'nodejs-workiq.md § "Word @mention notification handling"), OR — if the user explicitly declined ' +
+      'the offer in this session — merge {"wordMentionDeclined": true} into ' +
+      '.a365-workspace-detection.local.json so this check honours their choice on re-runs'
+    );
+  }
+}
 
 // ── Check 2b: WorkIQ did not clobber observability ──────────────────────────
 // If the project has the observability entry-point call, the handler-side

@@ -557,7 +557,10 @@ grep -i '"mcpServerName":\s*"mcp_WordServer"' ToolingManifest.json
 
 **On No:**
 
-Tell the user: *"Skipped. Word tools still work for direct user prompts; only the proactive @mention path is omitted. You can re-enable later by re-running `/agent365:add-workiq-tools` — the skill is idempotent."*
+1. Tell the user verbatim: *"Skipped. Word tools still work for direct user prompts; only the proactive @mention path is omitted. You can re-enable later by re-running `/agent365:add-workiq-tools` — the skill is idempotent."*
+2. **Record the decision in the cache** so the stop-hook validator honours it instead of failing the session at end:
+   - **Read** `.a365-workspace-detection.local.json`, merge `{ "wordMentionDeclined": true }` into it, **Write** it back.
+   - Without this marker, `validate-add-workiq-tools.js` will treat the missing `WpxComment` / `proactive` / `userKeyToConversationId` symbols as evidence of a silent skip (Phase 4.5 silently bypassed) and hard-fail the session. The marker is the machine-readable signal that "user declined" is the legitimate completion state.
 
 **Mark task complete: "Offer Word @mention handler (if applicable)"**
 

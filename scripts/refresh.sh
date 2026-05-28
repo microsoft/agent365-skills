@@ -118,9 +118,27 @@ if [ -f "$copilot_instr" ]; then
         # Use node for safe Unicode-correct string splitting (the H1 has an em-dash
         # in some upstream variants; awk/sed handling can drop bytes on Windows
         # checkouts that round-tripped through CRLF).
+        #
+        # Path-translation fix for Git Bash / MSYS on Windows: bash forms like
+        # /c/Users/... are NOT auto-translated when interpolated into a node -e
+        # script body (only argv is translated). Node on Windows then reads them
+        # as a path relative to the drive root and fails ENOENT. cygpath -m gives
+        # us a Windows-form path with forward slashes that works identically in
+        # Node on every OS.
+        if command -v cygpath >/dev/null 2>&1; then
+            node_path=$(cygpath -m "$copilot_instr")
+        else
+            node_path="$copilot_instr"
+        fi
+        # `set -euo pipefail` (top of file) would normally abort the script the
+        # instant node exits non-zero. The snippet below uses non-zero exits AS
+        # its return channel (10 = file deleted, 11 = file rewritten,
+        # 2 = no clean H1 boundary). The `|| rc=$?` idiom captures the exit code
+        # without tripping errexit, so the case-handler below actually runs.
+        rc=0
         node -e "
             const fs = require('fs');
-            const p = '$copilot_instr';
+            const p = '$node_path';
             const c = fs.readFileSync(p, 'utf8');
             const marker = '# Agent 365 Skills';
             let trimmed = null;
@@ -138,8 +156,7 @@ if [ -f "$copilot_instr" ]; then
                 fs.writeFileSync(p, trimmed + '\n', 'utf8');
                 process.exit(11);
             }
-        "
-        rc=$?
+        " || rc=$?
         case "$rc" in
             10)
                 printf '  [v] Wiped .github/copilot-instructions.md (file was purely Agent 365 instructions)\n'
@@ -187,7 +204,15 @@ do
 done
 
 if [ -n "$plugin_json" ]; then
-    installed_version=$(node -e "console.log(require('$plugin_json').version)" 2>/dev/null || true)
+    # Same Git Bash / MSYS path-translation gotcha as the copilot-instructions.md
+    # step above — convert with cygpath when available so node receives a path
+    # form it can actually open on Windows.
+    if command -v cygpath >/dev/null 2>&1; then
+        node_plugin_json=$(cygpath -m "$plugin_json")
+    else
+        node_plugin_json="$plugin_json"
+    fi
+    installed_version=$(node -e "console.log(require('$node_plugin_json').version)" 2>/dev/null || true)
     if [ -n "$installed_version" ]; then
         printf '\n\033[1;32mInstalled plugin version: %s\033[0m\n' "$installed_version"
     else
