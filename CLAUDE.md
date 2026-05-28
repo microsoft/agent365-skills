@@ -66,14 +66,17 @@ agent365-skills/
 
 5. **Skills are additive.** They never delete or restructure existing agent code.
 
-6. **authMode canonical values** are `obo`, `s2s`, and `agentic-user`. Never use old values
-   (`user-delegated`, `agentic-identity`, `S2S`, `both`). Read case-insensitively, write lowercase.
+6. **authMode canonical values** are `obo`, `s2s`, and `agentic-user`. Read case-insensitively, write lowercase.
 
-7. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
+7. **`tenantReady` is deprecated and must not be used as a setup gate.**
+   Do not read or write `tenantReady` in `.a365-workspace-detection.local.json`.
+   Setup flow decisions should rely on explicit runtime checks and user-confirmed steps.
+
+8. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
 
-8. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+9. **Run task lists to completion in one turn.** When a skill creates a task list, execute
    every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
    finishes. Only pause at the explicit interaction points each SKILL.md documents
    (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server
