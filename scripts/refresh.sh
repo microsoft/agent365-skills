@@ -130,6 +130,12 @@ if [ -f "$copilot_instr" ]; then
         else
             node_path="$copilot_instr"
         fi
+        # `set -euo pipefail` (top of file) would normally abort the script the
+        # instant node exits non-zero. The snippet below uses non-zero exits AS
+        # its return channel (10 = file deleted, 11 = file rewritten,
+        # 2 = no clean H1 boundary). The `|| rc=$?` idiom captures the exit code
+        # without tripping errexit, so the case-handler below actually runs.
+        rc=0
         node -e "
             const fs = require('fs');
             const p = '$node_path';
@@ -150,8 +156,7 @@ if [ -f "$copilot_instr" ]; then
                 fs.writeFileSync(p, trimmed + '\n', 'utf8');
                 process.exit(11);
             }
-        "
-        rc=$?
+        " || rc=$?
         case "$rc" in
             10)
                 printf '  [v] Wiped .github/copilot-instructions.md (file was purely Agent 365 instructions)\n'
