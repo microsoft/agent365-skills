@@ -29,10 +29,9 @@ hooks:
         Before ending, verify ALL of the following:
         1. All required system prerequisites were checked: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
         2. a365 CLI is installed and confirmed with a365 -h.
-        3. Tenant readiness verified — accept ANY of these terminal states: (a) cache had tenantReady=true at session start, (b) smoke probe `a365 develop list-available` returned the catalog cleanly and tenantReady was written to the cache, (c) `a365 setup requirements` ran and any reported issues were resolved, (d) user lacked an admin role (Application Admin / Cloud App Admin / GA) and the skill surfaced a clean handoff — this is a valid terminal state; the user re-runs after their admin completes the one-time setup.
-        4. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
-        5. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.local.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
-        6. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
+        3. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
+        4. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.local.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
+        5. Delegation to make-ai-teammate (AI Teammate path) or make-a365-agent (all other paths) was initiated.
         If any item is incomplete, return {"ok": false, "reason": "<specific item>"}.
         If no setup ran this session, or all items are complete, return {"ok": true}.
       timeout: 30000
@@ -593,46 +592,6 @@ dotnet --list-sdks
 Confirm at least one SDK entry at 8.0 or above is listed.
 
 ---
-
-### 1.9 — Verify tenant readiness (one-time per tenant)
-
-The Agent 365 CLI requires a custom Entra ID app registration in the tenant. This is a **one-time tenant-wide setup** — most developers will inherit a ready tenant from a teammate's admin and skip this step entirely.
-
-**1.9.1 — Skip if tenant is already verified.** Read `tenantReady` from `.a365-workspace-detection.local.json`. If `true`, jump to Step 2.
-
-**1.9.2 — Smoke-probe tenant readiness:**
-
-```bash
-a365 develop list-available 2>&1 | head -5
-```
-
-- Returns the MCP catalog cleanly → tenant is set up by some admin already. Write `tenantReady: true` to the cache and jump to Step 2.
-- Returns `403`, "tenant not ready", or auth error → continue to 1.9.3.
-- `a365` not found / not logged in → continue to 1.9.3.
-
-**1.9.3 — Run the configurator** (auto-creates the `Agent 365 CLI` app registration, adds redirect URIs, enables public-client flows, grants admin consent):
-
-```bash
-a365 setup requirements
-```
-
-The command is **interactive** — it shows a `(y/N)` confirmation prompt before modifying the app registration. Use `--yes` for CI. Works without `a365.config.json`. Single-category re-runs: `--category Azure|Authentication|PowerShell`.
-
-> ⚠️ **Long-running command — output may buffer under chat-tool execution.** If output stalls, see [AGENTS.md § CLI output buffering under chat-tool execution](../../../../AGENTS.md#cli-output-buffering-under-chat-tool-execution).
-
-**1.9.4 — If the user lacks an admin role**, the CLI detects this via the `wids` claim in the access token and falls back to printing PowerShell handoff scripts. Surface a clean handoff rather than just dumping CLI output:
-
-> ⚠️ **Tenant prerequisites need a one-time admin run.** Most developers don't have admin — that's expected. Ask your tenant admin to run this once:
->
-> ```bash
-> a365 setup requirements --yes
-> ```
->
-> Required role: **Application Administrator** *(recommended — lightest privilege)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration
->
-> Once they confirm it's done, re-run this skill — I'll detect tenant readiness via the smoke probe and cache `tenantReady: true`. Your teammates won't repeat this.
-
-On success (or smoke-probe pass), write `tenantReady: true` to `.a365-workspace-detection.local.json`.
 
 > **BEFORE MOVING ON:** Mark Todo 1 (Step 1) as **completed**. Mark Todo 2 (Step 2) as **in-progress**.
 

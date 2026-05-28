@@ -116,7 +116,11 @@ Reply **yes** to confirm, or describe any corrections.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` — section **"Agent Type and Auth Mode Detection"** — and follow it exactly.
 
-If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session), confirm the values with the user and skip the questions. Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
+If `agentType` and `authMode` are already present in the detection cache (from a prior skill run in this session OR pre-populated by a parent skill like make-ai-teammate), the confirmation behavior depends on `agentType`:
+- **`agentType = "ai-teammate"`** — skip the confirmation prompt entirely. The AI Teammate identity model is unambiguous (`authMode = agentic-user`, no obo/s2s decision exists), so a confirm prompt adds friction without catching drift. Proceed silently.
+- **`agentType = "system-agent"`** — confirm the cached values with the user before proceeding, since the obo/s2s choice is meaningful and a stale value would silently route to the wrong token path.
+
+Read `authMode` case-insensitively (`S2S` = `s2s`, `OBO` = `obo`); always write back the canonical lowercase value.
 
 Store `agentType` (`ai-teammate` or `system-agent`) and `authMode` (`obo`, `s2s`, or `agentic-user`).
 
