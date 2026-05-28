@@ -120,6 +120,14 @@ Decide what to do next from this table — do not fall through to Step 2 until o
 
 ### Step 2 — Load Detection Cache
 
+**🛑 STOP — `.a365-workspace-detection.local.json` MUST exist before this step.** Read the file path `.a365-workspace-detection.local.json` in the working directory. If it does not exist, you arrived at Step 2 by skipping Step 1's triage routing. Do NOT proceed. Do NOT invent default cache values. Do NOT run any further phase (no package install, no file edits, no `a365` CLI commands). Instead:
+
+1. Tell the user verbatim: *"I skipped the Step 1 triage and the detection cache wasn't written. Running `a365-setup` now to fix that, then I'll return here."*
+2. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/a365-setup/SKILL.md` and follow it to completion — `a365-setup` is what writes `.a365-workspace-detection.local.json`.
+3. Re-verify the file now exists, then continue with "Load from cache" below.
+
+This guard exists because earlier sessions have rationalised past Step 1's triage and run all of Phase 1 onward without the cache, producing partially-wired agents with no detection metadata. The stop hook (`validate-make-ai-teammate.js`) will fail the session at end if the cache file is still missing.
+
 (Only reached once the cache is fresh — either it already was, or `a365-setup` just wrote it.)
 
 Load from cache:

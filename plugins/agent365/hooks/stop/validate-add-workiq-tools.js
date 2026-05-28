@@ -114,6 +114,16 @@ const isDotnet = csprojFiles.length > 0;
 const isNodejs = !isDotnet && pkgJsonFiles.length > 0 && tsFiles.length > 0;
 const isPython = !isDotnet && !isNodejs && (pyFiles.length > 0 || reqFiles.length > 0);
 
+// ── Detection cache must exist when a language project is detected ──────────
+// Phase 0A Step 1 triage writes .a365-workspace-detection.local.json via
+// a365-setup. If we have a language project but no cache, the model skipped
+// triage and wired MCP servers against unknown agentStack / authMode.
+
+const hasLanguageProject = isDotnet || isNodejs || isPython;
+if (hasLanguageProject && !fs.existsSync(path.join(cwd, '.a365-workspace-detection.local.json'))) {
+  issues.push('.a365-workspace-detection.local.json was not written — Phase 0A Step 1 triage was skipped. The skill must run a365-setup (which writes this cache) before any MCP wiring. Re-run /agent365:a365-setup, then re-run /agent365:add-workiq-tools');
+}
+
 // ── Check 2: Agent code wiring — framework-scoped when cache present ────────
 
 function checkDotnet() {
