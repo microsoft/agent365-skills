@@ -118,9 +118,21 @@ if [ -f "$copilot_instr" ]; then
         # Use node for safe Unicode-correct string splitting (the H1 has an em-dash
         # in some upstream variants; awk/sed handling can drop bytes on Windows
         # checkouts that round-tripped through CRLF).
+        #
+        # Path-translation fix for Git Bash / MSYS on Windows: bash forms like
+        # /c/Users/... are NOT auto-translated when interpolated into a node -e
+        # script body (only argv is translated). Node on Windows then reads them
+        # as a path relative to the drive root and fails ENOENT. cygpath -m gives
+        # us a Windows-form path with forward slashes that works identically in
+        # Node on every OS.
+        if command -v cygpath >/dev/null 2>&1; then
+            node_path=$(cygpath -m "$copilot_instr")
+        else
+            node_path="$copilot_instr"
+        fi
         node -e "
             const fs = require('fs');
-            const p = '$copilot_instr';
+            const p = '$node_path';
             const c = fs.readFileSync(p, 'utf8');
             const marker = '# Agent 365 Skills';
             let trimmed = null;
@@ -187,7 +199,15 @@ do
 done
 
 if [ -n "$plugin_json" ]; then
-    installed_version=$(node -e "console.log(require('$plugin_json').version)" 2>/dev/null || true)
+    # Same Git Bash / MSYS path-translation gotcha as the copilot-instructions.md
+    # step above — convert with cygpath when available so node receives a path
+    # form it can actually open on Windows.
+    if command -v cygpath >/dev/null 2>&1; then
+        node_plugin_json=$(cygpath -m "$plugin_json")
+    else
+        node_plugin_json="$plugin_json"
+    fi
+    installed_version=$(node -e "console.log(require('$node_plugin_json').version)" 2>/dev/null || true)
     if [ -n "$installed_version" ]; then
         printf '\n\033[1;32mInstalled plugin version: %s\033[0m\n' "$installed_version"
     else
