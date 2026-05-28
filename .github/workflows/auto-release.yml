@@ -20,6 +20,14 @@ on:
 permissions:
   contents: write
 
+# Serialize release runs so a slow earlier run can't move the `latest` pointer
+# backwards by completing after a faster later one. `cancel-in-progress: false`
+# is deliberate — we want every version bump to produce its release; we just
+# want them to land in order, not race.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -81,10 +89,14 @@ jobs:
           && steps.v.outputs.prerelease == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+        # Target the immutable triggering SHA — NOT the `main` branch ref. If a
+        # newer push lands on main between checkout and `gh release create`,
+        # targeting `main` would tag the wrong commit. github.sha is the commit
+        # whose plugin.json this workflow run actually read.
         run: |
           gh release create "v${{ steps.v.outputs.new }}" \
             --title  "v${{ steps.v.outputs.new }}" \
-            --target main \
+            --target "${{ github.sha }}" \
             --generate-notes \
             --latest
 
@@ -95,10 +107,12 @@ jobs:
           && steps.v.outputs.prerelease == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+        # Same race-safety reasoning as the stable release step above —
+        # target the immutable github.sha, not the moving `main` ref.
         run: |
           gh release create "v${{ steps.v.outputs.new }}" \
             --title  "v${{ steps.v.outputs.new }}" \
-            --target main \
+            --target "${{ github.sha }}" \
             --generate-notes \
             --prerelease \
             --latest=false
