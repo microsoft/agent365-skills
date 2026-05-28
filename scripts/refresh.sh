@@ -2,10 +2,15 @@
 # scripts/refresh.sh — Force-refresh Agent 365 Skills (macOS / Linux)
 #
 # Use this after `git pull` (if you cloned the repo) or any time you suspect
-# the locally-installed plugin is stale. It wipes:
+# the locally-installed plugin is stale. It wipes (only items created by this
+# repo — never user-owned content):
 #   - the version-check cache (~/.cache/agent365-skills/)
 #   - the project-local detection cache (.a365-workspace-detection.local.json)
-#   - the per-project plugin copies under .agents/skills/<plugin-skill>/
+#   - the per-project Agent 365 skills under .agents/skills/<plugin-skill>/
+#     (only the 6 plugin-owned skills; any other subdir is left alone)
+#   - the Agent 365 instructions section in .github/copilot-instructions.md
+#     (surgically removed via the "# Agent 365 Skills" H1 marker — other
+#     content above the marker is preserved)
 #
 # Then prints the exact reinstall command for your chat client.
 #
@@ -31,12 +36,31 @@ plugin_skills=(
 
 printf '\033[1;36mAgent 365 Skills — refresh\033[0m\n\n'
 
-# ── 1. Wipe the version-check cache (~/.cache/agent365-skills) ───────────────
+# ── 1. Wipe the version-check cache ──────────────────────────────────────────
+# Must mirror plugins/agent365/scripts/check-version.js cacheFilePath() exactly:
+#   $XDG_CACHE_HOME/version.json                    (if XDG_CACHE_HOME set — any OS)
+#   $HOME/.cache/agent365-skills/version.json       (Unix default)
+# Otherwise a redirected XDG_CACHE_HOME setting would leave stale cache behind.
 
-cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/agent365-skills"
-if [ -d "$cache_dir" ]; then
-    rm -rf "$cache_dir"
-    printf '  [v] Wiped version-check cache: %s\n' "$cache_dir"
+if [ -n "${XDG_CACHE_HOME:-}" ]; then
+    # check-version.js writes the file directly under XDG_CACHE_HOME (no subfolder).
+    cache_dir="$XDG_CACHE_HOME"
+    cache_file="$cache_dir/version.json"
+    owns_dir=0
+else
+    cache_dir="$HOME/.cache/agent365-skills"
+    cache_file="$cache_dir/version.json"
+    owns_dir=1
+fi
+
+if [ -f "$cache_file" ]; then
+    rm -f "$cache_file"
+    printf '  [v] Wiped version-check cache: %s\n' "$cache_file"
+    # Only prune the directory if we own it (i.e. it's our agent365-skills subfolder,
+    # never XDG_CACHE_HOME itself which belongs to the user/other apps).
+    if [ "$owns_dir" -eq 1 ] && [ -d "$cache_dir" ] && [ -z "$(ls -A "$cache_dir" 2>/dev/null)" ]; then
+        rmdir "$cache_dir"
+    fi
 else
     printf '  [-] No version-check cache to wipe (already absent)\n'
 fi
@@ -80,21 +104,73 @@ else
     printf '  [-] No .agents/skills/ in cwd (already absent)\n'
 fi
 
-# ── 4. Warn about per-project install artifacts left in place ────────────────
-# .github/copilot-instructions.md and .vscode/settings.json may contain user
-# content alongside ours — we don't touch them automatically.
+# ── 4. Surgically remove the Agent 365 section from .github/copilot-instructions.md ──
+# install.js appends Agent 365 skills instructions to the user's file (or
+# creates one fresh). The Agent 365 block always starts with an H1:
+# "# Agent 365 Skills". This script locates that boundary and removes ONLY
+# the Agent 365 section, leaving any other content above it intact. If the
+# entire file is Agent 365 content (no other content above the H1), the file
+# is deleted outright so the next install.js run creates a fresh copy.
 
 copilot_instr="$(pwd)/.github/copilot-instructions.md"
-if [ -f "$copilot_instr" ] && grep -q 'Agent 365 Skills' "$copilot_instr" 2>/dev/null; then
-    printf '\n  [!] .github/copilot-instructions.md contains an Agent 365 block.\n'
-    printf '      Left in place — may contain your own content alongside ours.\n'
-    printf '      To force-replace from upstream, delete the file and re-run install.js.\n'
+if [ -f "$copilot_instr" ]; then
+    if grep -q '^# Agent 365 Skills' "$copilot_instr" 2>/dev/null; then
+        # Use node for safe Unicode-correct string splitting (the H1 has an em-dash
+        # in some upstream variants; awk/sed handling can drop bytes on Windows
+        # checkouts that round-tripped through CRLF).
+        node -e "
+            const fs = require('fs');
+            const p = '$copilot_instr';
+            const c = fs.readFileSync(p, 'utf8');
+            const marker = '# Agent 365 Skills';
+            let trimmed = null;
+            if (c.startsWith(marker)) {
+                trimmed = '';
+            } else {
+                const idx = c.indexOf('\n' + marker);
+                if (idx >= 0) trimmed = c.substring(0, idx).replace(/[\s\n]+\$/, '');
+            }
+            if (trimmed === null) process.exit(2);
+            if (trimmed === '') {
+                fs.unlinkSync(p);
+                process.exit(10);
+            } else {
+                fs.writeFileSync(p, trimmed + '\n', 'utf8');
+                process.exit(11);
+            }
+        "
+        rc=$?
+        case "$rc" in
+            10)
+                printf '  [v] Wiped .github/copilot-instructions.md (file was purely Agent 365 instructions)\n'
+                github_dir="$(dirname "$copilot_instr")"
+                if [ -z "$(ls -A "$github_dir" 2>/dev/null)" ]; then
+                    rmdir "$github_dir"
+                fi
+                ;;
+            11)
+                printf '  [v] Removed Agent 365 instructions section from .github/copilot-instructions.md (preserved other content above it)\n'
+                ;;
+            *)
+                printf '  [-] .github/copilot-instructions.md present but Agent 365 H1 not at a clean boundary — left in place\n'
+                ;;
+        esac
+    else
+        printf '  [-] .github/copilot-instructions.md present but contains no Agent 365 H1 — left in place\n'
+    fi
+else
+    printf '  [-] No .github/copilot-instructions.md in cwd (already absent)\n'
 fi
+
+# .vscode/settings.json is NOT auto-wiped — the installer only adds one key
+# (chat.agentSkillsLocations) and user's other VS Code settings live in the
+# same file. Removing one key safely would require JSON parsing/serialization
+# that risks losing comments and trailing commas. Warn only.
 
 vscode_settings="$(pwd)/.vscode/settings.json"
 if [ -f "$vscode_settings" ] && grep -q 'chat\.agentSkillsLocations' "$vscode_settings" 2>/dev/null; then
     printf '\n  [!] .vscode/settings.json contains chat.agentSkillsLocations.\n'
-    printf '      Left in place — your own VS Code settings are alongside the plugin key.\n'
+    printf '      Left in place — remove the key by hand if you need a true reset.\n'
 fi
 
 # ── 5. Report the currently-installed plugin version (best-effort) ───────────
