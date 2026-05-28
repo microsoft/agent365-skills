@@ -60,6 +60,19 @@ if (hasCsproj) {
   language = 'nodejs';
 }
 
+// ── Validate: detection cache must exist when project has language indicator ─
+// Per Phase 0A Step 1 triage, .a365-workspace-detection.local.json is written
+// by a365-setup. If a language indicator is present (csproj/pyproject/
+// package.json) but the cache is missing, the model skipped Step 1's "missing +
+// hasProjectFiles=true → run a365-setup first" routing and instrumented the
+// project without the cache. Hard fail with the remediation.
+
+const hasLanguageIndicator = hasCsproj || hasPyproject || hasPackageJson;
+const detectionCachePath = path.join(cwd, '.a365-workspace-detection.local.json');
+if (hasLanguageIndicator && !fs.existsSync(detectionCachePath)) {
+  issues.push('.a365-workspace-detection.local.json was not written — Phase 0A Step 1 triage was skipped. The skill must run a365-setup (which writes this cache) before any Phase 1 work. Re-run /agent365:a365-setup, then re-run /agent365:make-ai-teammate');
+}
+
 // ── Validate: ToolingManifest.json (optional — owned by add-workiq-tools) ───
 // make-ai-teammate no longer pre-populates this file. It only exists when the
 // user opted into WorkIQ (Phase 9.6 → add-workiq-tools) or carried it over

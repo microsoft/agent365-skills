@@ -23,13 +23,71 @@ const MANIFEST_VALID = JSON.stringify({
   ],
 }, null, 2);
 
+// Minimal detection cache stub — the validator only checks existence, not
+// content. Required by the Phase 0A Step 1 "cache must exist" guard.
+const DETECTION_CACHE_STUB = JSON.stringify({
+  agentStack: 'LangChain',
+  programmingLanguage: 'NodeJS',
+  detectedAt: '2026-01-01T00:00:00.000Z',
+});
+
 // ── Cross-language: ToolingManifest.json (optional) ──────────────────────────
+
+// ── Cross-language: .a365-workspace-detection.local.json must exist ─────────
+
+describe('validate-make-ai-teammate — detection cache (required)', () => {
+  test('Node.js project without detection cache → reports cache-required', () => {
+    const dir = createFixture({
+      'package.json': JSON.stringify({
+        name: 'a',
+        dependencies: {
+          '@microsoft/agents-hosting': '^1.0.0',
+          '@microsoft/agents-a365-runtime': '^1.0.0',
+          '@microsoft/agents-a365-notifications': '^1.0.0',
+        },
+      }),
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { module: 'node16', moduleResolution: 'node16' },
+      }),
+      'src/index.ts': '',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+      assert.match(r.reason, /Phase 0A Step 1 triage was skipped/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET project without detection cache → reports cache-required', () => {
+    const dir = createFixture({
+      'MyAgent.csproj': '<Project></Project>',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python project without detection cache → reports cache-required', () => {
+    const dir = createFixture({
+      'pyproject.toml': '[project]\nname = "a"\n',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+    } finally { cleanup(dir); }
+  });
+});
 
 describe('validate-make-ai-teammate — ToolingManifest (optional)', () => {
   test('missing ToolingManifest.json is OK (user skipped WorkIQ at Phase 9.6)', () => {
     // Build a minimally-valid Node.js fixture so the rest of the validator passes,
     // then assert the missing manifest does NOT produce a ToolingManifest issue.
     const dir = createFixture({
+      '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
       'package.json': JSON.stringify({
         name: 'a',
         dependencies: {
@@ -131,6 +189,7 @@ const NODE_PACKAGE_VALID = JSON.stringify({
 
 function nodeFixture(overrides = {}) {
   return createFixture({
+    '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
     'ToolingManifest.json':   MANIFEST_VALID,
     'package.json':           NODE_PACKAGE_VALID,
     'tsconfig.json':          NODE_TSCONFIG_VALID,
@@ -302,6 +361,7 @@ const DOTNET_APPSETTINGS = JSON.stringify({
 
 function dotnetFixture(overrides = {}) {
   return createFixture({
+    '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
     'ToolingManifest.json': MANIFEST_VALID,
     'MyAgent.csproj':       DOTNET_CSPROJ,
     'Program.cs':           DOTNET_PROGRAM,
@@ -426,6 +486,7 @@ dependencies = [
 
 function pythonFixture(overrides = {}) {
   return createFixture({
+    '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
     'ToolingManifest.json': MANIFEST_VALID,
     'pyproject.toml':       PY_PYPROJECT,
     'host_agent_server.py': PY_HOST,

@@ -11,7 +11,18 @@ const VALIDATOR = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-
 
 // ── Shared fixture templates ─────────────────────────────────────────────────
 
+// Minimal detection cache stub — the validator only checks existence, not
+// content. Required by the Phase 0A "cache must exist" guard added on the
+// enforce-detection-cache branch; without it the validator reports the
+// missing-cache failure on every per-language project.
+const DETECTION_CACHE_STUB = JSON.stringify({
+  agentStack: 'LangChain',
+  programmingLanguage: 'NodeJS',
+  detectedAt: '2026-01-01T00:00:00.000Z',
+});
+
 const DOTNET_VALID = {
+  '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
   'MyAgent.csproj': `<Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.A365.Observability.Runtime" Version="1.0.0" />
@@ -28,6 +39,7 @@ const DOTNET_VALID = {
 };
 
 const NODEJS_VALID = {
+  '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
   'package.json': JSON.stringify({
     name: 'my-agent',
     dependencies: { '@microsoft/agents-a365-observability': '^1.0.0', '@microsoft/agents-a365-observability-hosting': '^1.0.0' },
@@ -42,6 +54,7 @@ const baggage = new BaggageBuilder().fromActivity(activity).build();
 };
 
 const PYTHON_VALID = {
+  '.a365-workspace-detection.local.json': DETECTION_CACHE_STUB,
   'requirements.txt': 'microsoft-agents-a365-observability-core>=0.3.0\nmicrosoft-agents-a365-observability-hosting>=0.3.0\n',
   'app.py': `
 from microsoft_agents_a365.observability.core import configure
@@ -51,6 +64,40 @@ baggage = BaggageBuilder().from_turn_context(tc).build()
   `.trim(),
   '.env': 'ENABLE_A365_OBSERVABILITY_EXPORTER=true',
 };
+
+// ── Cross-language: .a365-workspace-detection.local.json must exist ─────────
+
+describe('validate-observability — detection cache (required)', () => {
+  test('.NET project without detection cache → reports cache-required', () => {
+    const { ['.a365-workspace-detection.local.json']: _omit, ...rest } = DOTNET_VALID;
+    const dir = createFixture(rest);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js project without detection cache → reports cache-required', () => {
+    const { ['.a365-workspace-detection.local.json']: _omit, ...rest } = NODEJS_VALID;
+    const dir = createFixture(rest);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python project without detection cache → reports cache-required', () => {
+    const { ['.a365-workspace-detection.local.json']: _omit, ...rest } = PYTHON_VALID;
+    const dir = createFixture(rest);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /a365-workspace-detection\.local\.json was not written/);
+    } finally { cleanup(dir); }
+  });
+});
 
 // ── .NET tests ───────────────────────────────────────────────────────────────
 

@@ -407,6 +407,18 @@ Before any detection, check for `.a365-workspace-detection.local.json` in the wo
 - If the file exists and `detectedAt` is within the last **60 minutes**, load `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, and `authMode` from it — skip all detection globs and greps.
 - If the file is missing or older than 60 minutes, run full detection as normal.
 
+> **🛑 INVARIANT — cache must exist before any code-edit phase.** Every consumer skill
+> (`make-ai-teammate`, `make-a365-agent`, `instrument-observability`, `add-workiq-tools`)
+> has a Phase 0A Step 2 STOP guard that refuses to proceed if `.a365-workspace-detection.local.json`
+> is absent in the working directory. The model must NOT invent default cache values; it
+> must run `a365-setup` to completion (which writes Stage 1 below), then return. The
+> corresponding stop-hook validators (`validate-make-ai-teammate.js`,
+> `validate-instrument-observability.js`, `validate-add-workiq-tools.js`) hard-fail the
+> session at end if the cache file is missing on a project that has a language indicator
+> (`.csproj`, `package.json`, `pyproject.toml`/`requirements.txt`). This invariant exists
+> to catch the silent failure mode where the model bypasses Phase 0A Step 1 triage and
+> wires partial code with no detection metadata.
+
 ### Writing the cache (after detection + user confirmation)
 
 The cache is written in stages as values become known — always preserve fields already present.

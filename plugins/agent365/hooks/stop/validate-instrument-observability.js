@@ -13,6 +13,7 @@
  *   1  → ok: false (session blocked, reason shown to user)
  */
 
+const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const {
@@ -50,6 +51,16 @@ if (isUnknown) {
   // No agent project detected — nothing to validate
   process.stdout.write(JSON.stringify({ ok: true }));
   process.exit(0);
+}
+
+// ── Detection cache must exist ──────────────────────────────────────────────
+// Phase 0.1 triage writes .a365-workspace-detection.local.json via a365-setup.
+// Reaching this point means an agent project was detected; the cache must
+// exist or the model skipped triage and instrumented against unknown
+// authMode / agentStack.
+
+if (!fs.existsSync(path.join(cwd, '.a365-workspace-detection.local.json'))) {
+  issues.push('.a365-workspace-detection.local.json was not written — Phase 0 triage was skipped. The skill must run a365-setup (which writes this cache) before any Phase 1 work. Re-run /agent365:a365-setup, then re-run /agent365:instrument-observability');
 }
 
 // ── .NET validation ─────────────────────────────────────────────────────────

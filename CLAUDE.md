@@ -84,11 +84,19 @@ agent365-skills/
    not silently skip. `add-workiq-tools` Phase 4 must preserve obs anchors when editing
    files that overlap with the obs wrapping.
 
-9. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
+9. **`.a365-workspace-detection.local.json` MUST exist before any code-edit phase.**
+   Every skill's Phase 0A Step 1 triage is responsible for writing this file (via
+   `a365-setup` when missing on a project with code). Phase 0A Step 2 begins with a
+   hard STOP guard that refuses to proceed when the file is absent. The stop-hook
+   validators (`validate-make-ai-teammate.js`, `validate-instrument-observability.js`,
+   `validate-add-workiq-tools.js`) fail the session at end if the cache wasn't
+   written. Never invent default cache values — re-run `a365-setup` instead.
+
+10. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
 
-10. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+11. **Run task lists to completion in one turn.** When a skill creates a task list, execute
    every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
    finishes. Only pause at the explicit interaction points each SKILL.md documents
    (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server

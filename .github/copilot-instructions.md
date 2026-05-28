@@ -38,20 +38,25 @@ CLI `Allow / Skip` prompts are the chat client's permission flow — not stoppin
 Manual browser steps (Teams Dev Portal, M365 Admin Center, GA consent) are surfaced with
 URL + action, then you continue to the next non-blocking phase.
 
-**`tenantReady` is deprecated and must not be used as a setup gate.** Do not read or write
-`tenantReady` in `.a365-workspace-detection.local.json`. Rely on explicit runtime checks
-(CLI exit codes, `a365.generated.config.json` fields like `completed` / `resourceConsents`,
-`disk_blueprint_present` derived at read-time) and user-confirmed steps instead.
+**`.a365-workspace-detection.local.json` MUST exist before any code-edit phase.** Phase 0A
+Step 1 triage is responsible for writing this file via `a365-setup` when missing on a
+project with code. Phase 0A Step 2 has a hard STOP guard that refuses to proceed without
+the file — never invent default cache values; run `a365-setup` to completion first, then
+return. The stop-hook validators (`validate-make-ai-teammate.js`,
+`validate-instrument-observability.js`, `validate-add-workiq-tools.js`) fail the session
+at end if the cache wasn't written, catching cases where the model bypassed the SKILL.md
+guard.
 
 **`has_obs` and `has_workiq` are composite signals — entry-point symbol alone is insufficient.**
 `has_obs = true` requires entry-point call (`useMicrosoftOpenTelemetry` etc.) AND token
 resolver AND handler-side baggage / scope anchor (`BaggageBuilder` / `InvokeAgentScope`).
-`has_workiq = true` requires non-empty `ToolingManifest.json` AND the framework's MCP wiring
-symbol in agent code AND — for Node.js LangChain + `mcp_WordServer` — the Word `@mention`
-wiring (`WpxComment` + `proactive` + `userKeyToConversationId`). Anything less is
-`has_obs_partial` / `has_workiq_partial` (read-time only). `make-ai-teammate` Phase 9.5 / 9.6
-must re-enter the sub-skill on partial — not silently skip. `add-workiq-tools` Phase 4
-preserves obs anchors when editing files that overlap with obs wrapping.
+`has_workiq = true` requires non-empty `ToolingManifest.json` AND the framework's MCP
+wiring symbol in agent code AND — for Node.js LangChain + `mcp_WordServer` — the Word
+`@mention` wiring (`WpxComment` + `proactive` + `userKeyToConversationId`). Anything less
+is `has_obs_partial` / `has_workiq_partial` (read-time only). `make-ai-teammate`
+Phase 9.5 / 9.6 must re-enter the sub-skill on partial — not silently skip.
+`add-workiq-tools` Phase 4 preserves obs anchors when editing files that overlap with obs
+wrapping.
 
 ---
 
@@ -78,8 +83,8 @@ preserves obs anchors when editing files that overlap with obs wrapping.
    - **Blueprint question:** if `hasBlueprintConfig = 1`, asks the developer whether to reuse the existing blueprint (provide ID, skip `setup all`) or create a fresh one — never assumes
 2. Asks **capabilities first** (Register, Observability, WorkIQ, AI Teammate) — capability options are **auto-filtered**: Observability is hidden when `has_obs = true`, WorkIQ is hidden when `has_workiq = true`, the menu collapses to Register + WorkIQ when `(has_aiteammate_structure && has_obs)` (the derived "already-an-AI-Teammate" route). Then asks `authMode` (`obo` or `s2s`) **only if AI Teammate was not selected** AND `(has_aiteammate_structure && has_obs)` is false — AI Teammate always uses `agentic-user` (the agent's own M365 identity), no auth mode question needed. If s2s is selected and WorkIQ was also picked, WorkIQ is dropped with a warning.
    - **CEA auto-route:** if `usesTeamsOrCopilot = 1` (Custom Engine Agent), automatically sets all 4 capabilities (Register, Observability, WorkIQ, AI Teammate) without presenting a menu — CEA agents are always AI Teammates
-3. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.local.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, and `existingBlueprintId`. **`hasAITeammateChanges` is no longer stored — it is derived inline as `has_aiteammate_structure && has_obs` at read sites.** Downstream skills (`instrument-observability`, `add-workiq-tools`, `make-ai-teammate` Phase 0C) read this cache to drive matrix-based routing.
-4. Runs a full system prerequisite scan (parallel version checks) and shows a ✅/❌ summary — **only processes sections for ❌ missing or outdated tools; skips ✅ tools entirely (no reinstall, no re-prompt)**. Exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation.
+3. Derives `agentType` from the selection (`isAITeammate = true` → `"ai-teammate"`, else `"system-agent"`); writes `.a365-workspace-detection.local.json` with `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, `existingBlueprintId`, and **`tenantReady`** (set by Step 1.9 — true after `a365 setup requirements` succeeds OR after a passing smoke probe inheriting a teammate's tenant setup). **`hasAITeammateChanges` is no longer stored — it is derived inline as `has_aiteammate_structure && has_obs` at read sites.** Downstream skills (`instrument-observability`, `add-workiq-tools`, `make-ai-teammate` Phase 0C) read this cache to drive matrix-based routing.
+4. Runs a full system prerequisite scan (parallel version checks) and shows a ✅/❌ summary — **only processes sections for ❌ missing or outdated tools; skips ✅ tools entirely (no reinstall, no re-prompt)**. Exception: the a365 CLI is always updated to latest via `dotnet tool update` regardless of ✅/❌ status. Each install is offered with a platform-specific command (Windows: winget, macOS: brew, Linux: apt) and requires user confirmation. **Tenant-readiness check:** before running `a365 setup requirements`, smoke-probes via `a365 develop list-available` and reads `tenantReady` from the cache — if the tenant is already set up (by a teammate's admin), skips the configurator entirely. If the configurator must run and the user lacks an admin role (Application Admin / Cloud App Admin / GA — detected via the `wids` claim), surfaces a one-liner handoff for the admin to run.
 5. Validates Azure CLI login using `az login --allow-no-subscriptions` (plain `az login` fails for accounts with no Azure subscription) and validates Entra ID roles
 6. Delegates to `make-ai-teammate` for the AI Teammate path, or to `make-a365-agent` for all other paths — passes `reuseBlueprint` and `existingBlueprintId` when the developer chose to reuse an existing blueprint
 

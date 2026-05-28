@@ -307,6 +307,17 @@ files that overlap with the obs wrapping (.NET `OnMessageAsync`, Python
 `validate-add-workiq-tools.js` will fail the session if the entry-point obs anchor is
 present but the handler-side anchors disappeared after WorkIQ ran.
 
+**`.a365-workspace-detection.local.json` MUST exist before any code-edit phase.** Every
+skill's Phase 0A Step 1 triage is responsible for writing this file via `a365-setup`
+when missing on a project with code. Phase 0A Step 2 (the "load from cache" step) opens
+with a hard STOP guard that refuses to proceed if the file is absent — the model must
+NOT invent default values; instead it must run `a365-setup` to completion, then return.
+The stop-hook validators (`validate-make-ai-teammate.js`, `validate-instrument-observability.js`,
+`validate-add-workiq-tools.js`) fail the session at end if the cache wasn't written,
+catching cases where the model bypassed the SKILL.md guard. This rule fixes the silent
+"detect → edit code → never write cache" failure mode that left agents partially wired
+with no detection metadata.
+
 ---
 
 ## CLI output buffering under chat-tool execution

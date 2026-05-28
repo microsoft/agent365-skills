@@ -115,6 +115,14 @@ Decide:
 
 ### Step 0.2 — Load from cache
 
+**🛑 STOP — `.a365-workspace-detection.local.json` MUST exist before this step.** Read the file path `.a365-workspace-detection.local.json` in the working directory. If it does not exist, you arrived at Step 0.2 by skipping Step 0.1's triage routing. Do NOT proceed. Do NOT invent default cache values. Do NOT run any further phase (no `npm install`, no `dotnet add package`, no `pip install`, no file edits). Instead:
+
+1. Tell the user verbatim: *"I skipped the Step 0.1 triage and the detection cache wasn't written. Running `a365-setup` now to fix that, then I'll return here."*
+2. **Read** `${CLAUDE_PLUGIN_ROOT}/skills/a365-setup/SKILL.md` and follow it to completion.
+3. Re-verify the file now exists, then continue below.
+
+The stop hook (`validate-instrument-observability.js`) will fail the session at end if the cache file is missing — this guard exists so the model halts immediately rather than instrumenting against unknown `authMode`.
+
 Load from cache: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `agentType`, `authMode` (if previously stored).
 
 Present the loaded values in one message and wait for confirmation:
