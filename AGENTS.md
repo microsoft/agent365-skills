@@ -285,12 +285,6 @@ GA consent) are not stopping conditions — surface them with URL + action and c
 When adding a new interaction point to a SKILL.md, mirror it in [CLAUDE.md](CLAUDE.md)
 and [.github/copilot-instructions.md](.github/copilot-instructions.md) so all three stay in sync.
 
-**`tenantReady` is deprecated and must not be used as a setup gate.** Do not read or write
-`tenantReady` in `.a365-workspace-detection.local.json`. Setup flow decisions should rely
-on explicit runtime checks (CLI exit codes, `a365.generated.config.json` fields like
-`completed` / `resourceConsents`, `disk_blueprint_present` derived at read-time) and
-user-confirmed steps — never on a cached tenant-readiness flag.
-
 **`has_obs` and `has_workiq` are composite signals.** `has_obs = true` requires the
 entry-point call (`useMicrosoftOpenTelemetry` / `UseMicrosoftOpenTelemetry` /
 `use_microsoft_opentelemetry`) AND a token resolver AND a handler-side baggage / scope
