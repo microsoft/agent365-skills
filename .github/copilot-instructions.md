@@ -43,6 +43,16 @@ URL + action, then you continue to the next non-blocking phase.
 (CLI exit codes, `a365.generated.config.json` fields like `completed` / `resourceConsents`,
 `disk_blueprint_present` derived at read-time) and user-confirmed steps instead.
 
+**`has_obs` and `has_workiq` are composite signals — entry-point symbol alone is insufficient.**
+`has_obs = true` requires entry-point call (`useMicrosoftOpenTelemetry` etc.) AND token
+resolver AND handler-side baggage / scope anchor (`BaggageBuilder` / `InvokeAgentScope`).
+`has_workiq = true` requires non-empty `ToolingManifest.json` AND the framework's MCP wiring
+symbol in agent code AND — for Node.js LangChain + `mcp_WordServer` — the Word `@mention`
+wiring (`WpxComment` + `proactive` + `userKeyToConversationId`). Anything less is
+`has_obs_partial` / `has_workiq_partial` (read-time only). `make-ai-teammate` Phase 9.5 / 9.6
+must re-enter the sub-skill on partial — not silently skip. `add-workiq-tools` Phase 4
+preserves obs anchors when editing files that overlap with obs wrapping.
+
 ---
 
 ## Skill: a365-setup

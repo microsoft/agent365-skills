@@ -107,6 +107,20 @@ if (isDotnet) {
     issues.push('No .cs file uses BaggageBuilder, BaggageTurnMiddleware (OBO), or ObservabilityTokenService/Agent365ObservabilityContext (S2S) — observability context is missing');
   }
 
+  // 3a. Manual instrumentation scope wired — required for store publishing.
+  // Only enforced on the modern Microsoft.OpenTelemetry distro path. Legacy
+  // AddA365Tracing / AddAgenticTracingExporter wiring predates the scope API
+  // and is not gated on it here to avoid breaking older agents — they cannot
+  // pass store publishing without migrating to the distro anyway.
+  if (hasDistroWired) {
+    const hasScope = anyFileContains(csFiles, 'InvokeAgentScope') ||
+                     anyFileContains(csFiles, 'InferenceScope') ||
+                     anyFileContains(csFiles, 'ExecuteToolScope');
+    if (!hasScope) {
+      issues.push('No .cs file uses InvokeAgentScope.Start, InferenceScope.Start, or ExecuteToolScope.Start — manual instrumentation scopes are required for Agent 365 store publishing under the Microsoft.OpenTelemetry distro');
+    }
+  }
+
   // 4. appsettings has observability config
   const appSettingsFiles = filterByName(allFiles, 'appsettings.json');
   const hasAppSettingsConfig = anyFileContains(appSettingsFiles,
@@ -151,6 +165,22 @@ if (isNodejs) {
                      anyFileContains(tsFiles, 'BaggageBuilderUtils');
   if (!hasBaggage) {
     issues.push('No TypeScript/JS file uses configureA365Hosting, BaggageMiddleware, BaggageBuilder, or BaggageBuilderUtils — baggage context missing');
+  }
+
+  // 3a. Manual instrumentation scope wired — required for store publishing.
+  // Per nodejs-observability.md: InvokeAgentScope, InferenceScope, and ExecuteToolScope are
+  // the store-publish-validation gate. The Claude SDK pattern uses only InferenceScope (per-call
+  // wrap inside src/client.ts), so accept ANY of the three as sufficient evidence of scope wiring.
+  // Only enforced on the modern @microsoft/opentelemetry distro path — legacy
+  // ObservabilityManager.configure wiring predates the scope API.
+  const usesDistro = anyFileContains(tsFiles, 'useMicrosoftOpenTelemetry');
+  if (usesDistro) {
+    const hasScope = anyFileContains(tsFiles, 'InvokeAgentScope') ||
+                     anyFileContains(tsFiles, 'InferenceScope') ||
+                     anyFileContains(tsFiles, 'ExecuteToolScope');
+    if (!hasScope) {
+      issues.push('No TypeScript/JS file uses InvokeAgentScope.start, InferenceScope.start, or ExecuteToolScope.start — manual instrumentation scopes are required for Agent 365 store publishing under the @microsoft/opentelemetry distro');
+    }
   }
 
   // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, preloadObservabilityToken helper, or S2S token service)
@@ -222,6 +252,20 @@ if (isPython) {
                      anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
   if (!hasBaggage) {
     issues.push('No Python file uses BaggageBuilder, BaggageMiddleware, populate_baggage, or use_microsoft_opentelemetry — baggage context missing');
+  }
+
+  // 3a. Manual instrumentation scope wired — required for store publishing.
+  // Same rationale as Node.js: store-validation requires at least one of InvokeAgentScope,
+  // InferenceScope, or ExecuteToolScope to be present in agent code. Only enforced on the
+  // modern microsoft-opentelemetry distro path; legacy configure() wiring predates scopes.
+  const usesDistroPy = anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
+  if (usesDistroPy) {
+    const hasScope = anyFileContains(pyFiles, 'InvokeAgentScope') ||
+                     anyFileContains(pyFiles, 'InferenceScope') ||
+                     anyFileContains(pyFiles, 'ExecuteToolScope');
+    if (!hasScope) {
+      issues.push('No Python file uses InvokeAgentScope, InferenceScope, or ExecuteToolScope — manual instrumentation scopes are required for Agent 365 store publishing under the microsoft-opentelemetry distro');
+    }
   }
 
   // 4. Token cache wired

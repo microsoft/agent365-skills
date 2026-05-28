@@ -72,11 +72,23 @@ agent365-skills/
    Do not read or write `tenantReady` in `.a365-workspace-detection.local.json`.
    Setup flow decisions should rely on explicit runtime checks and user-confirmed steps.
 
-8. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
+8. **`has_obs` and `has_workiq` are composite signals — entry-point symbol alone is
+   insufficient.** `has_obs = true` requires entry-point call AND token resolver AND
+   handler-side `BaggageBuilder` / `InvokeAgentScope`. `has_workiq = true` requires
+   non-empty `ToolingManifest.json` AND the framework's MCP wiring symbol
+   (`addToolServersToAgent` / `GetMcpToolsAsync` / `AddToolServersToAgentAsync` /
+   `add_tool_servers_to_agent`) AND — when `mcp_WordServer` + Node.js LangChain — the
+   Word `@mention` wiring (`WpxComment` + `proactive` + `userKeyToConversationId`).
+   Anything less is `has_obs_partial` / `has_workiq_partial` (read-time only, not
+   cached). `make-ai-teammate` Phase 9.5 / 9.6 must re-enter the sub-skill on partial,
+   not silently skip. `add-workiq-tools` Phase 4 must preserve obs anchors when editing
+   files that overlap with the obs wrapping.
+
+9. **WorkIQ is not available for `authMode = s2s`** — never offer or invoke `add-workiq-tools`
    for S2S agents. The guard exists at three layers: `a365-setup`, `make-a365-agent` Phase 4,
    and `add-workiq-tools` Phase 0B.
 
-9. **Run task lists to completion in one turn.** When a skill creates a task list, execute
+10. **Run task lists to completion in one turn.** When a skill creates a task list, execute
    every task and mark each complete (`TaskUpdate` or `- [ ]` → `- [x]`) the moment its phase
    finishes. Only pause at the explicit interaction points each SKILL.md documents
    (capabilities menu, run-target, blueprint Reuse/Re-run/Fresh, WorkIQ offer, MCP server
