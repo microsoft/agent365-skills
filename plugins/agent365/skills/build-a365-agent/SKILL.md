@@ -940,6 +940,16 @@ handler explicitly:
 - `ExecuteToolScope.start(request, tool_details, agent_details)` — wraps each tool call.
 - All three scopes are **required for store publishing**. Use `.start()` factories (context-managers) — not constructors.
 
+> ⚠️ **Python: synchronous `with`, not `async with`.** `BaggageBuilder().build()`
+> and all three `*.Scope.start(...)` factories return objects that implement
+> `__enter__` / `__exit__` only — using `async with` raises
+> `TypeError: 'BaggageScope' object does not support the asynchronous context manager protocol`
+> (same wording for `InvokeAgentScope` / `InferenceScope` / `ExecuteToolScope`).
+> They work fine inside `async def` handlers — just write `with`. The `await`
+> calls inside the body (LLM call, tool call, `send_activity`) still suspend
+> correctly. (.NET uses `using var`; Node.js uses `try/finally` with
+> `scope.end()` — neither has this trap.)
+
 For helper utilities that extract identity from `TurnContext` and build
 `AgentDetails` / `CallerDetails` / `Request` objects, scaffold a small
 `turn_context_utils.py` (or language equivalent) so the message handler is
@@ -1203,6 +1213,38 @@ This phase replaces the old build-and-poke-AgentsPlayground step. The
 one shot and returns a structured JSON report describing every tier that
 ran.
 
+### 12.0 — Confirm auth is DISABLED for local validate
+
+`a365 validate` (without `--with-tenant`) runs the agent locally and posts
+synthesized activities directly at `/api/messages` — there is no signed-in
+user and no Teams-issued JWT. If the agent's auth middleware is active, every
+turn returns 401 and the conversation tier fails for the wrong reason.
+
+Before running `a365 validate`, confirm the local override env file is in
+**development / anonymous** mode:
+
+- **Node.js / TypeScript** (`.env.local`): `NODE_ENV` unset or `=development`
+- **Python** (`.env.local`): `PYTHON_ENVIRONMENT` unset or `=development`
+- **.NET** (`appsettings.Development.json` / launch profile):
+  `ASPNETCORE_ENVIRONMENT=Development`
+
+Also confirm `.env.local` does **not** carry populated `AUTH_HANDLER_NAME` /
+`CLIENT_ID` / `TENANT_ID` / `CLIENT_SECRET` values that would leak through
+to local validate (the production `.env` keeps them; see the dotenv
+load-order pitfall in Phase 8). If they're populated in `.env.local`, either
+delete the lines or comment them out for the duration of Phase 12 — do
+**not** add empty `KEY=` lines (those will shadow the production values in
+Phase 13).
+
+Start the agent once and confirm the startup banner shows:
+- ⚠️ `running anonymous` / `No auth env vars` (this is the **goal** for Phase 12)
+- Server bound to `127.0.0.1` or `0.0.0.0` (either is fine for local validate)
+
+`BYPASS_AUTH=true` is a last-resort escape hatch if the scaffolded dev/prod
+gating misbehaves — prefer the env-flag approach above. Either way, JWT must
+be off for `a365 validate` to pass the conversation tier. Phase 13.0 will
+flip everything back on before tenant validate.
+
 ### 12.1 — Run validate
 
 From the agent project root:
@@ -1329,15 +1371,33 @@ Do NOT proceed to the devtunnel steps until all three checks pass.
    both are manual steps below. If publish fails on auth, offer the
    sideload fallback documented in the `make-ai-teammate` reference.
 
-2. **Create a devtunnel**
+2. **Create and host a devtunnel (automatic)**
+
+   Run these commands yourself, in order. Host the tunnel as a detached
+   background process so the rest of the phase can continue:
 
    ```bash
    devtunnel create --allow-anonymous
-   devtunnel port create -p 5000   # all languages use port 5000
-   devtunnel host
+   devtunnel port create -p 5000
+   devtunnel host          # run detached / in background
    ```
 
-   Capture the public HTTPS URL.
+   After `devtunnel host` starts, capture the public HTTPS URL from its
+   output (the line like `Connect via browser: https://<id>-5000.usw2.devtunnels.ms`).
+   Record it as `devtunnelUrl` and construct the messaging endpoint:
+
+   ```
+   <devtunnelUrl>/api/messages
+   ```
+
+   Show the messaging endpoint to the user — they will paste it into the
+   Teams Developer Portal in step 5.
+
+   > **devtunnel CLI prerequisite:** if `devtunnel` is not installed, surface
+   > the install instructions from
+   > [Microsoft Dev Tunnels docs](https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/get-started)
+   > and stop — do not attempt to invent an install command. The user must
+   > also have run `devtunnel user login` at least once.
 
 3. **Upload the manifest zip to the Microsoft Admin Center (MAC)**
 
@@ -1372,35 +1432,35 @@ Do NOT proceed to the devtunnel steps until all three checks pass.
 
    > Open the link above (deep-links straight to your agent blueprint's
    > **Configuration** page) → set **Agent Type** to **API Based** →
-   > set **Notification URL** / **Endpoint address** to
-   > `<devtunnel-url>/api/messages` and save. This is required for Teams
-   > to deliver messages to your agent.
+   > paste the messaging endpoint shown in step 2
+   > (`<devtunnelUrl>/api/messages`) into **Notification URL** /
+   > **Endpoint address** and save. This is required for Teams to deliver
+   > messages to your agent.
 
-6. **Create an agent instance through Teams**
+6. **Create an agent instance through Teams, send a chat, and capture the instance name**
 
    > In Microsoft Teams → **Apps** → find your published agent → add it
    > to your account. If admin approval is required, request it from the
    > Teams Apps page and wait for an admin to approve in
-   > [admin.cloud.microsoft](https://admin.cloud.microsoft).
+   > [admin.cloud.microsoft](https://admin.cloud.microsoft). Once the
+   > agent is added, **send it at least one chat message** to confirm it's
+   > reachable end-to-end.
 
-### 13.x — WAIT FOR USER CONFIRMATION
+   Then ask the user for the instance name (display name shown in the
+   Teams chat list — may differ from the blueprint name or directory name).
+   The user replying with a name is itself the signal that Phase 13 is
+   complete; do **not** ask a separate "say OK when finished" question.
 
-After listing the six steps, **stop and explicitly ask** the user to
-confirm:
+   > After you've hired the agent in Teams and sent it a chat, what name
+   > does it appear under in your Teams chat list?
 
-> Have you completed all six steps above (publish, devtunnel host,
-> MAC upload, MAC activation for users, Teams Dev Portal endpoint set to
-> `<devtunnel-url>/api/messages`, and agent instance created/approved in
-> Teams)?
+   Record the answer as `instanceName`. Phase 14 reuses this verbatim for
+   `a365 validate --with-tenant --instance-name "<instanceName>"`.
 
-**Do NOT proceed to Phase 14 until the user answers "yes" to all of them.**
-If they say no, ask which steps are pending and wait. The next phase
-(`a365 validate --with-tenant`) requires the agent to be reachable from
-Teams via the devtunnel, so these manual steps are a hard prerequisite.
+### 13.x — Before triggering Phase 14
 
-Before triggering Phase 14, restart the agent + devtunnel host (still in
-the foreground) so the agent is live on the URL the user just configured
-in the Dev Portal.
+Restart the agent + devtunnel host (still in the foreground) so the agent
+is live on the URL the user just configured in the Dev Portal.
 
 ---
 
@@ -1470,9 +1530,17 @@ If any of these fail, fix the plumbing before continuing — do not invoke
 
 ### 14.2 — Run tenant validate
 
+Using the `instanceName` already captured in Phase 13 step 6, run:
+
 ```bash
-a365 validate --with-tenant
+a365 validate --with-tenant --instance-name "<instanceName>"
 ```
+
+Quote the value if it contains spaces. If the command errors with
+`instance not found` / `404` / similar, the user likely typed a different
+name in this prompt than the one shown in their Teams chat list — re-ask
+for the exact display name and retry. The `--instance-name` flag is
+required; do NOT fall back to the bare `a365 validate --with-tenant` form.
 
 This exercises the agent with real Teams + email traffic via the
 devtunnel. The output JSON has the same shape as Phase 12 but with the
@@ -1526,10 +1594,10 @@ local conversation tier is exercised.
 ### 14.3a — Tenant validate loop
 
 After applying a fix from 14.3, **restart the agent** so the change takes
-effect, then re-run:
+effect, then re-run (reusing the `instanceName` captured in 14.2):
 
 ```bash
-a365 validate --with-tenant
+a365 validate --with-tenant --instance-name "<instanceName>"
 ```
 
 Stay in this loop — fix the first failing tier, restart, re-validate —
@@ -1549,14 +1617,18 @@ LOG_LEVEL=INFO
 Leave `ENABLE_A365_OBSERVABILITY_EXPORTER=true` and (Python only)
 `ENABLE_A365_OBSERVABILITY=true` — those are correct for production.
 
-### 14.5 — Final confirmation + summary
+### 14.5 — Final summary
 
-Explicitly ask the user:
+Tell the user verbatim:
 
-> `a365 validate --with-tenant` is passing end-to-end. Are you ready
-> to deploy this agent to production?
+> `a365 validate --with-tenant` is passing end-to-end. The next step is
+> to deploy the agent to a production endpoint (replace the devtunnel
+> URL with a real cloud endpoint — Azure App Service / Container Apps /
+> Functions, AWS App Runner / Lambda / ECS, or Google Cloud Run /
+> App Engine / Cloud Functions — then update the **Notification URL**
+> in the Teams Developer Portal to that endpoint).
 
-When they confirm, output a final summary listing:
+Then output a final summary listing:
 - agent name, language, framework, model provider
 - MCP servers wired
 - blueprint ID

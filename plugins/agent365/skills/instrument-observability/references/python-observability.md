@@ -497,6 +497,23 @@ with BaggageBuilder().tenant_id(tenant_id).agent_id(agent_id).build():
     pass
 ```
 
+> ⚠️ **Use `with`, not `async with`.** `BaggageBuilder().build()`,
+> `InvokeAgentScope.start(...)`, `InferenceScope.start(...)`, and
+> `ExecuteToolScope.start(...)` return objects that implement `__enter__`
+> / `__exit__` only — they do **not** implement `__aenter__` / `__aexit__`.
+> Using `async with` raises:
+>
+> ```
+> TypeError: 'BaggageScope' object does not support the asynchronous context manager protocol
+> ```
+>
+> (same error wording for `InvokeAgentScope` / `InferenceScope` /
+> `ExecuteToolScope`). The scopes work fine inside `async def` handlers —
+> just use the synchronous `with` form. The `await` calls inside the body
+> (LLM call, tool call, `context.send_activity(...)`) still suspend
+> correctly; OpenTelemetry's context propagation handles the async-boundary
+> hand-off for you.
+
 ### S2S — no per-turn refresh
 
 For `s2s`, the background token service started in the entry point populates the in-memory
