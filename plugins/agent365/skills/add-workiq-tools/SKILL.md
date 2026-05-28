@@ -393,7 +393,7 @@ Tell the user verbatim: *"Microsoft publishes the `Microsoft.Agents.A365.Tooling
    ```
 2. **Read** `nodejs-workiq.md` — section "LangChain — Wiring (VERIFIED)".
 3. **Edit** `src/client.ts` (or wherever the `getClient` factory lives). Add module-level `toolService = new McpToolRegistrationService()` singleton and the per-turn call inside `getClient`. **Capture the return value** — LangChain rebuilds the agent because `createAgent`'s tools are immutable.
-4. **`mcp_WordServer` was added?** → continue to **Phase 4.5** below for the gated Word @mention handler offer. This is a required check, not a soft suggestion — Phase 4.5's gates handle the actual decision.
+4. After this branch finishes, **fall through to Phase 4.5** — its two gates decide whether the Word `@mention` offer fires or no-ops. Phase 4.5 is not optional; do not jump to Phase 5 from here.
 
 ### §4.5 Node.js OpenAI
 
@@ -485,7 +485,9 @@ Tell the user verbatim: *"No Microsoft sample exists for Python Azure AI Foundry
 
 **Mark task in progress: "Offer Word @mention handler (if applicable)"**
 
-This phase is **gated** — most flows skip it. **Always run the gates explicitly** — the @mention handler should be offered every time `mcp_WordServer` is added on a Node.js LangChain stack. **Do not skip this phase without running both gates.**
+**Always enter this phase after Phase 4 completes — regardless of which §4.x branch ran.** The two gates below decide whether the offer fires or the phase no-ops; the decision belongs to the gates, not to the LLM's intuition. Do not skip ahead to Phase 5 without running BOTH gates — the gate tables below each specify the exact task-completion note to write when they fail.
+
+Read `programmingLanguage` and `agentStack` from `.a365-workspace-detection.local.json` **case-insensitively** — accept `nodejs` / `NodeJS` / `Node.js` and `langchain` / `LangChain` as equivalent. If `agentStack` is the combined string `"Node.js LangChain"`, treat it as LangChain.
 
 **Gate 1 — Framework check.** Read `programmingLanguage` and `agentStack` from `.a365-workspace-detection.local.json`:
 
