@@ -26,13 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # need previous commit to diff the version field
+          fetch-depth: 0  # need the push event's `before` commit to diff against the pre-push state
 
       - name: Compare old vs new version
         id: v
         run: |
+          BEFORE_SHA="${{ github.event.before }}"
           NEW=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
-          OLD=$(git show HEAD~1:plugins/agent365/.claude-plugin/plugin.json 2>/dev/null \
+          OLD=$(git show "$BEFORE_SHA":plugins/agent365/.claude-plugin/plugin.json 2>/dev/null \
                 | node -e "let s=''; process.stdin.on('data',c=>s+=c).on('end',()=>{try{process.stdout.write(JSON.parse(s).version)}catch{process.stdout.write('')}})" || echo "")
           echo "new=$NEW"  >> "$GITHUB_OUTPUT"
           echo "old=$OLD"  >> "$GITHUB_OUTPUT"
