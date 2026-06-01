@@ -108,7 +108,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,11 @@ class MyAgent(AgentInterface):
     """AI Teammate agent using AgentFramework."""
 
     def __init__(self):
-        self._agent: ChatAgent | None = None
+        # Persistent agent + its chat client. add-workiq-tools' setup_mcp_servers
+        # reassigns self.agent via add_tool_servers_to_agent(chat_client=self.chat_client,
+        # ...), so BOTH must live on self (not as locals) or MCP wiring breaks at runtime.
+        self.agent: ChatAgent | None = None
+        self.chat_client: AzureOpenAIChatClient | None = None
 
     def _create_chat_client(self) -> AzureOpenAIChatClient:
         endpoint   = os.environ["AZURE_OPENAI_ENDPOINT"]
@@ -157,11 +161,11 @@ class MyAgent(AgentInterface):
             )
 
     def _create_agent(self, tools: list | None = None) -> ChatAgent:
-        chat_client = self._create_chat_client()
-        return ChatAgent(chat_client=chat_client, tools=tools or [])
+        return ChatAgent(chat_client=self.chat_client, tools=tools or [])
 
     async def initialize(self) -> None:
-        self._agent = self._create_agent()
+        self.chat_client = self._create_chat_client()
+        self.agent = self._create_agent()
         logger.info("Agent initialized")
 
     async def process_user_message(
@@ -177,9 +181,18 @@ class MyAgent(AgentInterface):
         safe_name = _sanitize_display_name(user_name)
         prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
 
-        result = await self._agent.run(message, system_prompt=prompt)
+        # add-workiq-tools rewrites this to pass the personalized prompt THROUGH
+        # setup_mcp_servers(instructions=prompt) — which rebuilds self.agent WITH the MCP
+        # tools attached — then runs self.agent.run(message). When WorkIQ isn't wired, the
+        # bare agent takes the prompt via system_prompt= at run time. Either way the prompt
+        # reaches the SAME persistent self.agent, so tools are never dropped. Mirrors:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/agent-framework/sample-agent/agent.py
+        if hasattr(self, "setup_mcp_servers"):
+            await self.setup_mcp_servers(auth, auth_handler_name, context, instructions=prompt)
+            result = await self.agent.run(message)
+        else:
+            result = await self.agent.run(message, system_prompt=prompt)
         return self._extract_result(result)
-    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
 
     async def handle_agent_notification_activity(
         self,
@@ -189,7 +202,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             # Read email via WorkIQ Mail, then generate reply
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
@@ -231,11 +244,8 @@ from aiohttp import web
 from microsoft_agents_hosting_aiohttp import CloudAdapter
 from microsoft_agents_hosting_core import ActivityTypes
 from microsoft_agents.hosting.core.authorization import MsalConnectionManager
-from microsoft_agents_a365_notifications import (
-    agent_notification,
-    ChannelId,
-    NotificationType,
-)
+from microsoft_agents.activity import ChannelId   # ChannelId lives in activity, NOT notifications
+from microsoft_agents_a365.notifications import AgentNotification
 
 logger = logging.getLogger(__name__)
 
@@ -297,10 +307,15 @@ class GenericAgentHost:
                 typing_active = False
                 typing_task.cancel()
 
-        @agent_notification.on_agent_notification(
-            channel_id=ChannelId(channel="agents", sub_channel="*")
+        # AgentNotification routes inbound A365 notifications (email, WPX, etc.). It is a
+        # CLASS that wraps the app — instantiate it with the adapter, then use its
+        # on_agent_notification decorator. It is NOT a module-level function.
+        notifications = AgentNotification(self._adapter)
+
+        @notifications.on_agent_notification(
+            ChannelId(channel="agents", sub_channel="*")
         )
-        async def on_notification(context, state):
+        async def on_notification(context, state, notification):
             notification_type = getattr(context.activity, "name", None)
             reply = await self._agent.handle_agent_notification_activity(
                 notification_type,
@@ -584,7 +599,7 @@ When `make-ai-teammate` Phase 8 runs for a Python project, the skill reads `runT
 |------|-----|
 | `load_dotenv()` at top of `host_agent_server.py` before any imports | Env vars must be set before SDK packages read them at import time |
 | `_sanitize_display_name()` strips control characters | `context.activity.from_property.name` is user-controlled text; prevents prompt injection |
-| `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
+| `AgentNotification(self._adapter).on_agent_notification(ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT. `AgentNotification` is a class wrapping the app — NOT a module-level function. `ChannelId` is imported from `microsoft_agents.activity`. |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
 | Outer `try/except` around `self._adapter.process(request)` in `_handle_messages` | Bot-Framework convention exposes an `on_turn_error` hook on adapters that catches errors inside the turn lifecycle. If your `microsoft-agents-hosting` version exposes that hook, configure it in `start_server()` (`self._adapter.on_turn_error = ...`). The outer try/except in `_handle_messages` is the belt-and-suspenders fallback that catches anything escaping the hook (pre-turn auth failures, hook-internal throws), preventing the aiohttp event loop from crashing on `unhandled exception`. |
@@ -622,6 +637,7 @@ dependencies = [
 # Licensed under the MIT License.
 
 import asyncio
+import dataclasses
 import logging
 import os
 import re
@@ -630,7 +646,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agents import Agent, Runner
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -652,13 +668,19 @@ class MyAgent(AgentInterface):
     """AI Teammate agent using the OpenAI Agents SDK."""
 
     def __init__(self):
-        self._agent: Agent | None = None
+        # Persistent agent — created ONCE and reused across turns. add-workiq-tools'
+        # setup_mcp_servers reassigns this SAME attribute (self.agent) via
+        # add_tool_servers_to_agent, so the MCP tools live on it. mcp_servers=[] gives
+        # dataclasses.replace() a field to carry forward before WorkIQ is wired.
+        self.agent: Agent | None = None
+        self.mcp_servers: list = []
 
     async def initialize(self) -> None:
-        self._agent = Agent(
+        self.agent = Agent(
             name="MyAgent",
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            instructions="You are a helpful assistant.",
+            instructions=AGENT_PROMPT_TEMPLATE.format(user_name="unknown"),
+            mcp_servers=self.mcp_servers,
         )
         logger.info("Agent initialized")
 
@@ -675,15 +697,23 @@ class MyAgent(AgentInterface):
         safe_name = _sanitize_display_name(user_name)
         prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
 
-        # Recreate agent with per-turn instructions (or update instructions field)
-        agent = Agent(
-            name="MyAgent",
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            instructions=prompt,
-        )
-        result = await Runner.run(agent, message)
+        # Personalize per turn WITHOUT discarding MCP tools. dataclasses.replace()
+        # shallow-copies the PERSISTENT self.agent (carrying its mcp_servers) and swaps
+        # only the instructions. NEVER build a fresh Agent(...) here — that drops every
+        # tool add-workiq-tools attached to self.agent (this was the original bug). This
+        # mirrors the verified OpenAI sample:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/openai/sample-agent/agent.py
+        personalized_agent = dataclasses.replace(self.agent, instructions=prompt)
+
+        # add-workiq-tools adds setup_mcp_servers (it reassigns self.agent with the MCP
+        # tools attached). Call it when present; the bare pre-WorkIQ agent skips it.
+        if hasattr(self, "setup_mcp_servers"):
+            await self.setup_mcp_servers(auth, auth_handler_name, context)
+            # Re-derive from the now-MCP-bearing self.agent so this turn gets the tools too.
+            personalized_agent = dataclasses.replace(self.agent, instructions=prompt)
+
+        result = await Runner.run(personalized_agent, message)
         return result.final_output or "Sorry, I couldn't get a response."
-    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
 
     async def handle_agent_notification_activity(
         self,
@@ -693,7 +723,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -744,7 +774,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     TextBlock,
 )
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -808,7 +838,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -866,7 +896,7 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -912,6 +942,14 @@ class MyAgent(AgentInterface):
             instruction=instruction,
         )
 
+        # add-workiq-tools inserts the MCP attach HERE — between the Agent build and the
+        # Runner, AFTER per-turn personalization:
+        #   agent = await attach_workiq_tools(agent, auth, auth_handler_name, context)
+        # ADK's per-turn rebuild is CORRECT (unlike the OpenAI variant's old fresh-Agent
+        # bug): tools are re-attached every turn after the instruction is set, so nothing
+        # is dropped. Do not hoist the Runner above this anchor. Mirrors:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/agent.py
+
         session_service = InMemorySessionService()
         runner = Runner(
             agent=agent,
@@ -941,7 +979,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -987,7 +1025,7 @@ from microsoft_agents.hosting.core import Authorization
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1053,7 +1091,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -1103,7 +1141,7 @@ from semantic_kernel.connectors.ai.open_ai import (
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.contents import ChatHistory
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1166,7 +1204,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )

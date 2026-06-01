@@ -549,14 +549,25 @@ import {
   ServiceEndpoint,
 } from '@microsoft/opentelemetry';
 
+// AI Teammate: write BOTH identity dimensions so MAC shows per-instance AND
+// blueprint-rolled-up activity. The two are emitted as separate span tags:
+//   agentId          → gen_ai.agent.id                   (this agentic INSTANCE)
+//   agentBlueprintId → microsoft.a365.agent.blueprint.id (MAC roll-up to the blueprint)
+// If EITHER is empty MAC loses that grouping dimension — blueprint empty ⇒ only
+// per-instance rows; agentId empty ⇒ only blueprint-level. The exporter omits whichever
+// is blank, so always set both. Resolve LIVE from the turn's recipient (verified fields:
+// recipient.agenticAppId + recipient.agenticAppBlueprintId on @microsoft/agents-activity
+// ChannelAccount); env is only a fallback.
+const recipient = turnContext.activity?.recipient as any;
 const agentDetails: AgentDetails = {
-  agentId: 'agent-456',
-  agentName: 'Email Assistant',
-  agentDescription: 'An AI agent powered by Azure OpenAI',
-  agentAUID: 'auid-123',
-  agentEmail: 'agent@contoso.com',  // interface field is agentAUID (uppercase UID)
-  agentBlueprintId: 'blueprint-789',
-  tenantId: 'tenant-123',
+  agentId:          recipient?.agenticAppId ?? process.env.agent365Observability__agentId ?? '',
+  agentName:        process.env.agent365Observability__agentName ?? 'Email Assistant',
+  agentDescription: process.env.agent365Observability__agentDescription ?? '',
+  agentAUID:        recipient?.agenticUserId ?? '',          // microsoft.agent.user.id (agentic user)
+  agentEmail:       recipient?.agenticUserId ?? '',          // the agent's own identity
+  agentBlueprintId: process.env.agent365Observability__agentBlueprintId
+                    ?? recipient?.agenticAppBlueprintId ?? '',  // ← MAC blueprint roll-up
+  tenantId:         recipient?.tenantId ?? process.env.agent365Observability__tenantId ?? '',
 };
 
 const scopeDetails: InvokeAgentScopeDetails = {
@@ -612,6 +623,58 @@ await baggageScope.run(async () => {
 > **TIP:** For S2S agents, export `callerDetails` and `userDetails` from the entry
 > point module so all scope files import them alongside `agentDetails`.
 > Sponsor env vars: `agent365Observability__sponsorUserId` / `sponsorUserName` / `sponsorUserEmail`.
+
+### Resolve caller UPN (AI Teammate / OBO — populates MAC "User principal name")
+
+For AI Teammate (`agentic-user`) turns, don't hardcode `userEmail` like the `'jane.doe@contoso.com'` above — resolve it per turn. The observability SDK does **not** auto-populate it: `CallerDetails.userDetails.userEmail` is what MAC shows in its **"User principal name"** column, and it's blank on the most common turn (a direct Teams 1:1 chat), because `activity.from.id` is an MRI (`29:…` / `8:orgid:…`), not a UPN. Notification / `@mention` / email turns *do* carry the UPN in `from.id`.
+
+Resolution order: (1) `from.id` contains `@` → it **is** the UPN; (3) otherwise look it up from the conversation roster via the connector client on `turnState` (verified working in the Agent365-Samples LangChain travel-agent). Cache per `conversation|member` — it's a network call.
+
+```typescript
+import { TurnContext } from '@microsoft/agents-hosting';
+
+const upnCache = new Map<string, string>();
+
+// Best-effort: returns the caller's UPN/email, or undefined if the roster is
+// unavailable. NEVER throws — a blank UPN must not break the turn.
+async function resolveCallerUpn(turnContext: TurnContext): Promise<string | undefined> {
+  const from = turnContext.activity?.from as any;
+  if (typeof from?.id === 'string' && from.id.includes('@')) return from.id;   // (1) already a UPN
+
+  const convId = turnContext.activity?.conversation?.id;
+  const memberId = from?.id;
+  if (!convId || !memberId) return undefined;
+
+  const cacheKey = `${convId}|${memberId}`;
+  const hit = upnCache.get(cacheKey);
+  if (hit) return hit;                                                          // (4) cache
+
+  try {
+    // ConnectorClientKey is a per-adapter-instance Symbol on the adapter (the way the
+    // SDK's own teamsAttachmentDownloader reads it) — NOT a static on CloudAdapter.
+    const key = (turnContext as any).adapter?.ConnectorClientKey;
+    const connector: any = key ? (turnContext.turnState as any).get(key) : undefined;
+    const member: any = await connector?.getConversationMember?.(memberId, convId);  // (3) roster
+    const upn: string | undefined = member?.userPrincipalName ?? member?.email;
+    if (upn) upnCache.set(cacheKey, upn);
+    return upn;
+  } catch {
+    return undefined;  // connector not on turnState / permission gap — omit the tag
+  }
+}
+
+// Then in the message handler, before InvokeAgentScope.start:
+const callerUpn = await resolveCallerUpn(turnContext);
+const callerDetails: CallerDetails = {
+  userDetails: {
+    userId:    from?.aadObjectId ?? from?.id ?? '',
+    userName:  from?.name ?? '',
+    userEmail: callerUpn ?? '',   // ← MAC "User principal name"
+  } as UserDetails,
+};
+```
+
+> **S2S agents skip this** — no signed-in user, so `userEmail` comes from the Blueprint sponsor env var (`agent365Observability__sponsorUserEmail`), not the roster.
 
 ### ExecuteToolScope
 

@@ -10,7 +10,7 @@ into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.2.x** (releas
 > and the scope types are still importable from their legacy module paths (transitive deps).
 > See `MIGRATION_A365.md` in the distro repo for the authoritative migration guide.
 >
-> **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` + `get_observability_authentication_scope` from `microsoft_agents_a365.observability.core.middleware.baggage_builder` and `microsoft_agents_a365.runtime.environment_utils` respectively. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
+> **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` + `get_observability_authentication_scope` from `microsoft.opentelemetry.a365.core.middleware.baggage_builder` and `microsoft_agents_a365.runtime.environment_utils` respectively. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
 
 ---
 
@@ -484,7 +484,7 @@ async def on_message(context: TurnContext, state: TurnState):
 ```python
 # A365 Observability — best-effort instrumentation (verify against official sample)
 # Imports use the legacy module paths (still required even with the unified distro entry point):
-from microsoft_agents_a365.observability.core.middleware.baggage_builder import BaggageBuilder
+from microsoft.opentelemetry.a365.core.middleware.baggage_builder import BaggageBuilder
 from microsoft_agents_a365.runtime.environment_utils import get_observability_authentication_scope
 
 # In your message handler:
@@ -524,14 +524,14 @@ async def on_message(context: TurnContext, state: TurnState):
 > **Store publishing requirement:** `InvokeAgentScope`, `InferenceScope`, and `ExecuteToolScope`
 > are **required** for store validation. Missing any one causes store validation failure.
 
-> **Scope-type imports come from the legacy `microsoft_agents_a365.observability.core` module path** — the unified `microsoft-opentelemetry` distro entry point (`use_microsoft_opentelemetry`) is in `microsoft.opentelemetry`, but the scope classes themselves still live in the legacy module (transitive dep of the distro). The AF sample uses these legacy paths.
+> **Scope-type imports come from the legacy `microsoft.opentelemetry.a365.core` module path** — the unified `microsoft-opentelemetry` distro entry point (`use_microsoft_opentelemetry`) is in `microsoft.opentelemetry`, but the scope classes themselves still live in the legacy module (transitive dep of the distro). The AF sample uses these legacy paths.
 
 > **`ScopeUtils.populate_*_from_context` is removed in 1.0+.** Construct scopes directly
 > with `.start(...)`.
 
 ```python
 # Verified import paths from Agent365-Samples/python/agent-framework/sample-agent
-from microsoft_agents_a365.observability.core import (
+from microsoft.opentelemetry.a365.core import (
     AgentDetails,
     InferenceCallDetails,
     InferenceOperationType,
@@ -554,14 +554,23 @@ from microsoft_agents_a365.observability.core import (
 ### InvokeAgentScope
 
 ```python
+# AI Teammate: write BOTH identity dimensions so MAC shows per-instance AND
+# blueprint-rolled-up activity. They are emitted as separate span tags:
+#   agent_id           -> gen_ai.agent.id                   (this agentic INSTANCE)
+#   agent_blueprint_id -> microsoft.a365.agent.blueprint.id (MAC roll-up to the blueprint)
+# If EITHER is empty MAC loses that grouping dimension. Resolve agent_id LIVE from the
+# turn's recipient (verified field: recipient.agentic_app_id). NOTE: the Python
+# ChannelAccount has NO blueprint field, so agent_blueprint_id MUST come from env
+# (stamped by `a365 setup all`) — never leave it empty.
+recipient = context.activity.recipient
 agent_details = AgentDetails(
-    agent_id="agent-456",
-    agent_name="My Agent",
-    agent_description="An AI agent powered by Azure OpenAI",
-    agentic_user_id="auid-123",
-    agentic_user_email="agent@contoso.com",
-    agent_blueprint_id="blueprint-789",
-    tenant_id="tenant-123",
+    agent_id=getattr(recipient, "agentic_app_id", None) or os.environ.get("AGENT365_AGENT_ID", ""),
+    agent_name=os.environ.get("AGENT365_AGENT_NAME", "My Agent"),
+    agent_description=os.environ.get("AGENT365_AGENT_DESCRIPTION", ""),
+    agentic_user_id=getattr(recipient, "agentic_user_id", "") or "",
+    agentic_user_email=getattr(recipient, "agentic_user_id", "") or "",
+    agent_blueprint_id=os.environ.get("AGENT365_BLUEPRINT_ID", ""),  # <- MAC blueprint roll-up (env only)
+    tenant_id=getattr(recipient, "tenant_id", None) or os.environ.get("AGENT365_TENANT_ID", ""),
 )
 
 scope_details = InvokeAgentScopeDetails(
@@ -588,6 +597,58 @@ with InvokeAgentScope.start(request, scope_details, agent_details, caller_detail
     response = call_agent(...)
     scope.record_output_messages([response])
 ```
+
+### Resolve caller UPN (AI Teammate / OBO — populates MAC "User principal name")
+
+For AI Teammate (`agentic-user`) turns, don't hardcode `user_email` like the `"jane.doe@contoso.com"` above — resolve it per turn. The observability SDK does **not** auto-populate it (`BaggageBuilder.user_email()` and `UserDetails.user_email` are manual setters). It's what MAC shows in its **"User principal name"** column, and it's blank on the most common turn (a direct Teams 1:1 chat), because `activity.from_property.id` is an MRI (`29:…` / `8:orgid:…`), not a UPN. Notification / `@mention` / email turns *do* carry the UPN in `from_property.id`.
+
+Resolution order: (1) `from_property.id` contains `@` → it **is** the UPN; (3) otherwise look it up from the Teams roster via [`TeamsInfo.get_member`](https://github.com/microsoft/Agents-for-python/blob/main/libraries/microsoft-agents-hosting-teams/microsoft_agents/hosting/teams/teams_info.py) (verified — returns `TeamsChannelAccount` with `user_principal_name` / `email`). Cache per `conversation|member` — it's a network call.
+
+```python
+from microsoft_agents.hosting.teams import TeamsInfo
+
+_upn_cache: dict[str, str] = {}
+
+# Best-effort: returns the caller's UPN/email, or None if the roster is unavailable.
+# NEVER raises — a blank UPN must not break the turn (the tag is simply omitted).
+async def resolve_caller_upn(turn_context) -> str | None:
+    frm = turn_context.activity.from_property
+    if frm and isinstance(frm.id, str) and "@" in frm.id:           # (1) already a UPN
+        return frm.id
+
+    conv = turn_context.activity.conversation
+    conv_id = conv.id if conv else None
+    member_id = getattr(frm, "aad_object_id", None) or getattr(frm, "id", None)
+    if not conv_id or not member_id:
+        return None
+
+    cache_key = f"{conv_id}|{member_id}"
+    if cache_key in _upn_cache:                                     # (4) cache
+        return _upn_cache[cache_key]
+
+    try:
+        member = await TeamsInfo.get_member(turn_context, member_id)  # (3) roster
+        upn = getattr(member, "user_principal_name", None) or getattr(member, "email", None)
+        if upn:
+            _upn_cache[cache_key] = upn
+        return upn
+    except Exception:
+        return None  # connector unavailable / permission gap — omit the tag, don't fail the turn
+
+# Then in the handler, before InvokeAgentScope.start:
+caller_upn = await resolve_caller_upn(context)
+frm = context.activity.from_property
+caller_details = CallerDetails(
+    user_details=UserDetails(
+        user_id=getattr(frm, "aad_object_id", None) or getattr(frm, "id", "") or "",
+        user_name=getattr(frm, "name", "") or "",
+        user_email=caller_upn or "",   # ← MAC "User principal name"
+    ),
+)
+# Equivalent baggage path: builder.user_email(caller_upn or "")
+```
+
+> **S2S agents skip this** — no signed-in user, so `user_email` comes from the Blueprint sponsor env var (`AGENT365_SPONSOR_USER_EMAIL`), not the roster.
 
 ### Shared Observability Context Module (`observability/obs_context.py`)
 
