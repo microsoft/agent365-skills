@@ -549,14 +549,25 @@ import {
   ServiceEndpoint,
 } from '@microsoft/opentelemetry';
 
+// AI Teammate: write BOTH identity dimensions so MAC shows per-instance AND
+// blueprint-rolled-up activity. The two are emitted as separate span tags:
+//   agentId          → gen_ai.agent.id                   (this agentic INSTANCE)
+//   agentBlueprintId → microsoft.a365.agent.blueprint.id (MAC roll-up to the blueprint)
+// If EITHER is empty MAC loses that grouping dimension — blueprint empty ⇒ only
+// per-instance rows; agentId empty ⇒ only blueprint-level. The exporter omits whichever
+// is blank, so always set both. Resolve LIVE from the turn's recipient (verified fields:
+// recipient.agenticAppId + recipient.agenticAppBlueprintId on @microsoft/agents-activity
+// ChannelAccount); env is only a fallback.
+const recipient = turnContext.activity?.recipient as any;
 const agentDetails: AgentDetails = {
-  agentId: 'agent-456',
-  agentName: 'Email Assistant',
-  agentDescription: 'An AI agent powered by Azure OpenAI',
-  agentAUID: 'auid-123',
-  agentEmail: 'agent@contoso.com',  // interface field is agentAUID (uppercase UID)
-  agentBlueprintId: 'blueprint-789',
-  tenantId: 'tenant-123',
+  agentId:          recipient?.agenticAppId ?? process.env.agent365Observability__agentId ?? '',
+  agentName:        process.env.agent365Observability__agentName ?? 'Email Assistant',
+  agentDescription: process.env.agent365Observability__agentDescription ?? '',
+  agentAUID:        recipient?.agenticUserId ?? '',          // microsoft.agent.user.id (agentic user)
+  agentEmail:       recipient?.agenticUserId ?? '',          // the agent's own identity
+  agentBlueprintId: process.env.agent365Observability__agentBlueprintId
+                    ?? recipient?.agenticAppBlueprintId ?? '',  // ← MAC blueprint roll-up
+  tenantId:         recipient?.tenantId ?? process.env.agent365Observability__tenantId ?? '',
 };
 
 const scopeDetails: InvokeAgentScopeDetails = {

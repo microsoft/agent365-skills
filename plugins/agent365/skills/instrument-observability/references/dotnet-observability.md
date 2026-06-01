@@ -656,13 +656,29 @@ public class MyAgent : AgentApplication
         if (hasObservabilityIdentity)
         {
             var obsConfig = _configuration.GetSection("Agent365Observability");
+
+            // Write BOTH identity dimensions so MAC shows per-instance AND blueprint-rolled-up
+            // activity. They become separate span tags:
+            //   AgentId          → gen_ai.agent.id                   (this agentic INSTANCE)
+            //   AgentBlueprintId → microsoft.a365.agent.blueprint.id (MAC roll-up to the blueprint)
+            // If EITHER is empty MAC loses that grouping dimension. AgentId is resolved live
+            // (GetAgenticInstanceId() = Recipient.AgenticAppId, or the OBO token); the .NET
+            // recipient has NO blueprint field, so AgentBlueprintId MUST come from config
+            // (stamped by `a365 setup all`) — guard against it being empty.
+            var blueprintId = obsConfig["AgentBlueprintId"] ?? string.Empty;
+            if (string.IsNullOrEmpty(blueprintId))
+            {
+                _logger.LogWarning(
+                    "Agent365Observability:AgentBlueprintId is empty — MAC will only show per-instance " +
+                    "activity, with no blueprint roll-up. Set it from a365.generated.config.json.");
+            }
             var agentDetails = new AgentDetails(
                 agentId:          resolvedAgentId!,
                 agentName:        obsConfig["AgentName"]
                                   ?? _configuration["agentBlueprintDisplayName"]
                                   ?? "Agent Blueprint",
                 agentDescription: obsConfig["AgentDescription"] ?? string.Empty,
-                agentBlueprintId: obsConfig["AgentBlueprintId"] ?? string.Empty,
+                agentBlueprintId: blueprintId,
                 tenantId:         resolvedTenantId!);
 
             var from = turnContext.Activity?.From;

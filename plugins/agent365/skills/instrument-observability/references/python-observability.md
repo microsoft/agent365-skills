@@ -554,14 +554,23 @@ from microsoft_agents_a365.observability.core import (
 ### InvokeAgentScope
 
 ```python
+# AI Teammate: write BOTH identity dimensions so MAC shows per-instance AND
+# blueprint-rolled-up activity. They are emitted as separate span tags:
+#   agent_id           -> gen_ai.agent.id                   (this agentic INSTANCE)
+#   agent_blueprint_id -> microsoft.a365.agent.blueprint.id (MAC roll-up to the blueprint)
+# If EITHER is empty MAC loses that grouping dimension. Resolve agent_id LIVE from the
+# turn's recipient (verified field: recipient.agentic_app_id). NOTE: the Python
+# ChannelAccount has NO blueprint field, so agent_blueprint_id MUST come from env
+# (stamped by `a365 setup all`) — never leave it empty.
+recipient = context.activity.recipient
 agent_details = AgentDetails(
-    agent_id="agent-456",
-    agent_name="My Agent",
-    agent_description="An AI agent powered by Azure OpenAI",
-    agentic_user_id="auid-123",
-    agentic_user_email="agent@contoso.com",
-    agent_blueprint_id="blueprint-789",
-    tenant_id="tenant-123",
+    agent_id=getattr(recipient, "agentic_app_id", None) or os.environ.get("AGENT365_AGENT_ID", ""),
+    agent_name=os.environ.get("AGENT365_AGENT_NAME", "My Agent"),
+    agent_description=os.environ.get("AGENT365_AGENT_DESCRIPTION", ""),
+    agentic_user_id=getattr(recipient, "agentic_user_id", "") or "",
+    agentic_user_email=getattr(recipient, "agentic_user_id", "") or "",
+    agent_blueprint_id=os.environ.get("AGENT365_BLUEPRINT_ID", ""),  # <- MAC blueprint roll-up (env only)
+    tenant_id=getattr(recipient, "tenant_id", None) or os.environ.get("AGENT365_TENANT_ID", ""),
 )
 
 scope_details = InvokeAgentScopeDetails(
