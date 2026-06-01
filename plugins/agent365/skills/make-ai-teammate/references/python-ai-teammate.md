@@ -131,7 +131,11 @@ class MyAgent(AgentInterface):
     """AI Teammate agent using AgentFramework."""
 
     def __init__(self):
-        self._agent: ChatAgent | None = None
+        # Persistent agent + its chat client. add-workiq-tools' setup_mcp_servers
+        # reassigns self.agent via add_tool_servers_to_agent(chat_client=self.chat_client,
+        # ...), so BOTH must live on self (not as locals) or MCP wiring breaks at runtime.
+        self.agent: ChatAgent | None = None
+        self.chat_client: AzureOpenAIChatClient | None = None
 
     def _create_chat_client(self) -> AzureOpenAIChatClient:
         endpoint   = os.environ["AZURE_OPENAI_ENDPOINT"]
@@ -157,11 +161,11 @@ class MyAgent(AgentInterface):
             )
 
     def _create_agent(self, tools: list | None = None) -> ChatAgent:
-        chat_client = self._create_chat_client()
-        return ChatAgent(chat_client=chat_client, tools=tools or [])
+        return ChatAgent(chat_client=self.chat_client, tools=tools or [])
 
     async def initialize(self) -> None:
-        self._agent = self._create_agent()
+        self.chat_client = self._create_chat_client()
+        self.agent = self._create_agent()
         logger.info("Agent initialized")
 
     async def process_user_message(
@@ -177,9 +181,18 @@ class MyAgent(AgentInterface):
         safe_name = _sanitize_display_name(user_name)
         prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
 
-        result = await self._agent.run(message, system_prompt=prompt)
+        # add-workiq-tools rewrites this to pass the personalized prompt THROUGH
+        # setup_mcp_servers(instructions=prompt) — which rebuilds self.agent WITH the MCP
+        # tools attached — then runs self.agent.run(message). When WorkIQ isn't wired, the
+        # bare agent takes the prompt via system_prompt= at run time. Either way the prompt
+        # reaches the SAME persistent self.agent, so tools are never dropped. Mirrors:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/agent-framework/sample-agent/agent.py
+        if hasattr(self, "setup_mcp_servers"):
+            await self.setup_mcp_servers(auth, auth_handler_name, context, instructions=prompt)
+            result = await self.agent.run(message)
+        else:
+            result = await self.agent.run(message, system_prompt=prompt)
         return self._extract_result(result)
-    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
 
     async def handle_agent_notification_activity(
         self,
@@ -622,6 +635,7 @@ dependencies = [
 # Licensed under the MIT License.
 
 import asyncio
+import dataclasses
 import logging
 import os
 import re
@@ -652,13 +666,19 @@ class MyAgent(AgentInterface):
     """AI Teammate agent using the OpenAI Agents SDK."""
 
     def __init__(self):
-        self._agent: Agent | None = None
+        # Persistent agent — created ONCE and reused across turns. add-workiq-tools'
+        # setup_mcp_servers reassigns this SAME attribute (self.agent) via
+        # add_tool_servers_to_agent, so the MCP tools live on it. mcp_servers=[] gives
+        # dataclasses.replace() a field to carry forward before WorkIQ is wired.
+        self.agent: Agent | None = None
+        self.mcp_servers: list = []
 
     async def initialize(self) -> None:
-        self._agent = Agent(
+        self.agent = Agent(
             name="MyAgent",
             model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            instructions="You are a helpful assistant.",
+            instructions=AGENT_PROMPT_TEMPLATE.format(user_name="unknown"),
+            mcp_servers=self.mcp_servers,
         )
         logger.info("Agent initialized")
 
@@ -675,15 +695,23 @@ class MyAgent(AgentInterface):
         safe_name = _sanitize_display_name(user_name)
         prompt = AGENT_PROMPT_TEMPLATE.format(user_name=safe_name)
 
-        # Recreate agent with per-turn instructions (or update instructions field)
-        agent = Agent(
-            name="MyAgent",
-            model=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            instructions=prompt,
-        )
-        result = await Runner.run(agent, message)
+        # Personalize per turn WITHOUT discarding MCP tools. dataclasses.replace()
+        # shallow-copies the PERSISTENT self.agent (carrying its mcp_servers) and swaps
+        # only the instructions. NEVER build a fresh Agent(...) here — that drops every
+        # tool add-workiq-tools attached to self.agent (this was the original bug). This
+        # mirrors the verified OpenAI sample:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/openai/sample-agent/agent.py
+        personalized_agent = dataclasses.replace(self.agent, instructions=prompt)
+
+        # add-workiq-tools adds setup_mcp_servers (it reassigns self.agent with the MCP
+        # tools attached). Call it when present; the bare pre-WorkIQ agent skips it.
+        if hasattr(self, "setup_mcp_servers"):
+            await self.setup_mcp_servers(auth, auth_handler_name, context)
+            # Re-derive from the now-MCP-bearing self.agent so this turn gets the tools too.
+            personalized_agent = dataclasses.replace(self.agent, instructions=prompt)
+
+        result = await Runner.run(personalized_agent, message)
         return result.final_output or "Sorry, I couldn't get a response."
-    # Note: WorkIQ MCP tool setup is added by the add-workiq-tools skill.
 
     async def handle_agent_notification_activity(
         self,
@@ -911,6 +939,14 @@ class MyAgent(AgentInterface):
             description="A helpful AI assistant",
             instruction=instruction,
         )
+
+        # add-workiq-tools inserts the MCP attach HERE — between the Agent build and the
+        # Runner, AFTER per-turn personalization:
+        #   agent = await attach_workiq_tools(agent, auth, auth_handler_name, context)
+        # ADK's per-turn rebuild is CORRECT (unlike the OpenAI variant's old fresh-Agent
+        # bug): tools are re-attached every turn after the instruction is set, so nothing
+        # is dropped. Do not hoist the Runner above this anchor. Mirrors:
+        # https://github.com/microsoft/Agent365-Samples/blob/main/python/google-adk/sample-agent/agent.py
 
         session_service = InMemorySessionService()
         runner = Runner(
