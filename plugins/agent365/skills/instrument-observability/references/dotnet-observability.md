@@ -666,11 +666,16 @@ public class MyAgent : AgentApplication
                 tenantId:         resolvedTenantId!);
 
             var from = turnContext.Activity?.From;
+            // Resolve the caller UPN so MAC's "User principal name" column is populated.
+            // A direct Teams chat carries only an MRI + AadObjectId (no UPN) in From.Id, so
+            // look it up from the Teams roster — see "Resolve caller UPN" below. Best-effort:
+            // returns null on failure, in which case the UserEmail tag is simply omitted.
+            var callerUpn = await ResolveCallerUpnAsync(turnContext, cancellationToken).ConfigureAwait(false);
             var callerDetails = new CallerDetails(
                 userDetails: new UserDetails(
                     userId:    from?.AadObjectId ?? from?.Id ?? "unknown",
                     userName:  from?.Name ?? "unknown",
-                    userEmail: string.Empty));
+                    userEmail: callerUpn ?? string.Empty));
 
             var userText = turnContext.Activity?.Text ?? string.Empty;
             var scopeRequest = new ObsRequest(
@@ -716,6 +721,45 @@ public class MyAgent : AgentApplication
     }
 }
 ```
+
+### Resolve caller UPN (AI Teammate / OBO — populates MAC "User principal name")
+
+The observability SDK does **not** auto-populate the caller UPN — `CallerDetails.UserDetails.UserEmail` is the value MAC shows in its **"User principal name"** column, and you must set it. It's blank on the most common turn (a direct Teams 1:1 chat), because `Activity.From.Id` is an MRI (`29:…` / `8:orgid:…`), not a UPN. Notification / `@mention` / email turns *do* carry the UPN in `From.Id`.
+
+Resolution order: (1) `From.Id` already contains `@` → it **is** the UPN; (3) otherwise look it up from the Teams roster via [`TeamsInfo.GetMemberAsync`](https://github.com/microsoft/Agents-for-net/blob/main/src/libraries/Extensions/Microsoft.Agents.Extensions.Teams/Connector/TeamsInfo.cs) (verified — returns `TeamsChannelAccount` with `.UserPrincipalName` / `.Email`). Cache per `conversation|member` (it's a network call). Requires `using Microsoft.Agents.Extensions.Teams.Connector;`.
+
+```csharp
+private static readonly ConcurrentDictionary<string, string> UpnCache = new();
+
+// Best-effort: returns the caller's UPN/email, or null if the roster is unavailable.
+// NEVER throws — a blank UPN must not break the turn (the tag is just omitted).
+private static async Task<string?> ResolveCallerUpnAsync(ITurnContext turnContext, CancellationToken ct)
+{
+    var from = turnContext.Activity?.From;
+    if (from?.Id is { } id && id.Contains('@')) return id;          // (1) already a UPN
+
+    var convId = turnContext.Activity?.Conversation?.Id;
+    var memberId = from?.AadObjectId ?? from?.Id;
+    if (convId is null || memberId is null) return null;
+
+    var cacheKey = $"{convId}|{memberId}";
+    if (UpnCache.TryGetValue(cacheKey, out var hit)) return hit;     // (4) cache
+
+    try
+    {
+        var member = await TeamsInfo.GetMemberAsync(turnContext, memberId, ct).ConfigureAwait(false);  // (3) roster
+        var upn = member?.UserPrincipalName ?? member?.Email;
+        if (upn is not null) UpnCache[cacheKey] = upn;
+        return upn;
+    }
+    catch
+    {
+        return null;  // connector unavailable / permission gap — omit the tag, don't fail the turn
+    }
+}
+```
+
+> **S2S agents skip this entirely** — they have no signed-in user, so `UserEmail` comes from the Blueprint sponsor config (`Agent365Observability:Sponsor:UserEmail`), not the roster.
 
 ### Set `ChatClientAgent.Id` to match the resolved agent id
 

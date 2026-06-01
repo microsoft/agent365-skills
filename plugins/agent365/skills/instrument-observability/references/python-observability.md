@@ -589,6 +589,58 @@ with InvokeAgentScope.start(request, scope_details, agent_details, caller_detail
     scope.record_output_messages([response])
 ```
 
+### Resolve caller UPN (AI Teammate / OBO — populates MAC "User principal name")
+
+For AI Teammate (`agentic-user`) turns, don't hardcode `user_email` like the `"jane.doe@contoso.com"` above — resolve it per turn. The observability SDK does **not** auto-populate it (`BaggageBuilder.user_email()` and `UserDetails.user_email` are manual setters). It's what MAC shows in its **"User principal name"** column, and it's blank on the most common turn (a direct Teams 1:1 chat), because `activity.from_property.id` is an MRI (`29:…` / `8:orgid:…`), not a UPN. Notification / `@mention` / email turns *do* carry the UPN in `from_property.id`.
+
+Resolution order: (1) `from_property.id` contains `@` → it **is** the UPN; (3) otherwise look it up from the Teams roster via [`TeamsInfo.get_member`](https://github.com/microsoft/Agents-for-python/blob/main/libraries/microsoft-agents-hosting-teams/microsoft_agents/hosting/teams/teams_info.py) (verified — returns `TeamsChannelAccount` with `user_principal_name` / `email`). Cache per `conversation|member` — it's a network call.
+
+```python
+from microsoft_agents.hosting.teams import TeamsInfo
+
+_upn_cache: dict[str, str] = {}
+
+# Best-effort: returns the caller's UPN/email, or None if the roster is unavailable.
+# NEVER raises — a blank UPN must not break the turn (the tag is simply omitted).
+async def resolve_caller_upn(turn_context) -> str | None:
+    frm = turn_context.activity.from_property
+    if frm and isinstance(frm.id, str) and "@" in frm.id:           # (1) already a UPN
+        return frm.id
+
+    conv = turn_context.activity.conversation
+    conv_id = conv.id if conv else None
+    member_id = getattr(frm, "aad_object_id", None) or getattr(frm, "id", None)
+    if not conv_id or not member_id:
+        return None
+
+    cache_key = f"{conv_id}|{member_id}"
+    if cache_key in _upn_cache:                                     # (4) cache
+        return _upn_cache[cache_key]
+
+    try:
+        member = await TeamsInfo.get_member(turn_context, member_id)  # (3) roster
+        upn = getattr(member, "user_principal_name", None) or getattr(member, "email", None)
+        if upn:
+            _upn_cache[cache_key] = upn
+        return upn
+    except Exception:
+        return None  # connector unavailable / permission gap — omit the tag, don't fail the turn
+
+# Then in the handler, before InvokeAgentScope.start:
+caller_upn = await resolve_caller_upn(context)
+frm = context.activity.from_property
+caller_details = CallerDetails(
+    user_details=UserDetails(
+        user_id=getattr(frm, "aad_object_id", None) or getattr(frm, "id", "") or "",
+        user_name=getattr(frm, "name", "") or "",
+        user_email=caller_upn or "",   # ← MAC "User principal name"
+    ),
+)
+# Equivalent baggage path: builder.user_email(caller_upn or "")
+```
+
+> **S2S agents skip this** — no signed-in user, so `user_email` comes from the Blueprint sponsor env var (`AGENT365_SPONSOR_USER_EMAIL`), not the roster.
+
 ### Shared Observability Context Module (`observability/obs_context.py`)
 
 For S2S agents, create a shared module to avoid circular imports between agent, monitor, and main:
