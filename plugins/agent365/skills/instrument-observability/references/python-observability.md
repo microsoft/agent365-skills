@@ -89,7 +89,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from microsoft.opentelemetry import use_microsoft_opentelemetry
-from microsoft.opentelemetry.a365.hosting.token_cache_helpers import AgenticTokenCache
+from microsoft_agents_a365.observability.hosting.token_cache_helpers import AgenticTokenCache
 
 _token_cache = AgenticTokenCache()
 
@@ -134,7 +134,7 @@ from dotenv import load_dotenv
 from aiohttp import web
 
 from microsoft.opentelemetry import use_microsoft_opentelemetry
-from microsoft.opentelemetry.a365.core import AgentDetails, CallerDetails, UserDetails
+from microsoft_agents_a365.observability.core import AgentDetails, CallerDetails, UserDetails
 
 from observability import token_cache
 from observability.observability_token_service import acquire_initial_token, run_token_service
@@ -402,7 +402,7 @@ Register hosting baggage helpers to auto-populate baggage from every incoming `T
 This removes the need to call `BaggageBuilder` manually in each handler.
 
 ```python
-from microsoft.opentelemetry.a365.hosting import (
+from microsoft_agents_a365.observability.hosting import (
     ObservabilityHostingManager,
     ObservabilityHostingOptions,
 )
@@ -657,7 +657,7 @@ For S2S agents, create a shared module to avoid circular imports between agent, 
 ```python
 # observability/obs_context.py
 import os
-from microsoft.opentelemetry.a365.core import AgentDetails, CallerDetails, UserDetails
+from microsoft_agents_a365.observability.core import AgentDetails, CallerDetails, UserDetails
 
 TENANT_ID = os.environ.get("AGENT365_TENANT_ID", "")
 AGENT_ID = os.environ.get("AGENT365_AGENT_ID", "")
@@ -854,7 +854,7 @@ INFO   No spans with tenant/agent identity found; nothing exported.
 
 Import check to verify the package is installed:
 ```bash
-python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from microsoft.opentelemetry.a365.hosting import ObservabilityHostingManager; print('A365 observability imports OK')"
+python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from microsoft_agents_a365.observability.hosting import ObservabilityHostingManager; print('A365 observability imports OK')"
 ```
 
 ---
@@ -879,18 +879,18 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 | Symbol | Module | Purpose |
 |--------|--------|---------|
 | `use_microsoft_opentelemetry()` | `microsoft.opentelemetry` | Configure the OTel pipeline with the A365 exporter |
-| `AgentDetails` | `microsoft.opentelemetry.a365.core` | Agent identity for manual scopes |
-| `BaggageBuilder` | `microsoft.opentelemetry.a365.core` | Propagates tenant/agent/conversation context across spans |
-| `populate(builder, context)` | `microsoft.opentelemetry.a365.hosting.scope_helpers.populate_baggage` | Auto-populates `BaggageBuilder` from `TurnContext` |
-| `ObservabilityHostingManager` | `microsoft.opentelemetry.a365.hosting` | Composite hosting configuration for adapter middleware |
-| `ObservabilityHostingOptions` | `microsoft.opentelemetry.a365.hosting` | Options for `ObservabilityHostingManager.configure` (defaults: `enable_baggage=False`, `enable_output_logging=False`) |
-| `BaggageMiddleware` | `microsoft.opentelemetry.a365.hosting` | Adapter middleware — registered by `ObservabilityHostingManager` |
-| `AgenticTokenCache` | `microsoft.opentelemetry.a365.hosting.token_cache_helpers` | Hosting token cache for OBO / agentic-user flows |
+| `AgentDetails` | `microsoft_agents_a365.observability.core` | Agent identity for manual scopes |
+| `BaggageBuilder` | `microsoft_agents_a365.observability.core` | Propagates tenant/agent/conversation context across spans |
+| `populate(builder, context)` | `microsoft_agents_a365.observability.hosting.scope_helpers.populate_baggage` | Auto-populates `BaggageBuilder` from `TurnContext` |
+| `ObservabilityHostingManager` | `microsoft_agents_a365.observability.hosting` | Composite hosting configuration for adapter middleware |
+| `ObservabilityHostingOptions` | `microsoft_agents_a365.observability.hosting` | Options for `ObservabilityHostingManager.configure` (defaults: `enable_baggage=False`, `enable_output_logging=False`) |
+| `BaggageMiddleware` | `microsoft_agents_a365.observability.hosting` | Adapter middleware — registered by `ObservabilityHostingManager` |
+| `AgenticTokenCache` | `microsoft_agents_a365.observability.hosting.token_cache_helpers` | Hosting token cache for OBO / agentic-user flows |
 | `get_observability_authentication_scope()` | `microsoft_agents_a365.runtime.environment_utils` | Returns the default OAuth scope string (legacy module path — still required) |
-| `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `microsoft.opentelemetry.a365.core` | Agent invocation scope (context manager) |
-| `ExecuteToolScope.start(request, tool_details, agent_details)` | `microsoft.opentelemetry.a365.core` | Tool execution scope (context manager) |
-| `InferenceScope.start(request, inference_details, agent_details)` | `microsoft.opentelemetry.a365.core` | LLM inference scope (context manager) |
-| `OutputScope.start(request, response, agent_details, span_details)` | `microsoft.opentelemetry.a365.core` | Async output scope |
+| `InvokeAgentScope.start(request, scope_details, agent_details, caller_details)` | `microsoft_agents_a365.observability.core` | Agent invocation scope (context manager) |
+| `ExecuteToolScope.start(request, tool_details, agent_details)` | `microsoft_agents_a365.observability.core` | Tool execution scope (context manager) |
+| `InferenceScope.start(request, inference_details, agent_details)` | `microsoft_agents_a365.observability.core` | LLM inference scope (context manager) |
+| `OutputScope.start(request, response, agent_details, span_details)` | `microsoft_agents_a365.observability.core` | Async output scope |
 | `scope.record_input_messages` / `record_output_messages` | — | Record prompts and completions |
 | `scope.record_input_tokens` / `record_output_tokens` | — | Record token counts |
 | `scope.record_response(result)` | — | Record tool execution result |

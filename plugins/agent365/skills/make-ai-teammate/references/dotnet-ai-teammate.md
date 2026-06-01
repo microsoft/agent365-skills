@@ -826,12 +826,18 @@ namespace YourNamespace.Agents
                 isAgenticOnly: false, autoSignInHandlers: oboHandlers, rank: RouteRank.Last);
         }
 
+        // Signature MUST match the SDK AgentNotificationHandler delegate:
+        // (ITurnContext, ITurnState, AgentNotificationActivity, CancellationToken). The
+        // 3rd parameter is the typed notification payload (Microsoft.Agents.A365.Notifications.Models).
+        // Without it, the OnAgentNotification("*", OnAgentNotificationAsync) registration
+        // fails to bind to the delegate (CS0123). The string "*" is fine — ChannelId defines
+        // an implicit string conversion. Requires: using Microsoft.Agents.A365.Notifications.Models;
         protected async Task OnAgentNotificationAsync(
-            ITurnContext turnContext, ITurnState turnState, CancellationToken cancellationToken)
+            ITurnContext turnContext, ITurnState turnState,
+            AgentNotificationActivity agentNotificationActivity, CancellationToken cancellationToken)
         {
-            // Handle inbound A365 notifications. The notification payload is in
-            // turnContext.Activity.Value — cast to the specific notification type
-            // (EmailNotification, WpxComment, etc.) from Microsoft.Agents.A365.Notifications.Models.
+            // Inspect agentNotificationActivity for the specific notification type
+            // (EmailNotification, WpxComment, etc.).
             _logger?.LogInformation("Received agent notification: {Name}", turnContext.Activity.Name);
             await Task.CompletedTask;
         }

@@ -108,7 +108,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             # Read email via WorkIQ Mail, then generate reply
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
@@ -244,11 +244,8 @@ from aiohttp import web
 from microsoft_agents_hosting_aiohttp import CloudAdapter
 from microsoft_agents_hosting_core import ActivityTypes
 from microsoft_agents.hosting.core.authorization import MsalConnectionManager
-from microsoft_agents_a365_notifications import (
-    agent_notification,
-    ChannelId,
-    NotificationType,
-)
+from microsoft_agents.activity import ChannelId   # ChannelId lives in activity, NOT notifications
+from microsoft_agents_a365.notifications import AgentNotification
 
 logger = logging.getLogger(__name__)
 
@@ -310,10 +307,15 @@ class GenericAgentHost:
                 typing_active = False
                 typing_task.cancel()
 
-        @agent_notification.on_agent_notification(
-            channel_id=ChannelId(channel="agents", sub_channel="*")
+        # AgentNotification routes inbound A365 notifications (email, WPX, etc.). It is a
+        # CLASS that wraps the app — instantiate it with the adapter, then use its
+        # on_agent_notification decorator. It is NOT a module-level function.
+        notifications = AgentNotification(self._adapter)
+
+        @notifications.on_agent_notification(
+            ChannelId(channel="agents", sub_channel="*")
         )
-        async def on_notification(context, state):
+        async def on_notification(context, state, notification):
             notification_type = getattr(context.activity, "name", None)
             reply = await self._agent.handle_agent_notification_activity(
                 notification_type,
@@ -597,7 +599,7 @@ When `make-ai-teammate` Phase 8 runs for a Python project, the skill reads `runT
 |------|-----|
 | `load_dotenv()` at top of `host_agent_server.py` before any imports | Env vars must be set before SDK packages read them at import time |
 | `_sanitize_display_name()` strips control characters | `context.activity.from_property.name` is user-controlled text; prevents prompt injection |
-| `agent_notification.on_agent_notification(channel_id=ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT |
+| `AgentNotification(self._adapter).on_agent_notification(ChannelId(channel="agents", sub_channel="*"))` | Subscribes to all agent notification subtypes including email and WPX_COMMENT. `AgentNotification` is a class wrapping the app — NOT a module-level function. `ChannelId` is imported from `microsoft_agents.activity`. |
 | Typing indicator loop at 4 s | Prevents Teams from clearing the typing indicator before the LLM responds |
 | `requires-python = ">=3.11"` | `str | None` union syntax requires 3.10+; `asyncio.TaskGroup` requires 3.11+ |
 | Outer `try/except` around `self._adapter.process(request)` in `_handle_messages` | Bot-Framework convention exposes an `on_turn_error` hook on adapters that catches errors inside the turn lifecycle. If your `microsoft-agents-hosting` version exposes that hook, configure it in `start_server()` (`self._adapter.on_turn_error = ...`). The outer try/except in `_handle_messages` is the belt-and-suspenders fallback that catches anything escaping the hook (pre-turn auth failures, hook-internal throws), preventing the aiohttp event loop from crashing on `unhandled exception`. |
@@ -644,7 +646,7 @@ from microsoft_agents.hosting.core import Authorization
 
 from agents import Agent, Runner
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -721,7 +723,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -772,7 +774,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     TextBlock,
 )
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -836,7 +838,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -894,7 +896,7 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -977,7 +979,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -1023,7 +1025,7 @@ from microsoft_agents.hosting.core import Authorization
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1089,7 +1091,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
@@ -1139,7 +1141,7 @@ from semantic_kernel.connectors.ai.open_ai import (
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
 from semantic_kernel.contents import ChatHistory
 
-from microsoft_agents_a365_notifications import NotificationType
+from microsoft_agents_a365.notifications import NotificationTypes
 
 logger = logging.getLogger(__name__)
 
@@ -1202,7 +1204,7 @@ class MyAgent(AgentInterface):
         auth: Authorization,
         auth_handler_name: str | None,
     ) -> str | None:
-        if notification_type == NotificationType.EMAIL_NOTIFICATION:
+        if notification_type == NotificationTypes.EMAIL_NOTIFICATION:
             reply = await self.process_user_message(
                 f"Handle this email notification: {payload}", auth, auth_handler_name, context
             )
