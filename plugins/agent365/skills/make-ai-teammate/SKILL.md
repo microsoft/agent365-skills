@@ -40,8 +40,12 @@ hooks:
            a365.generated.config.json has a non-empty agentBlueprintId.
         2. Phase 9.7.2 — runTarget is recorded ("prod" or "local"). For prod,
            runTargetHosting ("devtunnel" or "cloud") and chosenEndpoint are
-           recorded, and messagingEndpoint was reconciled to chosenEndpoint
-           via a365 setup blueprint --update-endpoint --m365 when they differed.
+           recorded, and `a365 setup blueprint --update-endpoint <chosenEndpoint>
+           --m365` was run UNCONDITIONALLY (mandatory for AI Teammate — NOT gated
+           on a config/endpoint diff), with messagingEndpoint in
+           a365.generated.config.json now equal to chosenEndpoint. Skip this
+           reconciliation only when runTarget = "local", or when chosenEndpoint is
+           empty (cloud not yet deployed) — in which case publish must not proceed.
         3. Phase 9.7.2d — required env vars present in .env / appsettings.json.
            For prod: completed=true AND resourceConsents non-empty (else GA
            handoff message shown), cloud-platform env vars set, platform state
@@ -57,9 +61,11 @@ hooks:
         5. Phase 9.6 — add-workiq-tools was offered (or has_workiq true).
         6. For runTarget = "prod": manifest.json reviewed (CLI owns it),
            a365 publish ran, user was told to upload manifest.zip via M365
-           Admin Center, Teams Developer Portal was configured (Agent Type =
-           API Based, Notification URL = messagingEndpoint), instance was
-           requested with the admin-approval URL surfaced.
+           Admin Center, Teams Developer Portal was verified (Agent Type =
+           API Based, Notification URL = messagingEndpoint — auto-registered via
+           --update-endpoint --m365; set manually only if the tenant lacks
+           automated registration), instance was requested with the
+           admin-approval URL surfaced.
         7. For runTarget = "local": steps 10a–10d explicitly skipped; this is
            a valid completion state.
         8. Smoke test was completed.
@@ -876,13 +882,16 @@ pointing at the same places. Inside the deploy pipeline you'll go through:
   `--m365` is always passed for AI Teammate — no separate user question.
 - **9.7.2 / 9.7.2a / 9.7.2b / 9.7.2c / 9.7.2d** — choose Run Target (prod vs local),
   collect the production hosting sub-question (dev tunnel vs cloud), reconcile
-  `chosenEndpoint` against the blueprint's `messagingEndpoint`, and validate the
+  `chosenEndpoint` onto the blueprint by running `a365 setup blueprint
+  --update-endpoint --m365` **unconditionally** for prod (mandatory — not gated on
+  a diff with `messagingEndpoint`), and validate the
   environment-config table (per-language `.env` / `appsettings.json` keys plus
   cloud-platform env-var checks).
 - **9.7.3 → 9.7.6** — manifest verify (read-only — CLI owns the file),
   `a365 publish` to produce `manifest.zip`, manual upload at M365 Admin Center,
-  Teams Developer Portal config (Agent Type = API Based, Notification URL =
-  `messagingEndpoint`), and the agent-instance request + admin approval.
+  Teams Developer Portal verify (Agent Type = API Based, Notification URL =
+  `messagingEndpoint` — auto-registered via `--update-endpoint --m365`; manual
+  fallback only), and the agent-instance request + admin approval.
   Skipped entirely when `runTarget = "local"`.
 - **9.7.7** — smoke test (Teams for prod, AgentsPlayground for local).
 

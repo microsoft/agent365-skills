@@ -292,7 +292,7 @@
         "User picks Dev tunnel; skill auto-runs devtunnel CLI (verify install/login → create tunnel + port → host in background) — no URL paste prompt",
         "chosenEndpoint computed programmatically from <tunnel-id>.<cluster> + port and stored with /api/messages appended",
         "runTargetHosting=devtunnel written to .a365-workspace-detection.local.json",
-        "Phase 9.7.2c: chosenEndpoint reconciled with messagingEndpoint (update-endpoint --m365 if different — --m365 is required)",
+        "Phase 9.7.2c: a365 setup blueprint --update-endpoint <chosenEndpoint> --m365 runs UNCONDITIONALLY (mandatory — NOT gated on a diff with messagingEndpoint; the disk value can be stale); --m365 is required",
         "Phase 9.7.3: manifest.json verified (read-only)",
         "Phase 9.7.4: a365 publish runs and produces manifest.zip",
         "Phase 9.7.5: Dev Portal URL shown; Notification URL = chosenEndpoint (= reconciled messagingEndpoint)",
@@ -335,9 +335,9 @@
     {
       "id": 18,
       "prompt": "Make this agent an AI Teammate",
-      "description": "Run Target = prod, hosting = cloud (Azure/AWS/GCP) — user provides an HTTPS messaging endpoint; reconcile via update-endpoint if different.",
+      "description": "Run Target = prod, hosting = cloud (Azure/AWS/GCP) — user provides an HTTPS messaging endpoint; reconcile via update-endpoint --m365 run unconditionally (mandatory for prod).",
       "language": "dotnet",
-      "expected_output": "Phase 9.7.2 → user picks Production. Phase 9.7.2b → user picks Cloud endpoint. Skill asks for the full HTTPS messaging endpoint URL (must end in /api/messages). User enters https://my-agent.azurewebsites.net/api/messages. chosenEndpoint stored. Phase 9.7.2c: if messagingEndpoint differs, runs a365 setup blueprint --update-endpoint <chosenEndpoint> --m365. Continues with publish + Dev Portal config (Notification URL = chosenEndpoint) + instance request + smoke test.",
+      "expected_output": "Phase 9.7.2 → user picks Production. Phase 9.7.2b → user picks Cloud endpoint. Skill asks for the full HTTPS messaging endpoint URL (must end in /api/messages). User enters https://my-agent.azurewebsites.net/api/messages. chosenEndpoint stored. Phase 9.7.2c: runs a365 setup blueprint --update-endpoint <chosenEndpoint> --m365 UNCONDITIONALLY (not gated on whether messagingEndpoint already matches — the disk value can be stale). Continues with publish + Dev Portal config (Notification URL = chosenEndpoint) + instance request + smoke test.",
       "files": [],
       "expectations": [
         "Phase 9.7.2b: user picks Cloud endpoint",
@@ -345,7 +345,7 @@
         "Skill validates URL is HTTPS and ends in /api/messages",
         "chosenEndpoint persisted to .a365-workspace-detection.local.json",
         "runTargetHosting=cloud persisted to .a365-workspace-detection.local.json",
-        "Phase 9.7.2c: a365 setup blueprint --update-endpoint --m365 runs if chosenEndpoint differs from existing messagingEndpoint (--m365 is required)",
+        "Phase 9.7.2c: a365 setup blueprint --update-endpoint --m365 runs UNCONDITIONALLY (mandatory — NOT gated on whether chosenEndpoint differs from existing messagingEndpoint; --m365 is required)",
         "Phase 9.7.5: Dev Portal Notification URL = chosenEndpoint (= reconciled messagingEndpoint)"
       ]
     }

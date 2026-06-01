@@ -210,12 +210,11 @@ Store as `runTargetHosting` ∈ `{"devtunnel", "cloud"}` and merge into `.a365-w
 
 - **`runTargetHosting = "cloud"`:** ask the user for the full messaging endpoint URL (must be HTTPS and end in `/api/messages`). If they don't have one yet, point them at the appropriate deploy guide above for their chosen platform. Store as `chosenEndpoint`. Then write `.vscode/` workspace files (see [Step 9.7.2f](#step-9-7-2f--vs-code-workspace-files) — the cloud variant omits the devtunnel task but still includes Publish + Open Dev Portal).
 
-### Step 9.7.2c — Reconcile endpoint with the blueprint
+### Step 9.7.2c — Reconcile endpoint with the blueprint (MANDATORY for prod)
 
-Compare `chosenEndpoint` against the `messagingEndpoint` recorded in `a365.generated.config.json` (set by `a365 setup all --m365` in Step 9.7.1).
+For an AI Teammate with `runTarget = prod`, **always** re-assert the messaging endpoint once `chosenEndpoint` is known — do **NOT** skip on an apparent match against `a365.generated.config.json`. That `messagingEndpoint` is a disk value and can be stale or lie about tenant state — dev-tunnel URL rotation on restart, a Teams Graph re-registration that didn't persist, or a reused/copied blueprint (Step 9.7.1 option 1) are the common cases. This is the same "disk presence is not verification" principle the blueprint Reuse/Re-run gate enforces in Step 9.7.1a. The command is idempotent, and `--m365` re-asserts the Teams Graph registration that actually routes Teams to your endpoint — so running it unconditionally costs little and removes a whole class of "Teams never reaches `/api/messages`" failures.
 
-- **If they match:** nothing to do. Note this to the user.
-- **If they differ:** the blueprint's messaging endpoint must be updated to the chosen one — this is also what the Dev Portal Notification URL will be set to in Step 9.7.5:
+Run it **unconditionally** (this is also the exact value the Dev Portal Notification URL is set to in Step 9.7.5):
 
   ```bash
   a365 setup blueprint --update-endpoint <chosenEndpoint> --m365
@@ -223,7 +222,12 @@ Compare `chosenEndpoint` against the `messagingEndpoint` recorded in `a365.gener
 
   **`--m365` is required.** Per [BlueprintSubcommand.cs](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Commands/SetupSubcommands/BlueprintSubcommand.cs), without it `--update-endpoint` silently skips the Teams Graph API re-registration step, leaving Teams routing pointed at the old endpoint. AI Teammate is always M365-integrated — pass `--m365` every time.
 
-  Run it, then re-read `a365.generated.config.json` and confirm `messagingEndpoint` now equals `chosenEndpoint`.
+  Run it, then re-read `a365.generated.config.json` and confirm `messagingEndpoint` now equals `chosenEndpoint`. Optionally note to the user whether the value changed (informational only — it runs either way).
+
+**Skip this reconciliation ONLY when:**
+
+- `runTarget = local` (AgentsPlayground — no Teams reachability), or
+- `chosenEndpoint` is empty or still a placeholder (cloud not yet deployed). In that case **STOP** — do not run `--update-endpoint` with a placeholder (it would register a dead URL). Tell the user to finish deploying and supply the real HTTPS `/api/messages` URL before publishing.
 
 After reconciliation, `a365.generated.config.json` is authoritative — Step 9.7.5 will read `messagingEndpoint` from it and use that exact value in the Teams Developer Portal Notification URL field.
 
@@ -506,14 +510,13 @@ Use `a365 publish --dry-run` first if you want to preview the manifest ID substi
 
 ---
 
-## Step 9.7.5 — Configure agent in Teams Developer Portal (REQUIRED)
+## Step 9.7.5 — Verify agent configuration in Teams Developer Portal
 
 **Run only when `runTarget = "prod"`.** Skip entirely for `runTarget = "local"`.
 
+This is normally a **verification**, not a manual configuration. Step 9.7.2c already ran `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365`, and with `--m365` the CLI's [`TeamsGraphBackendConfigurator`](https://github.com/microsoft/Agent365-devTools/blob/main/src/Microsoft.Agents.A365.DevTools.Cli/Services/TeamsGraphBackendConfigurator.cs) calls the MCP Platform `createAgentBlueprint` endpoint (which proxies to Teams Graph) and sets the bot `callbackUri` — the same value the Developer Portal shows as **Notification URL**. So on supported tenants this is **already set** and you only need to confirm it. Reference: [Create agent instance → Configure agent in Teams Developer Portal](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance#1-configure-agent-in-teams-developer-portal).
 
-This is a **required manual step**. Without it, Teams will not deliver messages to the agent — the agent will appear in search results but not respond to any message. The CLI does not do this for you. Reference: [Create agent instance → Configure agent in Teams Developer Portal](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance#1-configure-agent-in-teams-developer-portal).
-
-Walk the user through these exact steps:
+Walk the user through these steps:
 
 1. Read `agentBlueprintId` and `messagingEndpoint` from `a365.generated.config.json` and show both values to the user.
 2. Build the Developer Portal configuration URL and present it to the user:
@@ -523,15 +526,17 @@ Walk the user through these exact steps:
    ```
 
    Substitute `<agentBlueprintId>` with the value from step 1.
-3. Tell the user to open that URL in their browser, then:
-   - Set **Agent Type** to **API Based**.
-   - Set **Notification URL** to the `messagingEndpoint` value from `a365.generated.config.json` (e.g. `https://<your-app>.azurewebsites.net/api/messages`).
-   - Click **Save** and wait for the "Saved successfully" confirmation.
-4. Ask the user to confirm they've saved before continuing.
+3. Tell the user to open that URL in their browser and **verify**:
+   - **Agent Type** is **API Based**.
+   - **Notification URL** equals the `messagingEndpoint` value from `a365.generated.config.json` (e.g. `https://<your-app>.azurewebsites.net/api/messages`).
+4. **If both already match → nothing to do.** Note this to the user and continue to Step 9.7.6.
+5. **Manual fallback — only if the Notification URL is blank/wrong, or Step 9.7.2c logged** *"Automated messaging endpoint registration is not available for this tenant yet — you'll need to configure it manually"*: set **Agent Type** = **API Based**, set **Notification URL** = the `messagingEndpoint` value, click **Save**, wait for the "Saved successfully" confirmation, then ask the user to confirm before continuing.
 
-> **If the user doesn't have access to the Developer Portal:** they must contact their tenant administrator either to grant access or to complete this configuration on their behalf. This cannot be done via the CLI.
+> **Automated registration is tenant-dependent.** On tenants where the MCP Platform `createAgentBlueprint` proxy isn't enabled yet, the CLI surfaces the "not available for this tenant" message in Step 9.7.2c — in that case this step is the manual configuration it used to be. Otherwise it's a quick visual confirm.
 
-> **If the bot messaging endpoint changes later** (e.g. the dev tunnel URL or the Azure Web App URL): update the blueprint via `a365 setup blueprint --update-endpoint <new-url> --m365`, then return to this Developer Portal page and update the Notification URL to match. Both must agree. `--m365` is required — without it the CLI skips the Teams Graph re-registration silently.
+> **If the user doesn't have access to the Developer Portal:** they must contact their tenant administrator either to grant access or to verify/complete this configuration on their behalf.
+
+> **If the bot messaging endpoint changes later** (e.g. the dev tunnel URL or the Azure Web App URL): re-run `a365 setup blueprint --update-endpoint <new-url> --m365` — that re-registers the Notification URL via Teams Graph. Then return to this Developer Portal page and **verify** it updated (set it by hand only if the tenant lacks automated registration). `--m365` is required — without it the CLI skips the Teams Graph re-registration silently.
 
 ---
 

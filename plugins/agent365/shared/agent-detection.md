@@ -163,7 +163,7 @@ Grep: "digitalWorker"   in *.json
 
 **If AI Teammate detected:**
 - Observability instrumentation: continue, but flag in summary
-- Setup/publish: `a365 setup all` + `a365 publish` → manual zip upload to Microsoft 365 Admin Center + manual Teams Developer Portal config (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`). Both manual steps are required. See [Create agent instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
+- Setup/publish: `a365 setup all` + `a365 publish` → manual zip upload to Microsoft 365 Admin Center + Teams Developer Portal config (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`). The Notification URL is auto-registered by `a365 setup blueprint --update-endpoint --m365` (Teams Graph proxy) on supported tenants — verify it there; set it by hand only as a fallback when the CLI reports automated registration isn't available. The MAC zip upload is the one always-manual step. See [Create agent instance](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
 
 Write markers: `.a365obs-digital-worker`, `.a365setup-digital-worker`
 

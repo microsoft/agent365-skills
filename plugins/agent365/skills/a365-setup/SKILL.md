@@ -727,7 +727,7 @@ The CLI is verified and Azure prerequisites are confirmed. All remaining work is
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/make-ai-teammate/SKILL.md` and follow it from the beginning.
 
-The `make-ai-teammate` skill handles everything: code generation, a365.config.json, `a365 setup all`, manifest review, `a365 publish`, the **required manual Teams Developer Portal configuration** (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration`), the agent-instance request, and downstream capability offers (Observability, WorkIQ, local testing). Reference: [Create agent instance — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
+The `make-ai-teammate` skill handles everything: code generation, a365.config.json, `a365 setup all`, manifest review, `a365 publish`, the **Teams Developer Portal verification** (Agent Type=API Based, Notification URL=messagingEndpoint at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration` — the Notification URL is auto-registered via `a365 setup blueprint --update-endpoint --m365` on supported tenants; manual fallback only when the CLI reports automated registration isn't available), the agent-instance request, and downstream capability offers (Observability, WorkIQ, local testing). Reference: [Create agent instance — Microsoft Learn](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/create-instance).
 
 > The `make-ai-teammate` skill will detect that the CLI is already installed (Phase 9 Step 1) and that Azure prerequisites are met. It will proceed directly to collecting agent identity inputs.
 
