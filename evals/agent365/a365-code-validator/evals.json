@@ -1,0 +1,69 @@
+{
+  "skill_name": "a365-code-validator",
+  "eval_instructions": "Run these evals against existing agent projects or minimal fixtures. This skill is report-first: it must not modify source files until the user explicitly chooses to apply safe fixes. It must never run a365 setup, install packages, or run a365 publish. Verify that it produces a concise report with blockers, risky findings, runtime verification commands, and an explicit fix/plan/stop prompt.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Validate A365 code for this Python agent",
+      "description": "Python project with microsoft-opentelemetry and enable_a365=True but missing explicit exporter flag",
+      "expected_output": "The skill detects Python, runs the static validator, and returns a concise BLOCKED/PASS WITH RISKS report. It flags missing a365_enable_observability_exporter=True or runtime ENABLE_A365_OBSERVABILITY_EXPORTER=true as a blocker without dumping internal backend details.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Reads pyproject.toml / requirements.txt and Python source files",
+        "Phase 2: Runs validate-a365-code-validator.js or performs equivalent static checks",
+        "Phase 3: Reports exporter activation status",
+        "Phase 3: Explains the two Python flags: enable_a365 and a365_enable_observability_exporter",
+        "Phase 4: Provides local/App Service commands to verify exporter env",
+        "Phase 5: Does not edit source files or run provisioning",
+        "Phase 5: Default report is concise (8 bullets or fewer), with optional details separated",
+        "Phase 6: Asks whether to apply safe fixes, create a fix plan, or stop"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Debug MAC Activity for this agent",
+      "description": "Python background/queue poller calls a365_request_scope with blueprint_id but no agent_id",
+      "expected_output": "The skill identifies the identity-binding bug in a concise report: gen_ai.agent.id can fall back to the Blueprint ID. It recommends passing the runtime Agent Identity / Source Agent ID explicitly while keeping the blueprint in microsoft.a365.agent.blueprint.id.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Reads queue/background worker files",
+        "Phase 2: Reports python-blueprint-as-agent-id or equivalent finding",
+        "Phase 3: Explains token principal == route agentId == gen_ai.agent.id",
+        "Phase 3: Distinguishes runtime Agent Identity from Blueprint ID",
+        "Phase 4: Provides local/App Service commands to verify exporter runtime settings",
+        "Phase 5: Recommends concrete fix order without suggesting a365 publish for blueprint-based observability",
+        "Phase 5: Does not include private endpoint paths, Kusto queries, tenant IDs, real agent IDs, or correlation IDs",
+        "Phase 6: Does not modify identity config until the user confirms the runtime agent identity field name"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Check A365 span types",
+      "description": "Agent sets baggage but does not explicitly create supported A365 semantic spans",
+      "expected_output": "The skill reports that baggage alone is insufficient for MAC Activity. It checks for supported operations (invoke_agent, chat, execute_tool, output_messages) or framework scopes and recommends adding/confirming semantic spans.",
+      "files": [],
+      "expectations": [
+        "Phase 3: Lists supported operation names",
+        "Phase 3: Flags generic HTTP/OpenAI spans as insufficient for Activity when no semantic spans are present",
+        "Phase 4: Provides SDK log grep commands for identity groups and no eligible genAI spans",
+        "Phase 5: Separates backend export readiness from Activity UI visibility",
+        "Phase 6: Offers semantic-span fixes as a separate, confirmed follow-up rather than silently editing"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Run A365 code validator on this Node.js agent",
+      "description": "Node.js project uses useMicrosoftOpenTelemetry with a365.enabled but missing enableObservabilityExporter",
+      "expected_output": "The skill detects Node.js, flags missing enableObservabilityExporter:true or ENABLE_A365_OBSERVABILITY_EXPORTER=true, checks baggage/scope anchors, and provides runtime log verification commands.",
+      "files": [],
+      "expectations": [
+        "Phase 1: Reads package.json and JS/TS source files",
+        "Phase 2: Runs static validator",
+        "Phase 3: Checks useMicrosoftOpenTelemetry a365.enabled and enableObservabilityExporter",
+        "Phase 3: Checks BaggageBuilder / InvokeAgentScope / configureA365Hosting signals",
+        "Phase 5: Produces read-only report",
+        "Phase 6: Asks whether to apply safe fixes, create a fix plan, or stop before editing"
+      ]
+    }
+  ]
+}

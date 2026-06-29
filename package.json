@@ -2,7 +2,7 @@
   "name": "agent365-skills",
   "version": "1.0.2",
   "private": true,
-  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
+  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, validate telemetry readiness, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
   "license": "MIT",
   "author": {
     "name": "Microsoft",
@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "validate": "node plugins/agent365/hooks/stop/validate-a365-setup.js && node plugins/agent365/hooks/stop/validate-make-a365-agent.js && node plugins/agent365/hooks/stop/validate-make-ai-teammate.js && node plugins/agent365/hooks/stop/validate-instrument-observability.js && node plugins/agent365/hooks/stop/validate-add-workiq-tools.js && node plugins/agent365/hooks/stop/validate-test-local.js"
+    "validate": "node plugins/agent365/hooks/stop/validate-a365-setup.js && node plugins/agent365/hooks/stop/validate-make-a365-agent.js && node plugins/agent365/hooks/stop/validate-make-ai-teammate.js && node plugins/agent365/hooks/stop/validate-instrument-observability.js && node plugins/agent365/hooks/stop/validate-a365-code-validator.js && node plugins/agent365/hooks/stop/validate-add-workiq-tools.js && node plugins/agent365/hooks/stop/validate-test-local.js"
   },
   "engines": {
     "node": ">=18"

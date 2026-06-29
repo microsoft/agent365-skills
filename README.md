@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
-Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, and local testing with AgentsPlayground.
+Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, validating A365 telemetry code, and local testing with AgentsPlayground.
 
 Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/skills) folder for the full catalog.
 
@@ -56,7 +56,7 @@ The fastest way to install for GitHub Copilot CLI and VS Code agent mode:
 gh skill add microsoft/agent365-skills
 ```
 
-This reads `.github/plugin/marketplace.json` and installs all six skills directly into your Copilot CLI session. Use `/skills list` to verify, and invoke skills by name:
+This reads `.github/plugin/marketplace.json` and installs all seven skills directly into your Copilot CLI session. Use `/skills list` to verify, and invoke skills by name:
 
 ```bash
 gh copilot suggest "Make this agent an AI Teammate"
@@ -72,7 +72,7 @@ cd my-agent-project
 node /path/to/agent365-skills/scripts/install.js
 ```
 
-The installer copies all six skill directories into `.agents/skills/` in your project. Skills then appear automatically in VS Code's Configure Skills menu (`/skills list`) and are loaded on demand by VS Code agent mode and the Copilot cloud agent.
+The installer copies all seven skill directories into `.agents/skills/` in your project. Skills then appear automatically in VS Code's Configure Skills menu (`/skills list`) and are loaded on demand by VS Code agent mode and the Copilot cloud agent.
 
 ### GitHub Copilot CLI (`gh copilot`)
 
@@ -101,6 +101,7 @@ a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
       s2s (Service Principal)                  └─ add-workiq-tools          (optional, obo only)
 
 test-local  ← standalone; run at any point to test your agent locally
+a365-code-validator  ← standalone; run at any point to diagnose MAC Activity / telemetry readiness
 ```
 
 `a365-setup` writes `.a365-workspace-detection.local.json`. All downstream skills read this file to skip re-detection.
@@ -130,6 +131,7 @@ The file is safe to delete — the next `a365-setup` run rebuilds it. Skills als
 ```
 "Make this agent an AI Teammate"    → make-ai-teammate       (Blueprint must exist)
 "Add observability to this agent"   → instrument-observability
+"Validate A365 code"                → a365-code-validator    (diagnostics + optional guided fixes)
 "Add WorkIQ tools to this agent"    → add-workiq-tools
 "Test this agent locally"           → test-local
 ```
@@ -257,6 +259,24 @@ All new code is marked `// A365 Observability — best-effort instrumentation` a
 "Make this agent visible in Microsoft Defender"
 "Wire up OpenTelemetry for this agent"      "Enable Agent 365 telemetry"
 "Add observability to this .NET agent"      "Add A365 observability to this Python agent"
+```
+
+---
+
+### `a365-code-validator` — Validate A365 Telemetry Readiness
+
+Report-first diagnostics for agents that should emit MAC Activity / Defender / Purview telemetry.
+Checks exporter activation, runtime agent ID vs blueprint ID binding, supported A365 semantic
+span operations, and S2S/OBO endpoint expectations. Produces a report with concrete runtime
+verification commands, then asks whether to apply safe fixes, create a fix plan, or stop.
+It does not provision resources or publish manifests.
+
+**Trigger phrases:**
+```
+"Validate A365 code"                 "Run A365 code validator"
+"Check A365 observability code"      "Debug MAC Activity for this agent"
+"Check why Agent Activity is empty"  "Validate gen_ai agent id"
+"Check A365 exporter flags"          "Check A365 span types"
 ```
 
 ---
@@ -414,7 +434,7 @@ To update after pulling changes, re-run `gh skill add microsoft/agent365-skills`
 
 ```bash
 npm test          # unit tests for every stop-hook validator (tests/*.test.js)
-npm run validate  # run all six stop-hook validators against the current directory
+npm run validate  # run all stop-hook validators against the current directory
 ```
 
 The stop-hook validators share a single project-tree walk via `plugins/agent365/hooks/lib/project-scan.js` — when adding a new validator, import `scanProject` / `filterByName` / `fileContains` from that module rather than re-implementing `findFiles`. The version check (`plugins/agent365/scripts/check-version.js`) runs as a `sessionStart` hook declared in `plugins/agent365/.claude-plugin/plugin.json` — it fires once per session (not once per skill invocation) and caches the `gh release view` result for 24h under `$LOCALAPPDATA/agent365-skills/` (Windows) or `~/.cache/agent365-skills/` (Unix), so the per-session cost is sub-millisecond after the first hit.

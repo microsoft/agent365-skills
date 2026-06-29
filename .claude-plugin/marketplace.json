@@ -1,6 +1,6 @@
 {
   "name": "agent365-skills",
-  "description": "Production-ready skills for Microsoft Agent 365 — AI Teammate transformation, Blueprint provisioning, WorkIQ MCP servers, OTel observability, and local testing. Supports .NET, Node.js, and Python. Works with Claude Code and GitHub Copilot Chat.",
+  "description": "Production-ready skills for Microsoft Agent 365 — AI Teammate transformation, Blueprint provisioning, WorkIQ MCP servers, OTel observability, telemetry validation, and local testing. Supports .NET, Node.js, and Python. Works with Claude Code and GitHub Copilot Chat.",
   "version": "1.0.2",
   "owner": {
     "name": "Microsoft",
@@ -12,7 +12,7 @@
   "plugins": [
     {
       "name": "agent365",
-      "description": "Skills covering the full Agent 365 lifecycle: AI Teammate transformation, Blueprint provisioning (Registration / Observability paths), WorkIQ MCP servers (M365 data access), OTel observability instrumentation, and local testing with AgentsPlayground. Supports .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). Note: WorkIQ tooling narrows the supported set — see add-workiq-tools SKILL.md for the verified matrix.",
+      "description": "Skills covering the full Agent 365 lifecycle: AI Teammate transformation, Blueprint provisioning (Registration / Observability paths), WorkIQ MCP servers (M365 data access), OTel observability instrumentation, report-first telemetry validation with optional guided fixes, and local testing with AgentsPlayground. Supports .NET (AgentFramework, Semantic Kernel), Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). Note: WorkIQ tooling narrows the supported set — see add-workiq-tools SKILL.md for the verified matrix.",
       "source": "./plugins/agent365"
     }
   ]

@@ -7,7 +7,7 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains six skills:
+This plugin instruments and configures A365 agents. It contains seven skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
@@ -16,6 +16,7 @@ This plugin instruments and configures A365 agents. It contains six skills:
 | `make-a365-agent` | `/agent365:make-a365-agent` | "provision agent with a365", "Registration setup", "observability setup", "register this agent" |
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add MCP servers to this agent" |
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
+| `a365-code-validator` | `/agent365:a365-code-validator` | "validate a365 code", "debug MAC activity", "check A365 exporter flags" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
 **Supported languages for `make-ai-teammate`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI Agents SDK · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
@@ -40,6 +41,7 @@ a365-setup  →  make-ai-teammate    (AI Teammate path)
 make-a365-agent  →  instrument-observability  (Observability paths)
                  →  add-workiq-tools          (WorkIQ paths)
 
+a365-code-validator  (report-first; optional safe fixes after confirmation; no prerequisite)
 test-local  (no prerequisite)
 ```
 `make-ai-teammate` is **idempotent and state-aware**. Phase 0B detects three primary skill-state flags from the project — `has_obs` (observability wired), `has_workiq` (ToolingManifest.json has a non-empty mcpServers array), `disk_blueprint_present` (blueprint already registered, from `.a365-workspace-detection.local.json` / `a365.generated.config.json`). Phase 0C routes through an **8-row state matrix** (rows 1–8 over those flags): full flow → skip-obs → skip-workiq → register-only → no-re-register variants → "everything wired" confirmation (row 8 — sub-question: re-publish or verify-only). The skill creates the hosting layer, agent class, notification handling, full `a365.config.json`. **Phase 9.7.1a is the verification gate** — disk presence (`disk_blueprint_present`) is advisory only; the user is always asked explicitly whether the disk-side blueprint is the intended one before any skip/reuse decision (handles cases where disk lies about tenant state: deleted in Entra, file from another project, agent-name mismatch). If an existing blueprint is found, the skill asks the user explicitly: **Reuse** (skip setup-all), **Re-run** (idempotent — CLI reuses the blueprint ID but refreshes permissions and project settings), or **Fresh** (`a365 cleanup` first, then re-provision — destructive). When no blueprint exists, `a365 setup all --aiteammate --m365` runs unconditionally. (`--m365` is **always passed** for AI Teammate — no user question. Never pass `--authmode` with `--aiteammate` — AI Teammate uses the Agentic User identity.) It then asks **Phase 9.7.2 Run Target** (Prod vs Local), persisted to `.a365-workspace-detection.local.json` with remember-with-confirm on re-runs. For `runTarget = "prod"`: a **Phase 9.7.2b hosting sub-question** follows — *dev tunnel* (Microsoft Dev Tunnel exposing localhost — for in-Teams testing before deploying to a cloud) or *cloud endpoint* (Azure App Service / Container Apps / Functions; AWS App Runner / Lambda + API Gateway / ECS; Google Cloud Run / App Engine / Cloud Functions). The user supplies (or the skill derives) the HTTPS messaging endpoint URL, stored as `chosenEndpoint`. Phase 9.7.2c then **always** re-asserts `chosenEndpoint` on the blueprint via `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` — run **unconditionally** for AI Teammate prod (mandatory, NOT gated on a config/endpoint diff: the disk `messagingEndpoint` can be stale — dev-tunnel URL rotation, a non-persisted Teams Graph re-registration, or a reused/copied blueprint). Skipped only for `runTarget = "local"` or an empty/placeholder `chosenEndpoint`. (`--m365` is required — without it the CLI silently skips Teams Graph re-registration.) After reconciliation: **verifies** (read-only) the Teams manifest, runs `a365 publish` (packages `manifest.zip` — does NOT upload, does NOT touch the bot endpoint), then walks the user through **two required manual steps**: (a) verify the agent in Teams Developer Portal at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration` — Agent Type=API Based, Notification URL = the reconciled `chosenEndpoint`/`messagingEndpoint` (required for Teams message delivery; the Notification URL is auto-registered by `--update-endpoint --m365` via the Teams Graph proxy on supported tenants — verify it, and set it by hand only as a fallback when the CLI reports automated registration isn't available for the tenant); and (b) request an agent instance from Teams Apps and wait for admin approval at admin.cloud.microsoft. For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default) — all publish/Dev-Portal/MAC-upload/instance steps are skipped — the skill routes directly to AgentsPlayground for smoke testing.
@@ -79,6 +81,10 @@ plugins/agent365/
 │   │       ├── dotnet-observability.md   # Authoritative .NET code patterns
 │   │       ├── nodejs-observability.md  # Authoritative Node.js code patterns
 │   │       └── python-observability.md  # Authoritative Python code patterns
+│   ├── a365-code-validator/
+│   │   ├── SKILL.md              # Observability/MAC Activity validator + guided fixes
+│   │   └── references/
+│   │       └── validation-checklist.md
 │   ├── add-workiq-tools/
 │   │   ├── SKILL.md              # WorkIQ MCP tool wiring
 │   │   └── references/

@@ -13,6 +13,7 @@ Skills for instrumenting and registering Microsoft Agent 365 agents. When a user
 | `make-a365-agent` | Non-AI-Teammate blueprint provisioning (Register / Observability / WorkIQ paths) | `instrument-observability` (optional), `add-workiq-tools` (optional, skipped for S2S) |
 | `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
 | `instrument-observability` | OTel + A365 tracing exporter wiring | — |
+| `a365-code-validator` | A365 observability/MAC Activity validation with optional guided fixes | — |
 | `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
 
 Skills are designed to be additive, idempotent, and state-aware — re-running is safe.
@@ -32,6 +33,7 @@ between phases instead of asking permission.
 - `make-a365-agent`: agent name + directory; reuse-blueprint; hosted vs local; observability/WorkIQ offers.
 - `add-workiq-tools`: MCP server selection; Word @mention offer (only when `mcp_WordServer` is selected and stack is Node.js LangChain).
 - `instrument-observability`: agent kind + auth mode (only if not in cache).
+- `a365-code-validator`: after the report, asks whether to apply safe fixes, create a fix plan, or stop.
 - `test-local`: confirm before launching.
 
 CLI `Allow / Skip` prompts are the chat client's permission flow — not stopping conditions.
@@ -265,6 +267,37 @@ wrapping.
 - .NET: [plugins/agent365/skills/instrument-observability/references/dotnet-observability.md](../plugins/agent365/skills/instrument-observability/references/dotnet-observability.md)
 - Node.js: [plugins/agent365/skills/instrument-observability/references/nodejs-observability.md](../plugins/agent365/skills/instrument-observability/references/nodejs-observability.md)
 - Python: [plugins/agent365/skills/instrument-observability/references/python-observability.md](../plugins/agent365/skills/instrument-observability/references/python-observability.md)
+
+---
+
+## Skill: a365-code-validator
+
+**Full instructions:** [plugins/agent365/skills/a365-code-validator/SKILL.md](../plugins/agent365/skills/a365-code-validator/SKILL.md)
+
+**Trigger phrases:**
+- "validate a365 code"
+- "run a365 code validator"
+- "check a365 observability code"
+- "debug a365 activity missing"
+- "debug MAC activity for this agent"
+- "validate Agent 365 telemetry"
+- "check why Agent Activity is empty"
+- "check A365 exporter flags"
+- "validate gen_ai agent id"
+- "check A365 span types"
+
+**Summary of what this skill does:**
+1. Performs report-first static validation of an existing agent project.
+2. Checks exporter activation (`ENABLE_A365_OBSERVABILITY_EXPORTER` / `EnableAgent365Exporter`, Node `enableObservabilityExporter`, Python `a365_enable_observability_exporter`, .NET `EnableAgent365Exporter`).
+3. Checks identity binding: runtime Agent Identity / Source Agent ID must be used for `/agents/{agentId}` and `gen_ai.agent.id`; Blueprint ID belongs only in `microsoft.a365.agent.blueprint.id`.
+4. Checks semantic span coverage: `invoke_agent`, `chat`, `execute_tool`, and `output_messages` (or framework scopes that produce them).
+5. Checks S2S vs OBO endpoint expectations and token resolver signals.
+6. Produces a report with blockers, risky findings, and runtime verification commands for SDK logs and Maven Kusto.
+
+**This skill does NOT:** provision resources, install packages, run `a365 setup`, or run `a365 publish`. It does not modify source code unless the user explicitly chooses to apply safe fixes after the report.
+
+**Reference checklist:**
+- [plugins/agent365/skills/a365-code-validator/references/validation-checklist.md](../plugins/agent365/skills/a365-code-validator/references/validation-checklist.md)
 
 ---
 

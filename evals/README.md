@@ -18,6 +18,8 @@ evals/
     │   └── evals.json                # 5 test cases
     ├── instrument-observability/
     │   └── evals.json                # 5 test cases
+    ├── a365-code-validator/
+    │   └── evals.json                # 4 test cases
     └── test-local/
         └── evals.json                # 5 test cases
 ```
@@ -37,10 +39,15 @@ Each `evals.json` file contains:
 
 ## Prerequisites
 
-All skills except `test-local` require `.a365-workspace-detection.local.json` to be present in the
+Most code-editing skills require `.a365-workspace-detection.local.json` to be present in the
 project directory. This file is written by `a365-setup` and contains `agentStack`,
 `programmingLanguage`, and `detectedAt`. Skills read from this cache instead of running their
 own detection.
+
+Exceptions:
+- `test-local` can run without the cache.
+- `a365-code-validator` can run without the cache because it is read-only and performs its own
+  static inspection.
 
 ---
 
@@ -55,6 +62,7 @@ To manually test a skill against an eval:
    - `a365-setup`: Any agent project with a365 CLI and Azure CLI installed
    - `add-workiq-tools`: An agent already transformed by `make-ai-teammate` (has `.a365-workspace-detection.local.json`)
    - `instrument-observability`: An agent already transformed by `make-ai-teammate`
+   - `a365-code-validator`: Any existing agent project; no setup prerequisite, read-only
    - `test-local`: Any agent with a build script or `dotnet run` / `uv run`
 
 2. **Start Claude** with the plugin loaded:
@@ -139,6 +147,15 @@ To manually test a skill against an eval:
 | 3 | agentsplayground not installed | Auto-install via npm then launch |
 | 4 | User declines launch | Show manual commands and exit cleanly |
 | 5 | Build fails | Stop before launch; surface error output |
+
+### `a365-code-validator` Evals
+
+| ID | Scenario | Purpose |
+|----|----------|---------|
+| 1 | Python exporter flag missing | Catches `enable_a365=True` without actual exporter activation |
+| 2 | Blueprint used as agent ID | Catches background/queue paths that set `gen_ai.agent.id` to blueprint |
+| 3 | Missing semantic spans | Catches baggage-only implementations that won't populate MAC Activity |
+| 4 | Node exporter flag missing | Catches `a365.enabled` without `enableObservabilityExporter` |
 
 ---
 
