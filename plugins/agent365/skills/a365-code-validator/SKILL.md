@@ -1,12 +1,16 @@
 ---
 name: a365-code-validator
 description: >
-  Validator and optional guided fixer for Agent 365 observability code and configuration.
-  Checks whether
-  an agent can actually emit MAC Activity telemetry by validating exporter activation,
-  agent identity binding, supported A365 semantic span types, S2S/OBO endpoint selection,
-  and common Python/Node.js/.NET failure modes that cause incidents. Defaults to read-only
-  reporting, then asks before applying safe fixes.
+  Validates and optionally fixes Agent 365 observability code so an agent actually emits MAC
+  Activity telemetry. Use when an Agent 365 agent's telemetry isn't reaching MAC Activity or
+  Defender, when spans export (HTTP 200 / "sent") but Activity stays empty, when the caller or
+  agent id looks wrong in reporting, or to pre-flight whether an agent will emit MAC Activity
+  before shipping. Diagnoses and fixes existing instrumentation; do NOT use it to add
+  observability from scratch — use instrument-observability for that.
+  Checks exporter activation, runtime agent-identity binding (vs blueprint id),
+  the S2S FMI / OBO token shape, S2S vs OBO endpoint selection, and the required semantic spans
+  (invoke_agent/chat/execute_tool/output_messages) plus Activity attributes. Read-only by default;
+  asks before applying safe fixes. Python, Node.js, and .NET.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -72,6 +76,16 @@ silent or confusing A365 Activity failures:
 
 No source code is modified during validation. After the report, the skill asks whether to
 apply safe fixes, create a fix plan only, or stop.
+
+---
+
+## Output is support-safe (applies to every phase)
+
+This report may be pasted into a customer or partner thread, so it must be safe to share:
+**never** print internal cluster/database names, Kusto queries, private endpoint or route
+templates, correlation IDs, or real tenant/agent IDs. Report file/function names and public,
+supportable signals only. This is non-negotiable — it holds even when a user asks for "just
+the raw details."
 
 ---
 
@@ -243,7 +257,39 @@ output_messages
 Generic HTTP spans alone are not enough. Flag code that only sets baggage but never
 creates or auto-generates supported semantic spans.
 
-### 3.4 S2S vs OBO transport mode
+### 3.4 Activity/run context coverage
+
+If the developer expects MAC Activity or Defender agent-activity views (not just exporter
+HTTP 200), inspect whether real runs carry the public Agent 365 activity attributes:
+
+| Attribute | What to validate |
+|---|---|
+| `gen_ai.agent.name` | Human-readable agent name exists; otherwise UI can show a GUID/blank |
+| `gen_ai.conversation.id` | Present on every span; for non-chat agents use a logical run/job/incident ID |
+| `microsoft.channel.name` | Present on every span; use `msteams` for Teams, or a product/source value such as `icm`, `web`, `scheduler` |
+| `microsoft.session.id` | Prefer a stable run/session ID; optional, but useful for grouping |
+| `user.id` | Human caller OID for `HumanToAgent`; do not confuse it with the agent's own user |
+| `microsoft.agent.user.id` | Agent's own Agent User OID when testing AI teammate / Agent-User / OBO |
+| `gen_ai.input.messages` / `gen_ai.output.messages` | Present on invoke/chat/output spans where applicable |
+| Tool details | `gen_ai.tool.name`, `gen_ai.tool.type`, `gen_ai.tool.call.id`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result` |
+| Model details | `gen_ai.request.model`, `gen_ai.provider.name` on `chat` spans |
+
+When reviewing a mixed app, separate the two objectives:
+
+```text
+S2S/export success proves telemetry plumbing.
+AI teammate/HumanToAgent or EventToAgent run context proves Activity/reporting eligibility.
+```
+
+Do not require Teams-specific values for autonomous agents; require equivalent logical run
+context instead.
+
+Caller identity caveat: for `HumanToAgent`, `user.id` is the caller ID used for "who ran
+this agent" reporting. If it is missing or set to the agent identity / agent user instead
+of the human caller object ID, export can succeed while caller/user Activity remains blank
+or incomplete.
+
+### 3.5 S2S vs OBO transport mode
 
 Do not expose or require internal service URLs in the report. Validate only the structural
 intent:
@@ -255,6 +301,18 @@ intent:
 
 Report whether the code appears to select the correct transport mode (`useS2SEndpoint` /
 `a365_use_s2s_endpoint` / `UseS2SEndpoint`) for S2S, without printing backend route templates.
+For Python S2S, prefer `a365_use_s2s_endpoint=True` in code rather than relying only on
+`A365_USE_S2S_ENDPOINT=true` in runtime environment. Also check the **token shape**: the S2S
+observability token must come from the 3-hop FMI exchange (principal == runtime Agent Identity),
+not a bare client-credentials call — see checklist §5 for the failure signatures
+(`AADSTS82001` / 403).
+
+### 3.6 Blueprint permission inheritance wording
+
+Do not claim that application app roles can never inherit from blueprints. Current public
+Entra Agent ID docs describe both `inheritableScopes` and `inheritableRoles`. If a repo or
+tenant shows delegated scope inheritance working but S2S app roles requiring direct assignment,
+report it as a provisioning/configuration behavior to verify, not as the intended scalable model.
 
 **Mark task complete.**
 
@@ -293,15 +351,39 @@ Select-String .a365-observability.log -Pattern "Agent365Exporter|identity groups
 
 ### Backend verification handoff
 
-If backend verification is required, tell the user to use their team's approved telemetry
-playbook or service dashboard to confirm:
+If backend verification is required, keep customer-facing validation on public/supportable
+surfaces:
 
-1. requests are arriving for the runtime Agent Identity / Source Agent ID,
-2. the request is accepted,
-3. downstream reporting marks the batch as delivered.
+1. SDK/exporter logs show export success and no chunk failures,
+2. direct OTel responses have `partialSuccess` empty/null where applicable,
+3. Microsoft Defender Advanced Hunting `CloudAppEvents` shows the expected AgentId /
+   TargetAgentId / AlternateId after indexing.
 
-Do not include internal cluster names, database names, Kusto queries, private endpoint paths,
-or correlation IDs in the skill output.
+If the user is on an internal service team, they may also use their team's approved
+dashboard/playbook to confirm request acceptance and downstream delivery, but do not print
+those internal queries or endpoints in the validator report.
+
+(Report only support-safe signals — see **Output is support-safe** above.)
+
+### If code checks pass but Activity is still empty — verify tenant-side
+
+Most "exporter returns 200/`sent` but nothing shows in MAC" incidents are **not** code bugs.
+When the code checks above pass, have the user confirm, in the *target* tenant:
+
+> **Provenance (verified 2026-07-06):** the license SKU name, the observability resource-SP
+> GUID, the `AADSTS*` codes, the `Agent365.Observability.OtelWrite` scope, and the ingestion-lag
+> figure below are preview-era Agent 365 facts and will change. Re-verify against current Agent 365
+> onboarding docs before quoting them to a customer.
+
+- **License assigned** — at least one user has an **M365 E7 or Agent 365 license _assigned_**
+  (the SKU merely existing in the tenant isn't enough); otherwise the request is accepted and
+  silently dropped.
+- **Frontier / Agent 365 preview enrollment** — the tenant is enrolled; CDX/demo tenants often
+  aren't by default.
+- **Observability resource SP present** — `az ad sp show --id 9b975845-388f-4429-889e-eab1ef63949c`
+  returns a service principal in the tenant. A `404` / `AADSTS500011` ("resource principal … not
+  found") means the observability app isn't provisioned there — an onboarding step, not a code fix.
+- **Ingestion lag** — Defender `CloudAppEvents` populates before the admin center; give it ~5 min.
 
 **Mark task complete.**
 
@@ -354,8 +436,7 @@ Style rules:
 - Keep the default report to **8 bullets or fewer**.
 - Put details under **Optional details**, not in the main blocker list.
 - Use exact file/function names for evidence, but do not paste long code blocks.
-- Do not include internal cluster names, database names, Kusto queries, private endpoint paths,
-  tenant IDs, real agent IDs, or correlation IDs.
+- Redact per **Output is support-safe** above (no internal infra, tenant/agent IDs, or correlation IDs).
 - Do not suggest `a365 publish` unless the agent is an AI Teammate / M365 package flow;
   blueprint-based observability does not use `a365 publish`.
 

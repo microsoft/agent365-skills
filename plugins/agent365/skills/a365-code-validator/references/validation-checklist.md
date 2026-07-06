@@ -3,6 +3,11 @@
 Use this checklist when validating whether an agent can emit telemetry that appears in
 Microsoft Admin Center (MAC) Activity.
 
+> **Provenance (verified 2026-07-06):** the resource GUID `9b975845-…`, the `AADSTS*` codes,
+> the `Agent365.Observability.OtelWrite` scope, and the license SKU names in §5 and §8 are
+> preview-era Agent 365 facts and will change. Re-verify against current onboarding docs before
+> quoting them to a customer.
+
 ---
 
 ## 1. Exporter Activation
@@ -109,7 +114,38 @@ Look for:
 
 ---
 
-## 4. Endpoint Selection
+## 4. Activity / Run Context
+
+Exporter success alone does not prove a run is eligible for MAC Activity. Validate the
+documented Agent 365 activity attributes when the developer expects user-facing activity or
+run reporting.
+
+| Attribute | Expectation |
+|---|---|
+| `gen_ai.agent.name` | Human-readable name for display |
+| `gen_ai.conversation.id` | Required; for non-chat/event agents, generate a logical run/job/incident ID |
+| `microsoft.channel.name` | Required; use `msteams` for Teams, or a product/source value such as `icm`, `web`, `scheduler` |
+| `microsoft.session.id` | Optional but recommended for grouping |
+| `user.id` | Human caller OID for `HumanToAgent` |
+| `microsoft.agent.user.id` | Agent's own Agent User OID for AI teammate / Agent-User / OBO |
+| `gen_ai.input.messages` | Required for `invoke_agent` and `chat` |
+| `gen_ai.output.messages` | Required for `invoke_agent`, `chat`, and `output_messages` |
+| `gen_ai.tool.call.id`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result` | Required for `execute_tool` |
+| `gen_ai.request.model`, `gen_ai.provider.name` | Required for `chat` |
+
+Run shape should be one root `invoke_agent` span with child `chat`, `execute_tool`, and
+`output_messages` spans sharing the same trace ID and using parent span IDs. Autonomous
+agents do not need to pretend to be Teams chat, but they still need equivalent logical run
+context if Activity/reporting is expected.
+
+Caller identity caveat: for `HumanToAgent`, `user.id` is the caller ID used for "who ran
+this agent" reporting. If `user.id` is missing or contains the agent identity / agent user
+instead of the human caller object ID, export can still succeed while caller/user Activity is
+blank or incomplete.
+
+---
+
+## 5. Endpoint Selection
 
 | Auth mode | Structural transport expectation |
 |---|---|
@@ -128,9 +164,42 @@ OBO / agentic-user uses:
 scp contains Agent365.Observability.OtelWrite
 ```
 
+For Python S2S, prefer setting `a365_use_s2s_endpoint=True` in code. Depending on
+`A365_USE_S2S_ENDPOINT=true` in environment is more fragile and should be called out.
+
+### How the S2S token is minted (the right shape)
+
+A plain client-credentials call for the observability scope fails with `AADSTS82001`
+("agentic application … not permitted to request app-only tokens") — the blueprint can't mint
+it directly. The token must come from the **3-hop FMI exchange**, so its principal equals the
+runtime Agent Identity:
+
+```text
+leg 1: blueprint creds (secret, or MI assertion on Azure) + fmi_path=<agentIdentityAppId>
+        -> assertion T1   (scope api://AzureADTokenExchange/.default)
+leg 3: authenticate AS the agent identity using T1 as the client assertion
+        -> Observability API token (scope api://9b975845-.../.default), azp == agent id, roles:[OtelWrite]
+```
+
+Flag S2S code that mints the obs token with a bare `ClientSecretCredential` /
+`DefaultAzureCredential` against the observability resource: it yields a token whose principal
+is the app/MI, not the agent identity, which the backend rejects (403 — or a 400
+`TenantIdInvalid` when no valid token is bound). `AADSTS500011` here instead means the
+observability resource SP isn't in the tenant (an onboarding gap, not a code fix).
+
 ---
 
-## 5. Runtime Verification
+## 6. Permission Inheritance
+
+Current public Entra Agent ID docs describe both `inheritableScopes` and
+`inheritableRoles` for blueprint permissions. Do not state that application roles can never
+inherit from blueprints. If a tenant/test shows the delegated scope inheriting but the S2S
+app role requiring direct assignment, report it as a provisioning/configuration behavior to
+verify rather than the intended scalable model.
+
+---
+
+## 7. Runtime Verification
 
 SDK logs should show:
 
@@ -150,25 +219,31 @@ No token returned
 401 / 403
 ```
 
-Backend telemetry should show accepted exports for the runtime Agent Identity and delivered
-downstream reporting. Use the service team's approved dashboard or telemetry playbook; do not
-paste internal cluster, database, endpoint, or correlation details into the validator report.
+Customer-accessible validation uses SDK/exporter logs, direct OTel `partialSuccess` where
+available, and Microsoft Defender Advanced Hunting `CloudAppEvents`. Internal service teams
+may additionally use their approved dashboard/playbook, but do not paste internal cluster,
+database, endpoint, or correlation details into the validator report.
 
 ---
 
-## 6. Common Incident Patterns
+## 8. Common Incident Patterns
 
 | Pattern | Fix |
----|---|
+|---|---|
+| Export accepted (200/`sent`) but nothing in MAC | Confirm a user has an M365 E7 / Agent 365 license **assigned** (not just present), and the tenant is Frontier-enrolled |
+| Token fails `AADSTS500011` (resource principal not found) | Observability resource SP isn't in the tenant — Frontier/observability onboarding, not a code fix |
+| S2S token via bare `ClientSecretCredential` → 403 / `AADSTS82001` | Mint via the 3-hop FMI exchange so the principal == runtime Agent Identity (see §5) |
 | Python only passes `enable_a365=True` | Also pass `a365_enable_observability_exporter=True` or set exporter env true |
 | Queue/background job calls baggage helper with only `blueprint_id` | Pass the runtime `agent_id` explicitly |
 | Testbench works but app does not | Testbench manually emits supported spans; app may only emit generic spans |
 | `a365 publish` expected for blueprint observability | Do not use publish; blueprint-based observability is setup + exporter + backend ingest |
 | MAC shows agent but Activity empty | Agent registration exists, but telemetry may not have reached reporting under the agent's ObservabilityId |
+| Export succeeds but Activity remains empty | Check run context: `conversation.id`, `channel.name`, root `invoke_agent`, message payloads, and span parent/child shape |
+| Caller/user activity blank | Check `user.id`; for `HumanToAgent` it must be the human caller's Microsoft Entra object ID |
 
 ---
 
-## 7. Report Style
+## 9. Report Style
 
 Default report should be short and action-oriented:
 
@@ -186,16 +261,8 @@ Default report should be short and action-oriented:
 **Fix order:** token/identity → exporter flag → S2S/OBO mode → semantic spans → backend verification.
 ```
 
-Only add detailed evidence when needed. Keep concrete file/function names; avoid internal
-infrastructure details, real tenant IDs, real agent IDs, correlation IDs, or backend route paths.
+Only add detailed evidence when needed. Keep concrete file/function names and redact per the
+skill's **Output is support-safe** rule.
 
-After the concise report, always offer:
-
-```text
-Do you want me to apply safe fixes, make a fix plan, or stop here?
-```
-
-Do not edit until the user chooses a fix option. Safe fixes are limited to deterministic changes
-such as enabling the exporter flag, adding non-secret config placeholders, and wiring an existing
-runtime agent identity config value into baggage. Token-service implementation and semantic span
-wrapping require a second explicit confirmation because they are design changes.
+The concise report, the "apply safe fixes / make a fix plan / stop" prompt, and the safe-fix
+boundaries are owned by `SKILL.md` Phases 5–6 — follow those. This section is only the example shape.

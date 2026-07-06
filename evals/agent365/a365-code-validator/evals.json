@@ -1,6 +1,29 @@
 {
   "skill_name": "a365-code-validator",
   "eval_instructions": "Run these evals against existing agent projects or minimal fixtures. This skill is report-first: it must not modify source files until the user explicitly chooses to apply safe fixes. It must never run a365 setup, install packages, or run a365 publish. Verify that it produces a concise report with blockers, risky findings, runtime verification commands, and an explicit fix/plan/stop prompt.",
+  "trigger_tests": {
+    "instructions": "Run each prompt in a fresh session with the full agent365 skill library loaded. should_trigger prompts must activate a365-code-validator. should_not_trigger prompts must activate the named sibling (or no skill) and must NOT activate a365-code-validator — they guard the diagnose-vs-instrument boundary with instrument-observability and the other siblings. Report hit rate in each direction (>=2 runs each).",
+    "should_trigger": [
+      "Validate A365 code for this Python agent",
+      "Debug why Agent Activity is empty for this agent",
+      "Check why MAC Activity is empty but export returns 200",
+      "Our agent id looks wrong in Defender reporting — check the code",
+      "Pre-flight whether this agent will emit MAC Activity before we ship",
+      "Check A365 exporter flags for this S2S agent",
+      "Why are my spans exporting but not showing in the admin center",
+      "Validate the gen_ai agent id binding for this Node.js agent"
+    ],
+    "should_not_trigger": [
+      { "prompt": "Instrument observability for this agent", "expected_skill": "instrument-observability" },
+      { "prompt": "Add A365 tracing to my new agent from scratch", "expected_skill": "instrument-observability" },
+      { "prompt": "Set up observability for this .NET agent that has none yet", "expected_skill": "instrument-observability" },
+      { "prompt": "Register this agent with Agent 365 and create a blueprint", "expected_skill": "make-a365-agent" },
+      { "prompt": "Turn my agent into an AI Teammate", "expected_skill": "make-ai-teammate" },
+      { "prompt": "Add WorkIQ mail and calendar tools to my agent", "expected_skill": "add-workiq-tools" },
+      { "prompt": "Run my agent locally in AgentsPlayground", "expected_skill": "test-local" },
+      { "prompt": "Set up the A365 CLI and Azure prerequisites", "expected_skill": "a365-setup" }
+    ]
+  },
   "evals": [
     {
       "id": 1,
@@ -63,6 +86,95 @@
         "Phase 3: Checks BaggageBuilder / InvokeAgentScope / configureA365Hosting signals",
         "Phase 5: Produces read-only report",
         "Phase 6: Asks whether to apply safe fixes, create a fix plan, or stop before editing"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Validate A365 code for this S2S Python agent",
+      "description": "Python S2S agent mints the observability token with a bare ClientSecretCredential / DefaultAzureCredential against the observability resource instead of the 3-hop FMI exchange",
+      "expected_output": "The skill flags the token shape: a plain client-credentials or bare managed-identity token has the app/MI as its principal, not the runtime Agent Identity, so the backend rejects it. It explains the failure signatures and recommends the 3-hop FMI exchange (blueprint creds + fmi_path=<agentId> -> agent-identity assertion -> OtelWrite token). Read-only; prints no internal endpoints.",
+      "files": [],
+      "expectations": [
+        "Phase 3.5: Flags token shape — a bare ClientSecretCredential/DefaultAzureCredential yields an app/MI principal, not the runtime Agent Identity",
+        "Phase 3.5: Explains the failure signatures: AADSTS82001 (plain client-credentials), 403 (principal != gen_ai.agent.id), and 400 TenantIdInvalid when no valid token is bound",
+        "Phase 3.5: Recommends the 3-hop FMI exchange (blueprint creds + fmi_path=<agentIdentityAppId> -> agent-identity assertion -> Observability API token with roles containing OtelWrite)",
+        "Phase 3: References validation-checklist section 5 (token shape) for the exchange detail",
+        "Phase 5: Does not print internal cluster names, private endpoints, tenant IDs, real agent IDs, or correlation IDs",
+        "Phase 6: Does not generate a full token service silently — offers a plan and asks for a second confirmation"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Check A365 exporter flags for this S2S agent",
+      "description": "S2S agent selects the endpoint only via A365_USE_S2S_ENDPOINT=true in env; the use_microsoft_opentelemetry(...) call does not pass a365_use_s2s_endpoint=True",
+      "expected_output": "The skill flags reliance on the env var for S2S endpoint selection and recommends setting the transport flag in code (a365_use_s2s_endpoint=True / useS2SEndpoint:true / UseS2SEndpoint), so the S2S token is not posted to the OBO route. It notes this mirrors passing the exporter-enable flag in code rather than depending on env parity.",
+      "files": [],
+      "expectations": [
+        "Phase 3.5: Reports that the S2S endpoint is selected via env only, not the a365_use_s2s_endpoint / useS2SEndpoint / UseS2SEndpoint code option",
+        "Phase 3.5: Explains that an S2S token posted to the OBO endpoint is rejected — token type must match the route",
+        "Phase 3.5: Recommends setting the S2S transport flag in code because env-only selection is more fragile",
+        "Phase 5: Concise report that separates export success from Activity eligibility",
+        "Phase 6: Offers the endpoint/exporter flag as a deterministic safe fix after confirmation"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Debug MAC Activity — caller shows blank for this Teams agent",
+      "description": "HumanToAgent / Teams path sets user.id to the agent's own Agent User OID (or leaves it blank) instead of the human sender's object ID",
+      "expected_output": "The skill flags caller identity: for HumanToAgent, user.id must be the human caller's Entra object ID; the agent's own Agent User belongs in microsoft.agent.user.id. Export can succeed while the caller/user Activity stays blank. It notes the human OID is often already available from the inbound activity's from.aadObjectId.",
+      "files": [],
+      "expectations": [
+        "Phase 3.4: Flags caller identity — user.id set to the agent's own user / blank instead of the human caller OID",
+        "Phase 3.4: Explains user.id = human caller OID (HumanToAgent); microsoft.agent.user.id = the agent's own Agent User OID",
+        "Phase 3.4: Notes export can succeed (HTTP 200) while caller/user Activity remains blank",
+        "Phase 3: Suggests sourcing the human OID from the inbound activity from.aadObjectId where available",
+        "Phase 5: Read-only report with no real user/agent/tenant IDs printed",
+        "Phase 6: Offers to split user.id vs microsoft.agent.user.id as a confirmed fix"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Debug why Agent Activity is empty",
+      "description": "All code checks pass (exporter on, correct runtime agent identity, semantic spans present, export returns 200/sent) but MAC Activity is still empty",
+      "expected_output": "The skill confirms the code path is correct and does NOT invent a code bug. It branches to tenant-side verification: at least one user has an M365 E7 / Agent 365 license ASSIGNED, the tenant is Frontier-enrolled, the observability resource SP is present, and ingestion lag (Defender CloudAppEvents populates before the admin center).",
+      "files": [],
+      "expectations": [
+        "Phase 3: Confirms exporter enabled, identity binding correct, and semantic spans present — the code path passes",
+        "Phase 4: Branches to the tenant-side checklist when code is clean but Activity is empty, rather than reporting a false code blocker",
+        "Phase 4: Lists license ASSIGNED (M365 E7 / Agent 365, not just present), Frontier enrollment, resource SP present, and ingestion lag",
+        "Phase 4: Provides az ad sp show --id 9b975845-388f-4429-889e-eab1ef63949c as the resource-SP check, and notes a 404 / AADSTS500011 means it is not provisioned in the tenant",
+        "Phase 5: Frames the remaining causes as tenant/onboarding, not code",
+        "Phase 5: Notes that HTTP 200 / 'sent' is not proof of MAC visibility (ingestion lag plus tenant gating)"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Check why MAC Activity is empty for this Node.js AI Teammate",
+      "description": "Exporter succeeds but logs show 'Partitioned into 0 identity groups' / 'N spans skipped (missing tenant or agent ID)' and only a child chat span exports; no invoke_agent root",
+      "expected_output": "The skill reads the run shape: MAC Activity ingests invoke_agent rows, and the exported span is a child chat/inference span while the invoke_agent root is either not created or dropped for missing tenant/agent id. It recommends creating an explicit invoke_agent root and ensuring identity baggage (tenant_id + agent_id) wraps every span via the hosting baggage middleware.",
+      "files": [],
+      "expectations": [
+        "Phase 3.3: Reports a missing invoke_agent root — auto-instrumentation only emits chat/inference; agent-level operations must be created explicitly",
+        "Phase 3: Interprets 'Partitioned into 0 identity groups' / 'spans skipped (missing tenant or agent ID)' as spans starting outside the identity baggage scope",
+        "Phase 3.4: Notes MAC Activity ingests invoke_agent rows; a run with only child chat spans is queryable in Defender but invisible in the admin center",
+        "Phase 3: Recommends the hosting baggage middleware (configureA365Hosting / ObservabilityHostingManager with enable baggage) so identity propagates to every span, with invoke_agent started inside that scope",
+        "Phase 4: Provides SDK log grep for 'identity groups' and 'No eligible' signals",
+        "Phase 6: Offers to add the invoke_agent / output_messages scopes as a confirmed follow-up"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Validate A365 code and fix it",
+      "description": "Guided remediation — Python project missing the exporter flag; user chooses apply_safe_fixes after the report",
+      "expected_output": "After the BLOCKED report, the user selects apply_safe_fixes. The skill applies ONLY the deterministic exporter fix — adds a365_enable_observability_exporter=True (or the kwargs equivalent) preserving code style — and adds a commented .env template entry. It does NOT wire a token service or wrap semantic spans without a second explicit confirmation.",
+      "files": [],
+      "expectations": [
+        "Phase 5: Presents the concise report first; makes no edits before the user chooses",
+        "Phase 6: Offers apply_safe_fixes / make_fix_plan / report_only, with make_fix_plan as the default",
+        "Phase 6: On apply_safe_fixes, adds a365_enable_observability_exporter=True to the existing use_microsoft_opentelemetry(...) call, preserving existing style",
+        "Phase 6: Adds only a commented or empty ENABLE_A365_OBSERVABILITY_EXPORTER template entry; never hardcodes real IDs or secrets",
+        "Phase 6: Does NOT generate a token service or wrap semantic spans without a second explicit confirmation",
+        "Phase 6: Fix report lists applied fixes, items still needing input, and the validation to rerun"
       ]
     }
   ]

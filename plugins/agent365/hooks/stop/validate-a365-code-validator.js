@@ -116,6 +116,13 @@ function validatePython() {
   const hasExplicitExporter = anyFileMatches(pyFiles, /\ba365_enable_observability_exporter\s*=\s*True\b/);
   const hasExplicitExporterFalse = anyFileMatches(pyFiles, /\ba365_enable_observability_exporter\s*=\s*False\b/);
   const hasExporterEnv = envHasTruthy('ENABLE_A365_OBSERVABILITY_EXPORTER') || envHasTruthy('EnableAgent365Exporter');
+  const hasExplicitS2S = anyFileMatches(pyFiles, /\ba365_use_s2s_endpoint\s*=\s*True\b/);
+  const hasExplicitS2SFalse = anyFileMatches(pyFiles, /\ba365_use_s2s_endpoint\s*=\s*False\b/);
+  const hasS2SEnv = envHasTruthy('A365_USE_S2S_ENDPOINT');
+  const hasS2SIntent = anyFileContains(pyFiles, 'a365_contextual_token_resolver') ||
+    anyFileContains(pyFiles, 'agent_source_identity') ||
+    anyFileContains(pyFiles, 'AgentIdentityTokenResolver') ||
+    hasS2SEnv;
 
   if (hasMicrosoftOpenTelemetryPackage && !hasDistroCall) {
     add(
@@ -157,6 +164,29 @@ function validatePython() {
     );
   }
 
+  if (hasDistroCall && hasS2SIntent && hasExplicitS2SFalse) {
+    add(
+      'critical',
+      'python-s2s-endpoint-disabled',
+      'Python appears to use S2S/Agent Identity export but passes a365_use_s2s_endpoint=False. S2S agents must use service-to-service endpoint mode.',
+      pyFiles.find(f => /a365_use_s2s_endpoint\s*=\s*False\b/.test(read(f)))
+    );
+  } else if (hasDistroCall && hasS2SIntent && !hasExplicitS2S && hasS2SEnv) {
+    add(
+      'medium',
+      'python-s2s-endpoint-env-dependent',
+      'Python appears to use S2S/Agent Identity export but depends on A365_USE_S2S_ENDPOINT=true in env. Prefer passing a365_use_s2s_endpoint=True in code.',
+      pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
+    );
+  } else if (hasDistroCall && hasS2SIntent && !hasExplicitS2S && !hasS2SEnv) {
+    add(
+      'high',
+      'python-s2s-endpoint-not-set',
+      'Python appears to use S2S/Agent Identity export but does not set a365_use_s2s_endpoint=True or A365_USE_S2S_ENDPOINT=true.',
+      pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
+    );
+  }
+
   for (const file of pyFiles) {
     const content = read(file);
     for (const block of findCallBlocks(content, 'a365_request_scope')) {
@@ -185,6 +215,46 @@ function validatePython() {
       'python-no-explicit-a365-semantic-spans',
       'No explicit InvokeAgentScope/InferenceScope/ExecuteToolScope or gen_ai.operation.name markers found. The app may rely entirely on auto-instrumentation; MAC Activity needs invoke_agent/chat/execute_tool/output_messages spans.'
     );
+  }
+
+  const pythonText = pyFiles.map(read).join('\n');
+  const hasInvoke = /InvokeAgentScope|gen_ai\.operation\.name['"]?\s*[:=]|invoke_agent/.test(pythonText);
+  const hasExecuteTool = /ExecuteToolScope|execute_tool/.test(pythonText);
+  const hasAgentName = /gen_ai\.agent\.name|\bagent_name\s*=|AgentDetails\s*\([^)]*agent_name/s.test(pythonText);
+  const hasConversation = /gen_ai\.conversation\.id|\bconversation_id\s*=|\.conversation_id\s*\(/.test(pythonText);
+  const hasChannel = /microsoft\.channel\.name|\bchannel_name\s*=|\.channel_name\s*\(/.test(pythonText);
+  const hasInputMessages = /gen_ai\.input\.messages|record_input_messages|Request\s*\(\s*content\s*=/.test(pythonText);
+  const hasOutputMessages = /gen_ai\.output\.messages|record_output_messages|record_response/.test(pythonText);
+  const hasAgentUser = /microsoft\.agent\.user\.id|\bagent_user_oid\s*=|\.agent_user_id\s*\(/.test(pythonText);
+
+  if (hasDistroCall && hasInvoke && !hasAgentName) {
+    add('medium', 'python-missing-agent-name', 'No gen_ai.agent.name/AgentDetails agent_name signal found. Admin/reporting surfaces may show a GUID or blank agent name.');
+  }
+  if (hasDistroCall && hasInvoke && !hasConversation) {
+    add('medium', 'python-missing-conversation-id', 'No gen_ai.conversation.id/conversation_id signal found. Reportable runs need a conversation or logical run ID.');
+  }
+  if (hasDistroCall && hasInvoke && !hasChannel) {
+    add('medium', 'python-missing-channel-name', 'No microsoft.channel.name/channel_name signal found. Activity/reporting surfaces need a channel such as msteams, web, icm, or scheduler.');
+  }
+  if (hasDistroCall && hasInvoke && !hasInputMessages) {
+    add('medium', 'python-missing-input-messages', 'No gen_ai.input.messages/record_input_messages signal found for invoke/chat spans.');
+  }
+  if (hasDistroCall && hasInvoke && !hasOutputMessages) {
+    add('medium', 'python-missing-output-messages', 'No gen_ai.output.messages/record_output_messages/record_response signal found for invoke/chat/output spans.');
+  }
+  if (hasDistroCall && hasExecuteTool) {
+    const hasToolCallId = /gen_ai\.tool\.call\.id|tool_call_id/.test(pythonText);
+    const hasToolArgs = /gen_ai\.tool\.call\.arguments|arguments\s*=/.test(pythonText);
+    const hasToolResult = /gen_ai\.tool\.call\.result|record_response/.test(pythonText);
+    if (!hasToolCallId || !hasToolArgs || !hasToolResult) {
+      add('medium', 'python-incomplete-tool-span-details', 'execute_tool spans found, but tool call id/arguments/result are not all visible. Tool activity can be incomplete.');
+    }
+  }
+  if (hasDistroCall && /a365_contextual_token_resolver/.test(pythonText) && /user\.id|\buser_oid\b/.test(pythonText) && !hasAgentUser) {
+    add('medium', 'python-obo-agent-user-attribute-missing', 'Code uses contextual token resolution and user.id/user_oid, but no microsoft.agent.user.id/agent_user_oid signal is visible. OBO/Agent-User export may never trigger.');
+  }
+  if (hasDistroCall && /OPERATIONS\s*=\s*\[[^\]]*['"]inference['"]|gen_ai\.operation\.name[\s\S]{0,300}['"]inference['"]/.test(pythonText)) {
+    add('medium', 'python-direct-inference-operation-name', 'Code appears to emit gen_ai.operation.name=inference directly. Public docs use chat for LLM spans; direct inference operations may not classify as expected.');
   }
 }
 
