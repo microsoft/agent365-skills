@@ -18,6 +18,7 @@ agent365-skills/
 │       │   ├── make-a365-agent/SKILL.md               # Blueprint provisioning (Register / Observability paths)
 │       │   ├── make-ai-teammate/SKILL.md              # AI Teammate transformation + publish pipeline
 │       │   ├── instrument-observability/SKILL.md      # OTel + A365 tracing exporter instrumentation
+│       │   ├── a365-code-validator/SKILL.md           # Observability/MAC Activity validation + guided fixes
 │       │   ├── add-workiq-tools/SKILL.md              # WorkIQ MCP server wiring
 │       │   └── test-local/SKILL.md                    # Local testing with AgentsPlayground
 │       ├── hooks/
@@ -100,6 +101,11 @@ agent365-skills/
    launch confirmation). CLI permission prompts and manual browser steps
    (Teams Dev Portal, M365 Admin Center, GA consent) are not stopping conditions — surface
    them with URL + action and continue.
+
+11. **`a365-code-validator` is report-first.** It diagnoses exporter activation, agent-id
+   binding, semantic span coverage, and S2S/OBO endpoint mismatches, then asks whether to
+   apply safe fixes, create a fix plan, or stop. It must not provision, install packages,
+   or run `a365 publish`.
 
 ---
 
