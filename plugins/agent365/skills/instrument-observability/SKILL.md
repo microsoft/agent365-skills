@@ -591,7 +591,7 @@ await baggageScope.run(async () => {                                            
 ```
 
 **Why this exact shape:**
-- **Without `preloadObservabilityToken` before `baggageScope.run`**, the first export attempt on a cold turn sees an empty token, retries until timeout, and the span is silently dropped.
+- **Without `preloadObservabilityToken` before `baggageScope.run`**, the first export attempt on a cold turn sees an empty token, retries until timeout, and the span is not exported.
 - **Without the outer `baggageScope.run` wrapping `InvokeAgentScope.start`**, the spans have no `microsoft.tenant.id` / `gen_ai.agent.id` baggage attached — the exporter filters them as `Partitioned into 0 identity groups (N spans skipped)` and they never reach MAC.
 
 **Additional rules:**
@@ -1001,4 +1001,3 @@ For S2S agents, `CallerDetails` with `UserDetails` (`userId`, `userName`, `userE
 - **.NET Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/dotnet-observability.md`
 - **Node.js Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/nodejs-observability.md`
 - **Python Patterns:** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-observability/references/python-observability.md`
-
