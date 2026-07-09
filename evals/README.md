@@ -156,10 +156,10 @@ To manually test a skill against an eval:
 | 2 | Blueprint used as agent ID | Catches background/queue paths that set `gen_ai.agent.id` to blueprint |
 | 3 | Missing semantic spans | Catches baggage-only implementations that won't populate MAC Activity |
 | 4 | Node exporter flag missing | Catches `a365.enabled` without `enableObservabilityExporter` |
-| 5 | S2S token shape wrong | Catches bare `ClientSecretCredential`/MI token instead of the 3-hop FMI exchange (`AADSTS82001`) |
+| 5 | S2S token shape wrong | Catches bare `ClientSecretCredential`/MI token instead of the 3-hop FMI exchange |
 | 6 | S2S endpoint via env only | Catches reliance on `A365_USE_S2S_ENDPOINT` env instead of the `a365_use_s2s_endpoint` code flag |
 | 7 | Caller identity wrong | Catches `user.id` set to the agent's own user / blank instead of the human caller OID |
-| 8 | Code clean, Activity empty | Branches to tenant-side causes (license assigned, Frontier enrollment, resource SP, lag) instead of a false code bug |
+| 8 | Code clean, Activity empty | Branches to tenant-side causes (licensing, enrollment, resource SP, lag) instead of a false code bug |
 | 9 | No `invoke_agent` root | Catches child-span-only runs / identity-less spans ("0 identity groups") that never land in MAC |
 | 10 | Guided remediation | Verifies `apply_safe_fixes` applies only the deterministic exporter fix and asks before design changes |
 

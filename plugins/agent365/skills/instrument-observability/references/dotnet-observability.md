@@ -196,7 +196,7 @@ namespace <ProjectNamespace>;
 //   Hop 1+2: Blueprint authenticates (MSI in prod, client secret locally) →
 //            gets T1 via .WithFmiPath(agentId) to Agent Identity.
 //   Hop 3:   Agent Identity uses T1 as assertion → Observability API token.
-//            (ServiceIdentity type — AADSTS82001 does not apply.)
+//            (ServiceIdentity type — app-only token restrictions do not apply.)
 //
 // Auth strategy is controlled by Agent365Observability:UseManagedIdentity:
 //   true  (production)  — MSI → Blueprint FIC → Agent Identity → API
