@@ -8,9 +8,10 @@ description: >
   before shipping. Diagnoses and fixes existing instrumentation; do NOT use it to add
   observability from scratch — use instrument-observability for that.
   Checks exporter activation, runtime agent-identity binding (vs blueprint id),
-  the S2S FMI / OBO token shape, S2S vs OBO endpoint selection, and the required semantic spans
-  (invoke_agent/chat/execute_tool/output_messages) plus Activity attributes. Read-only by default;
-  asks before applying safe fixes. Python, Node.js, and .NET.
+  the S2S FMI / OBO token shape, S2S vs OBO endpoint selection, the required semantic spans
+  (invoke_agent/chat/execute_tool/output_messages), Activity attributes, and live blueprint grants
+  and inheritance through read-only a365 Microsoft Graph diagnostics. Read-only by default; asks
+  before applying safe fixes. Python, Node.js, and .NET.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -35,8 +36,9 @@ hooks:
         2. identity binding status (agent id vs blueprint id);
         3. semantic span coverage (invoke_agent/chat/execute_tool/output_messages);
         4. endpoint/token mode (S2S vs OBO);
-        5. concrete next debug commands;
-        6. if blockers were found, the user was asked whether to fix now, create a fix plan, or stop.
+        5. live blueprint grant and effective-inheritance status, or why the check was skipped;
+        6. concrete next debug commands;
+        7. if blockers were found, the user was asked whether to fix now, create a fix plan, or stop.
         Return {"ok": false, "reason": "<missing item>"} if any item is absent.
         Otherwise return {"ok": true}.
       timeout: 30000
@@ -72,7 +74,9 @@ silent or confusing A365 Activity failures:
 3. Generic HTTP/OpenAI spans emitted without A365 semantic operations.
 4. S2S/OBO endpoint mismatch.
 5. Missing token resolver or wrong S2S token shape.
-6. MAC reporting expectations confused with raw ingest success.
+6. Stale local Blueprint ID or missing Blueprint permissions in the target tenant.
+7. Inheritable permission policy configured without grants on the Blueprint service principal.
+8. MAC reporting expectations confused with raw ingest success.
 
 No source code is modified during validation. After the report, the skill asks whether to
 apply safe fixes, create a fix plan only, or stop.
@@ -99,7 +103,7 @@ the raw details."
 TaskCreate: "Detect stack and A365 artifacts"
 TaskCreate: "Run static A365 code validator"
 TaskCreate: "Inspect identity binding and semantic spans"
-TaskCreate: "Prepare runtime verification commands"
+TaskCreate: "Check live blueprint permissions and runtime state"
 TaskCreate: "Summarize blockers and next fixes"
 TaskCreate: "Offer guided remediation"
 ```
@@ -318,9 +322,84 @@ report it as a provisioning/configuration behavior to verify, not as the intende
 
 ---
 
-## Phase 4 — Prepare Runtime Verification Commands
+## Phase 4 — Check Live Blueprint Permissions and Prepare Runtime Verification
 
-**Mark task in progress:** "Prepare runtime verification commands"
+**Mark task in progress:** "Check live blueprint permissions and runtime state"
+
+### Live Blueprint permission check (read-only Microsoft Graph)
+
+The static validator can only inspect files. When the project has a non-empty
+`agentBlueprintId` and `tenantId`, complement it with the a365 CLI's read-only Microsoft
+Graph diagnostics. These commands verify the tenant state without changing permissions:
+
+```bash
+a365 query-entra blueprint-scopes
+a365 query-entra inheritance
+```
+
+- `blueprint-scopes` lists the delegated scopes and application roles **actually granted** on
+  the Blueprint service principal. This is the authoritative permissions view; do not infer
+  grants from `requiredResourceAccess`.
+- `inheritance` verifies that every configured resource uses `kind=allAllowed` for scopes and
+  roles and that the Blueprint service principal has something to inherit. It exits non-zero
+  when any resource has `Effective inheritance: NONE` or `BROKEN`.
+
+Run these checks by default only when:
+
+1. `a365 query-entra inheritance --help` confirms the installed CLI supports the command,
+2. an existing Azure/a365 sign-in is available for the target tenant, and
+3. the check will not trigger a new interactive login.
+
+The validator must **not** install or update the CLI, start an interactive sign-in, run
+`a365 setup permissions`, or issue Graph POST/PATCH/DELETE requests. If a prerequisite is
+missing, report Blueprint permissions as **not checked**, explain why, and provide the two
+commands for the developer to run after `a365-setup` refreshes the CLI/login.
+
+If the local config is missing, copied from another project, or suspected stale, use the
+read-only name-based resolver instead:
+
+```bash
+a365 query-entra blueprint-scopes --agent-name "<agent-name>" --tenant-id "<tenant-id>"
+a365 query-entra inheritance --agent-name "<agent-name>" --tenant-id "<tenant-id>"
+```
+
+Compare the live Blueprint ID printed by the command with the local `agentBlueprintId`, but
+do not print either real ID in the support-safe report:
+
+| Result | Classification |
+|---|---|
+| Live and local Blueprint IDs resolve to the same Blueprint | `current` |
+| Local ID is not found, but name-based lookup resolves a different Blueprint | `critical` stale/copied config |
+| Neither lookup resolves a Blueprint | `high` tenant/setup gap |
+| Graph returns 401/403 or the caller lacks the required Entra role | `not checked` authentication/authorization gap, not proof that the Blueprint is broken |
+
+Interpret permissions in the context of `authMode`:
+
+| Auth mode | Required observability grant |
+|---|---|
+| `obo` / `agentic-user` | Delegated `Agent365.Observability.OtelWrite` |
+| `s2s` | Application role `Agent365.Observability.OtelWrite` |
+| Unknown / mixed | Report which delegated scopes and app roles exist; do not assume the intended side |
+
+Treat a missing required OtelWrite grant as `critical`. Treat a non-zero `inheritance` result
+for another required resource as `high`. Permission names and resource display names are safe
+to summarize, but redact tenant, Blueprint, application, service-principal, and agent IDs.
+
+For remediation, report the CLI guidance without applying it:
+
+- Run `a365 setup requirements` when the output points to a missing `wids` claim or CLI consent.
+- Run the relevant `a365 setup permissions ...` flow as a Global Administrator to reconcile
+  grants and inheritance.
+- For a stale Blueprint ID, hand off to `a365-setup` so the developer can explicitly choose the
+  correct reuse/re-run/fresh path. Do not rewrite the ID automatically.
+
+References:
+
+- [List inheritable permissions — Microsoft Graph](https://learn.microsoft.com/en-us/graph/api/agentidentityblueprint-list-inheritablepermissions?view=graph-rest-1.0)
+- [Configure inheritable permissions for Blueprints](https://learn.microsoft.com/en-us/entra/agent-id/configure-inheritable-permissions-blueprints)
+- [Inheritable permissions and effective grants](https://learn.microsoft.com/en-us/entra/agent-id/concept-inheritable-permissions)
+
+### Runtime verification commands
 
 Generate commands appropriate for the project.
 
@@ -385,7 +464,7 @@ When the code checks above pass, have the user confirm, in the *target* tenant:
   found") means the observability app isn't provisioned there — an onboarding step, not a code fix.
 - **Ingestion lag** — Defender `CloudAppEvents` populates before the admin center; give it ~5 min.
 
-**Mark task complete.**
+**Mark task complete: "Check live blueprint permissions and runtime state".**
 
 ---
 
@@ -416,6 +495,11 @@ actionable.
 - Blueprint id: <source / missing / from config>
 - Verdict: <correct | wrong | unclear>
 
+**Blueprint permissions**
+- Live Blueprint: <current | stale/missing | not checked>
+- Grants: <verified summary | missing required permission | not checked>
+- Effective inheritance: <OK | NONE | BROKEN | not checked>
+
 **Semantic spans**
 - Found: <invoke_agent/chat/execute_tool/output_messages or "none">
 - Missing: <ops or "none">
@@ -427,6 +511,7 @@ actionable.
 
 **Optional details**
 - Files: `<file>:<line or function>`, ...
+- Blueprint check: <read-only command result or reason it was skipped>
 - Runtime check: <local/App Service env check or SDK log grep>
 - Backend verification: use the team's approved telemetry playbook; do not paste internal
   cluster names, private endpoints, or correlation IDs into this report.
@@ -437,6 +522,7 @@ Style rules:
 - Put details under **Optional details**, not in the main blocker list.
 - Use exact file/function names for evidence, but do not paste long code blocks.
 - Redact per **Output is support-safe** above (no internal infra, tenant/agent IDs, or correlation IDs).
+- A skipped live Graph check is a verification gap, not automatically a code blocker.
 - Do not suggest `a365 publish` unless the agent is an AI Teammate / M365 package flow;
   blueprint-based observability does not use `a365 publish`.
 
@@ -475,6 +561,10 @@ Default: `make_fix_plan`.
 ### Safe fixes allowed after confirmation
 
 Only apply these automatically when the user chooses `apply_safe_fixes`:
+
+> **Blueprint permissions are never a safe code fix.** Do not run `a365 setup permissions`,
+> mutate Graph, grant admin consent, or rewrite a Blueprint ID from this skill. Report the
+> mismatch and hand off to `a365-setup` or the appropriate administrator.
 
 1. **Python exporter kwarg**
    - If code calls `use_microsoft_opentelemetry(...)` or builds `kwargs` for that call and already

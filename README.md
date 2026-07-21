@@ -267,9 +267,11 @@ All new code is marked `// A365 Observability — best-effort instrumentation` a
 
 Report-first diagnostics for agents that should emit MAC Activity / Defender / Purview telemetry.
 Checks exporter activation, runtime agent ID vs blueprint ID binding, supported A365 semantic
-span operations, and S2S/OBO endpoint expectations. Produces a report with concrete runtime
-verification commands, then asks whether to apply safe fixes, create a fix plan, or stop.
-It does not provision resources or publish manifests.
+span operations, S2S/OBO endpoint expectations, and (when a target-tenant login is already
+available) the live Blueprint grants and effective inheritance through read-only
+`a365 query-entra` checks. Produces a report with concrete runtime verification commands, then asks
+whether to apply safe fixes, create a fix plan, or stop. It does not provision resources,
+change permissions, mutate Graph, or publish manifests.
 
 **Trigger phrases:**
 ```
