@@ -442,14 +442,14 @@ import { AgenticTokenCacheInstance, BaggageBuilder, BaggageBuilderUtils } from '
 async function handleMessage(turnContext: TurnContext, state: ApplicationTurnState) {
   // STEP 1 — refresh the exporter token BEFORE entering the baggage scope. Skipping this on
   // a cold turn means the first export attempt sees an empty token, retries until timeout,
-  // and the span is silently dropped. The token cache is in-memory and lives for the
+  // and the span is not exported. The token cache is in-memory and lives for the
   // process lifetime, so this is a no-op on warm turns.
   await preloadObservabilityToken(turnContext);
 
   // STEP 2 — build outer baggage scope from TurnContext. This populates microsoft.tenant.id
   // and gen_ai.agent.id baggage on every span created inside the run() callback. Without
   // this wrapping, the exporter filters spans as "Partitioned into 0 identity groups
-  // (N spans skipped)" and they are silently dropped — the #1 first-run failure mode.
+  // (N spans skipped)" and they are not exported — the #1 first-run failure mode.
   const baggageScope = BaggageBuilderUtils
     .fromTurnContext(new BaggageBuilder(), turnContext as any)
     .sessionDescription('agent-turn')
@@ -592,7 +592,7 @@ const callerDetails: CallerDetails = {
 // CANONICAL PATTERN: outer baggage scope MUST wrap InvokeAgentScope + InferenceScope.
 // Without this, the exporter sees spans with no `microsoft.tenant.id` / `gen_ai.agent.id`
 // baggage attached and filters them out as "Partitioned into 0 identity groups (N spans skipped)" —
-// the spans are silently dropped. The working Agent365-Samples LangChain sample uses this exact wrapping.
+// the spans are not exported. The working Agent365-Samples LangChain sample uses this exact wrapping.
 import { BaggageBuilder, BaggageBuilderUtils } from '@microsoft/opentelemetry';
 
 const baggageScope = BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any)
@@ -965,7 +965,7 @@ Key console messages:
 | Spans only when `ENABLE_A365_OBSERVABILITY_EXPORTER=true` env, but not via code | The env var is a secondary toggle | Set `enableObservabilityExporter: true` in `a365` options (code is preferred over env var) |
 | Pending spans lost on shutdown | `shutdownMicrosoftOpenTelemetry()` not called | Add SIGTERM/SIGINT handlers calling `await shutdownMicrosoftOpenTelemetry()` |
 | TypeScript error on `agentAuid` | Interface field is `agentAUID` (uppercase UID) | Change to `agentAUID: '...'` |
-| S2S: AADSTS82001 / AADSTS1002012 | Direct MSAL client credentials not supported for the agent | Use the 3-hop FMI chain: Blueprint → FMI path → Agent Identity → Observability API token |
+| S2S: direct MSAL client credentials rejected | Direct MSAL client credentials not supported for the agent | Use the 3-hop FMI chain: Blueprint → FMI path → Agent Identity → Observability API token |
 | S2S: 401 on `observabilityService/` | Token scope mismatch | Ensure Hop 3 scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default`. Ensure Agent Identity SP has OtelWrite role assigned |
 | S2S: 403 on `observabilityService/` | Missing app role on Agent Identity SP | Assign `Agent365.Observability.OtelWrite` to the **Agent Identity** SP (not just the Blueprint) via Graph API |
 | S2S: MSI fails locally | No Managed Identity in dev | Set `AGENT365_USE_MANAGED_IDENTITY=false` and provide `AGENT365_CLIENT_SECRET` |

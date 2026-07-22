@@ -308,8 +308,7 @@ Report whether the code appears to select the correct transport mode (`useS2SEnd
 For Python S2S, prefer `a365_use_s2s_endpoint=True` in code rather than relying only on
 `A365_USE_S2S_ENDPOINT=true` in runtime environment. Also check the **token shape**: the S2S
 observability token must come from the 3-hop FMI exchange (principal == runtime Agent Identity),
-not a bare client-credentials call — see checklist §5 for the failure signatures
-(`AADSTS82001` / 403).
+not a bare client-credentials call — see checklist §5 for the failure signatures.
 
 ### 3.6 Blueprint permission inheritance wording
 
@@ -449,16 +448,15 @@ those internal queries or endpoints in the validator report.
 Most "exporter returns 200/`sent` but nothing shows in MAC" incidents are **not** code bugs.
 When the code checks above pass, have the user confirm, in the *target* tenant:
 
-> **Provenance (verified 2026-07-06):** the license SKU name, the observability resource-SP
-> GUID, the `AADSTS*` codes, the `Agent365.Observability.OtelWrite` scope, and the ingestion-lag
-> figure below are preview-era Agent 365 facts and will change. Re-verify against current Agent 365
-> onboarding docs before quoting them to a customer.
+> **Provenance (verified 2026-07-06):** the observability resource-SP GUID, the
+> `Agent365.Observability.OtelWrite` scope, and the ingestion-lag figure below are preview-era
+> Agent 365 facts and will change. Re-verify against current Agent 365 onboarding docs before
+> quoting them to a customer.
 
-- **License assigned** — at least one user has an **M365 E7 or Agent 365 license _assigned_**
-  (the SKU merely existing in the tenant isn't enough); otherwise the request is accepted and
-  silently dropped.
-- **Frontier / Agent 365 preview enrollment** — the tenant is enrolled; CDX/demo tenants often
-  aren't by default.
+- **Licensing state** — confirm the target tenant/user meets the current Agent 365 licensing
+  prerequisites from public onboarding docs.
+- **Tenant enrollment state** — confirm Agent 365 is enabled for the target tenant through the
+  supported onboarding or admin process.
 - **Observability resource SP present** — `az ad sp show --id 9b975845-388f-4429-889e-eab1ef63949c`
   returns a service principal in the tenant. A `404` / `AADSTS500011` ("resource principal … not
   found") means the observability app isn't provisioned there — an onboarding step, not a code fix.

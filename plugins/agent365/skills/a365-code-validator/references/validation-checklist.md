@@ -3,10 +3,9 @@
 Use this checklist when validating whether an agent can emit telemetry that appears in
 Microsoft Admin Center (MAC) Activity.
 
-> **Provenance (verified 2026-07-06):** the resource GUID `9b975845-…`, the `AADSTS*` codes,
-> the `Agent365.Observability.OtelWrite` scope, and the license SKU names in §5 and §8 are
-> preview-era Agent 365 facts and will change. Re-verify against current onboarding docs before
-> quoting them to a customer.
+> **Provenance (verified 2026-07-06):** the resource GUID `9b975845-…` and the
+> `Agent365.Observability.OtelWrite` scope are preview-era Agent 365 facts and will change.
+> Re-verify against current onboarding docs before quoting them to a customer.
 
 ---
 
@@ -169,10 +168,9 @@ For Python S2S, prefer setting `a365_use_s2s_endpoint=True` in code. Depending o
 
 ### How the S2S token is minted (the right shape)
 
-A plain client-credentials call for the observability scope fails with `AADSTS82001`
-("agentic application … not permitted to request app-only tokens") — the blueprint can't mint
-it directly. The token must come from the **3-hop FMI exchange**, so its principal equals the
-runtime Agent Identity:
+A plain client-credentials call for the observability scope does not produce the required
+runtime Agent Identity principal. The token must come from the **3-hop FMI exchange**, so its
+principal equals the runtime Agent Identity:
 
 ```text
 leg 1: blueprint creds (secret, or MI assertion on Azure) + fmi_path=<agentIdentityAppId>
@@ -283,9 +281,9 @@ database, endpoint, or correlation details into the validator report.
 
 | Pattern | Fix |
 |---|---|
-| Export accepted (200/`sent`) but nothing in MAC | Confirm a user has an M365 E7 / Agent 365 license **assigned** (not just present), and the tenant is Frontier-enrolled |
-| Token fails `AADSTS500011` (resource principal not found) | Observability resource SP isn't in the tenant — Frontier/observability onboarding, not a code fix |
-| S2S token via bare `ClientSecretCredential` → 403 / `AADSTS82001` | Mint via the 3-hop FMI exchange so the principal == runtime Agent Identity (see §5) |
+| Export accepted (200/`sent`) but nothing in MAC | Confirm the target tenant and user satisfy current Agent 365 licensing and enrollment prerequisites |
+| Token fails `AADSTS500011` (resource principal not found) | Observability resource SP isn't in the tenant — Agent 365/observability onboarding, not a code fix |
+| S2S token via bare `ClientSecretCredential` → 403 | Mint via the 3-hop FMI exchange so the principal == runtime Agent Identity (see §5) |
 | Python only passes `enable_a365=True` | Also pass `a365_enable_observability_exporter=True` or set exporter env true |
 | Queue/background job calls baggage helper with only `blueprint_id` | Pass the runtime `agent_id` explicitly |
 | Testbench works but app does not | Testbench manually emits supported spans; app may only emit generic spans |

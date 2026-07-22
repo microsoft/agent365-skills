@@ -97,7 +97,7 @@
       "files": [],
       "expectations": [
         "Phase 3.5: Flags token shape — a bare ClientSecretCredential/DefaultAzureCredential yields an app/MI principal, not the runtime Agent Identity",
-        "Phase 3.5: Explains the failure signatures: AADSTS82001 (plain client-credentials), 403 (principal != gen_ai.agent.id), and 400 TenantIdInvalid when no valid token is bound",
+        "Phase 3.5: Explains the failure signatures: 403 (principal != gen_ai.agent.id) and 400 TenantIdInvalid when no valid token is bound",
         "Phase 3.5: Recommends the 3-hop FMI exchange (blueprint creds + fmi_path=<agentIdentityAppId> -> agent-identity assertion -> Observability API token with roles containing OtelWrite)",
         "Phase 3: References validation-checklist section 5 (token shape) for the exchange detail",
         "Phase 5: Does not print internal cluster names, private endpoints, tenant IDs, real agent IDs, or correlation IDs",
@@ -137,12 +137,12 @@
       "id": 8,
       "prompt": "Debug why Agent Activity is empty",
       "description": "All code checks pass (exporter on, correct runtime agent identity, semantic spans present, export returns 200/sent) but MAC Activity is still empty",
-      "expected_output": "The skill confirms the code path is correct and does NOT invent a code bug. It branches to tenant-side verification: at least one user has an M365 E7 / Agent 365 license ASSIGNED, the tenant is Frontier-enrolled, the observability resource SP is present, and ingestion lag (Defender CloudAppEvents populates before the admin center).",
+      "expected_output": "The skill confirms the code path is correct and does NOT invent a code bug. It branches to tenant-side verification: the target tenant/user satisfies current Agent 365 licensing prerequisites, Agent 365 is enabled for the target tenant, the observability resource SP is present, and ingestion lag (Defender CloudAppEvents populates before the admin center).",
       "files": [],
       "expectations": [
         "Phase 3: Confirms exporter enabled, identity binding correct, and semantic spans present — the code path passes",
         "Phase 4: Branches to the tenant-side checklist when code is clean but Activity is empty, rather than reporting a false code blocker",
-        "Phase 4: Lists license ASSIGNED (M365 E7 / Agent 365, not just present), Frontier enrollment, resource SP present, and ingestion lag",
+        "Phase 4: Lists current licensing prerequisites, tenant enrollment, resource SP present, and ingestion lag",
         "Phase 4: Provides az ad sp show --id 9b975845-388f-4429-889e-eab1ef63949c as the resource-SP check, and notes a 404 / AADSTS500011 means it is not provisioned in the tenant",
         "Phase 5: Frames the remaining causes as tenant/onboarding, not code",
         "Phase 5: Notes that HTTP 200 / 'sent' is not proof of MAC visibility (ingestion lag plus tenant gating)"
