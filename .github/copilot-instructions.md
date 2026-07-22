@@ -292,9 +292,10 @@ wrapping.
 3. Checks identity binding: runtime Agent Identity / Source Agent ID must be used for `/agents/{agentId}` and `gen_ai.agent.id`; Blueprint ID belongs only in `microsoft.a365.agent.blueprint.id`.
 4. Checks semantic span coverage: `invoke_agent`, `chat`, `execute_tool`, and `output_messages` (or framework scopes that produce them).
 5. Checks S2S vs OBO endpoint expectations and token resolver signals.
-6. Produces a report with blockers, risky findings, and customer-safe runtime verification guidance using SDK logs, direct OTel `partialSuccess`, and public Defender `CloudAppEvents` queries.
+6. When an existing target-tenant login is available, runs read-only `a365 query-entra blueprint-scopes` and `a365 query-entra inheritance` checks to verify the live Blueprint ID, actual grants, and effective permission inheritance.
+7. Produces a report with blockers, risky findings, and customer-safe runtime verification guidance using SDK logs, direct OTel `partialSuccess`, and public Defender `CloudAppEvents` queries.
 
-**This skill does NOT:** provision resources, install packages, run `a365 setup`, or run `a365 publish`. It does not modify source code unless the user explicitly chooses to apply safe fixes after the report.
+**This skill does NOT:** provision resources, install packages, mutate Graph, grant Blueprint permissions, run `a365 setup`, or run `a365 publish`. It does not modify source code unless the user explicitly chooses to apply safe fixes after the report.
 
 **Reference checklist:**
 - [plugins/agent365/skills/a365-code-validator/references/validation-checklist.md](../plugins/agent365/skills/a365-code-validator/references/validation-checklist.md)

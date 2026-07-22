@@ -1,6 +1,6 @@
 {
   "skill_name": "a365-code-validator",
-  "eval_instructions": "Run these evals against existing agent projects or minimal fixtures. This skill is report-first: it must not modify source files until the user explicitly chooses to apply safe fixes. It must never run a365 setup, install packages, or run a365 publish. Verify that it produces a concise report with blockers, risky findings, runtime verification commands, and an explicit fix/plan/stop prompt.",
+  "eval_instructions": "Run these evals against existing agent projects or minimal fixtures. This skill is report-first: it must not modify source files until the user explicitly chooses to apply safe fixes. It may run the read-only `a365 query-entra blueprint-scopes` and `a365 query-entra inheritance` diagnostics when an existing target-tenant login is available, but it must never run a365 setup, install packages, mutate Graph, grant permissions, or run a365 publish. Verify that it produces a concise report with blockers, risky findings, Blueprint grant/inheritance status (or a clear skipped reason), runtime verification commands, and an explicit fix/plan/stop prompt.",
   "trigger_tests": {
     "instructions": "Run each prompt in a fresh session with the full agent365 skill library loaded. should_trigger prompts must activate a365-code-validator. should_not_trigger prompts must activate the named sibling (or no skill) and must NOT activate a365-code-validator — they guard the diagnose-vs-instrument boundary with instrument-observability and the other siblings. Report hit rate in each direction (>=2 runs each).",
     "should_trigger": [
@@ -11,7 +11,8 @@
       "Pre-flight whether this agent will emit MAC Activity before we ship",
       "Check A365 exporter flags for this S2S agent",
       "Why are my spans exporting but not showing in the admin center",
-      "Validate the gen_ai agent id binding for this Node.js agent"
+      "Validate the gen_ai agent id binding for this Node.js agent",
+      "Check whether this agent Blueprint has the right permissions"
     ],
     "should_not_trigger": [
       { "prompt": "Instrument observability for this agent", "expected_skill": "instrument-observability" },
@@ -175,6 +176,22 @@
         "Phase 6: Adds only a commented or empty ENABLE_A365_OBSERVABILITY_EXPORTER template entry; never hardcodes real IDs or secrets",
         "Phase 6: Does NOT generate a token service or wrap semantic spans without a second explicit confirmation",
         "Phase 6: Fix report lists applied fixes, items still needing input, and the validation to rerun"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "Validate A365 code and check the Blueprint permissions",
+      "description": "Project has a local Blueprint ID and an existing target-tenant login; the Blueprint inheritance policy is allAllowed but the Blueprint service principal is missing the required observability grant",
+      "expected_output": "The skill runs the read-only a365 query-entra Blueprint diagnostics, distinguishes actual service-principal grants from inheritable policy, and reports the missing auth-mode-specific Agent365.Observability.OtelWrite permission as a blocker. It does not run setup permissions, mutate Graph, grant consent, or rewrite IDs.",
+      "files": [],
+      "expectations": [
+        "Phase 4: Runs `a365 query-entra blueprint-scopes` to inspect delegated and application grants actually present on the Blueprint service principal",
+        "Phase 4: Runs `a365 query-entra inheritance` and interprets `Effective inheritance: OK`, `NONE`, or `BROKEN` plus its exit code",
+        "Phase 4: For obo/agentic-user requires delegated Agent365.Observability.OtelWrite; for s2s requires the application role",
+        "Phase 4: Compares the live resolved Blueprint with the local agentBlueprintId without printing real IDs in the report",
+        "Phase 4: Treats Graph 401/403 as a skipped authorization gap rather than proof that permissions are absent",
+        "Phase 5: Includes a concise Blueprint permissions section with live-ID, grants, and effective-inheritance status",
+        "Phase 6: Does not run a365 setup permissions, mutate Graph, grant consent, or rewrite the Blueprint ID as a safe fix"
       ]
     }
   ]

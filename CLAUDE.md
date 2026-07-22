@@ -103,9 +103,10 @@ agent365-skills/
    them with URL + action and continue.
 
 11. **`a365-code-validator` is report-first.** It diagnoses exporter activation, agent-id
-   binding, semantic span coverage, and S2S/OBO endpoint mismatches, then asks whether to
-   apply safe fixes, create a fix plan, or stop. It must not provision, install packages,
-   or run `a365 publish`.
+   binding, semantic span coverage, S2S/OBO endpoint mismatches, and live Blueprint grants /
+   effective inheritance through read-only `a365 query-entra` checks when login is already
+   available. It then asks whether to apply safe fixes, create a fix plan, or stop. It must
+   not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
 ---
 

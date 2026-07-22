@@ -190,10 +190,63 @@ observability resource SP isn't in the tenant (an onboarding gap, not a code fix
 ## 6. Permission Inheritance
 
 Current public Entra Agent ID docs describe both `inheritableScopes` and
-`inheritableRoles` for blueprint permissions. Do not state that application roles can never
-inherit from blueprints. If a tenant/test shows the delegated scope inheriting but the S2S
-app role requiring direct assignment, report it as a provisioning/configuration behavior to
-verify rather than the intended scalable model.
+`inheritableRoles` for Blueprint permissions. Do not state that application roles can never
+inherit from Blueprints.
+
+Effective inheritance requires **both**:
+
+1. the resource app is configured in the Blueprint's `inheritablePermissions` collection, and
+2. the corresponding delegated scope or application role is actually granted on the Blueprint
+   service principal.
+
+The policy alone grants nothing. A `kind=allAllowed` entry with no service-principal grant has
+nothing to inherit.
+
+### Read-only live checks
+
+Prefer the a365 CLI over hand-written Graph requests because the CLI resolves the local Blueprint
+application/client ID to the Graph application object ID and checks policy plus actual grants:
+
+```bash
+a365 query-entra blueprint-scopes
+a365 query-entra inheritance
+```
+
+| Command | What it proves |
+|---|---|
+| `blueprint-scopes` | Delegated scopes and application roles actually granted on the Blueprint service principal |
+| `inheritance` | `kind=allAllowed` policy plus an effective grant for every configured resource; exits non-zero for `NONE` or `BROKEN` |
+
+If local configuration may be stale or copied, resolve the live Blueprint by name:
+
+```bash
+a365 query-entra blueprint-scopes --agent-name "<agent-name>" --tenant-id "<tenant-id>"
+a365 query-entra inheritance --agent-name "<agent-name>" --tenant-id "<tenant-id>"
+```
+
+Compare the live ID printed by the command with the local `agentBlueprintId`. A different live
+Blueprint or a local ID that no longer resolves is a configuration blocker; do not rewrite the
+ID automatically.
+
+For observability, verify the grant that matches the auth mode:
+
+- `obo` / `agentic-user`: delegated `Agent365.Observability.OtelWrite`
+- `s2s`: application role `Agent365.Observability.OtelWrite`
+
+If Graph returns 401/403, report the check as unavailable due to caller authorization rather
+than claiming the Blueprint has no permissions. The list API's least-privileged Graph permission
+is `AgentIdentityBlueprint.Read.All`; nonowners also need a supported Entra role such as Agent ID
+Administrator.
+
+Inherited permissions aren't listed directly on child agent identities in Entra or Graph. The
+platform merges inherited and direct permissions at token issuance, so runtime `scp` / `roles`
+claims are the final effective check.
+
+References:
+
+- [List inheritablePermission objects](https://learn.microsoft.com/en-us/graph/api/agentidentityblueprint-list-inheritablepermissions?view=graph-rest-1.0)
+- [Configure inheritable permissions for Blueprints](https://learn.microsoft.com/en-us/entra/agent-id/configure-inheritable-permissions-blueprints)
+- [Inheritable permissions and required resource access](https://learn.microsoft.com/en-us/entra/agent-id/concept-inheritable-permissions)
 
 ---
 
