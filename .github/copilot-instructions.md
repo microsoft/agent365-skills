@@ -14,6 +14,7 @@ Skills for instrumenting and registering Microsoft Agent 365 agents. When a user
 | `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
 | `instrument-observability` | OTel + A365 tracing exporter wiring | — |
 | `a365-code-validator` | A365 observability/MAC Activity validation with optional guided fixes | — |
+| `instrument-security` | Defender prevention hooks — inspect prompts/responses/tool calls and block on verdict | — |
 | `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
 
 Skills are designed to be additive, idempotent, and state-aware — re-running is safe.
@@ -270,6 +271,52 @@ wrapping.
 
 ---
 
+## Skill: instrument-security
+
+**Full instructions:** [plugins/agent365/skills/instrument-security/SKILL.md](../plugins/agent365/skills/instrument-security/SKILL.md)
+
+**Trigger phrases:**
+- "instrument security for this agent"
+- "add defender prevention to this agent"
+- "add a365 security"
+- "protect this agent with defender"
+- "add security hooks to this agent"
+- "block malicious tool calls"
+- "inspect prompts and tool calls with defender"
+- "add prevention webhook to this agent"
+- "wire up security for this google adk agent"
+
+**Summary of what this skill does:**
+1. Loads the detection cache and confirms the agent has a Blueprint **and** an Agent Identity (`agenticAppId` in `a365.generated.config.json`). Hard-stops and runs `a365-setup` when the cache is missing; never invents defaults.
+2. Asks three questions (skipping any already answered in `.env`): Defender **environment** (dev/staging/prod), **fail mode** (open = allow when unreachable, closed = block), and which **inspection points** to enable (default: all four).
+3. Detects the platform. **Google ADK is implemented**; any other platform hard-stops at Phase 1 with an explanation, leaving no partial wiring.
+4. Creates a `security/` package split into a platform-agnostic core (`config.py`, `entra_auth.py`, `ai_session.py`, `defender_client.py`) and a per-platform adapter (`adapters/google_adk.py`), so AWS and others are added as new adapters.
+5. Wires the four ADK callbacks through `secure_agent_callbacks(...)`, which **composes** rather than appends — ADK stops at the first callback returning a value, so appending would silently skip security whenever an existing hook rewrote the payload. `before_*`: existing hooks run first and a short-circuit is respected. `after_*`: existing hooks always run (closing tracing scopes), then security inspects the **effective** value and a block verdict wins.
+6. Stamps `DEFENDER_*` into `.env` **and** forwards them through the deployment script's `env_vars` — deployed runtimes do not read `.env`, and missing cloud env vars are the most common reason prevention looks wired but never runs.
+7. Reports permission status from `resourceConsents` and surfaces a **GA handoff** when the prevention resource is not granted. Never grants permissions itself.
+8. Smoke-tests both paths: a benign turn (one verdict per enabled hook, all allowed) and a known-bad turn (blocked, with reason and diagnostics surfaced).
+
+**Enforcement mapping (Google ADK):**
+
+| Callback | Inspected | Return to block | Effect |
+|---|---|---|---|
+| `before_agent_callback` | user prompt | `types.Content` | agent never runs; content is the reply |
+| `after_agent_callback` | final answer | `types.Content` | replaces the answer |
+| `before_tool_callback` | tool name + args | `dict` | tool never executes |
+| `after_tool_callback` | tool result | `dict` | replaces what the model sees (indirect prompt-injection checkpoint) |
+
+**Authentication — the agent's existing Entra identity.** Uses the same FMI 3-hop chain as the observability exporter: Blueprint credential → FMI token (`api://AzureADTokenExchange/.default`, `fmi_path=<agenticAppId>`) → Agent Identity → Defender token. The webhook therefore sees `appid`/`oid` of the **agent**, not a shared gateway app. Modes: `agent-identity` (default), `blueprint` (fallback before per-agent grants exist), `federated` (workload identity for secretless hosts). Tokens are cached in-process; acquisition never raises — it returns empty and the fail policy applies.
+
+**AISession rules that cause silent failure when broken:** `sessionContext` must be non-null (a null one makes the rule engine fail open and allow everything); `environment.agent.id` must set the `a365` case (agent identity is resolved from that deprecated oneof); `entra` must be omitted unless `objectId` is non-empty (the webhook stamps it from the token's `oid`); `evaluationPolicy` must be `EVALUATION_POLICY_TYPE_BLOCKING`.
+
+**This skill does NOT:** create Entra objects, grant permissions, run `a365 setup`, write credentials into source, or replace existing agent callbacks.
+
+**Reference patterns:**
+- Webhook contract, identity model, AISession mapping: [plugins/agent365/skills/instrument-security/references/defender-webhook.md](../plugins/agent365/skills/instrument-security/references/defender-webhook.md)
+- Google ADK implementation: [plugins/agent365/skills/instrument-security/references/google-adk-security.md](../plugins/agent365/skills/instrument-security/references/google-adk-security.md)
+
+---
+
 ## Skill: a365-code-validator
 
 **Full instructions:** [plugins/agent365/skills/a365-code-validator/SKILL.md](../plugins/agent365/skills/a365-code-validator/SKILL.md)
@@ -375,5 +422,6 @@ make-ai-teammate  →  instrument-observability  (automatic — part of AI Teamm
 make-a365-agent   →  instrument-observability  (Optional — always offered)
                   →  add-workiq-tools          (Optional — skipped when authMode = s2s)
 
+instrument-security  (requires a Blueprint + Agent Identity; run after registration)
 test-local  (no prerequisite — works after any step)
 ```

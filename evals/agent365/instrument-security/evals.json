@@ -1,0 +1,105 @@
+{
+  "skill_name": "instrument-security",
+  "eval_instructions": "Run these against a real agent project that has already been through a365-setup and make-a365-agent (so a Blueprint and Agent Identity exist). Google ADK on Vertex AI Agent Engine is the implemented platform. Verify every generated file carries the marker comment 'A365 Security — added by instrument-security skill'. Verify no credential is ever written into source. A run is only successful if the smoke test shows a benign turn allowed AND a known-bad turn blocked with a readable reason.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Instrument security for this agent",
+      "description": "Happy path — Python Google ADK agent with an existing Blueprint and Agent Identity",
+      "files": [],
+      "expected_output": "The skill loads the detection cache, confirms the Blueprint + Agent Identity exist, asks for Defender environment / fail mode / hook selection, creates the platform-agnostic security package plus the google_adk adapter, composes the four ADK callbacks without replacing existing ones, stamps DEFENDER_* into .env, forwards them in deploy.py, compiles, then smoke-tests one benign and one known-bad turn.",
+      "expectations": [
+        "Phase 0.1: Workspace triage runs; .a365-workspace-detection.local.json is read",
+        "Phase 0.2: Hard stop if the detection cache is missing — a365-setup is run rather than inventing defaults",
+        "Phase 0.3: a365.generated.config.json is read; agentBlueprintId and agenticAppId are extracted",
+        "Phase 0.3: Missing agenticAppId is surfaced with the blueprint auth-mode fallback offered, not silently ignored",
+        "Phase 0.5: INTERACTION — Defender environment asked (dev/staging/prod)",
+        "Phase 0.5: INTERACTION — fail mode asked, with the operational consequence of each option stated",
+        "Phase 0.5: INTERACTION — inspection points asked, defaulting to all four",
+        "Phase 1: Platform detected as Google ADK from agentStack/google-adk imports",
+        "Phase 2: httpx, msal, azure-identity verified or installed; existing pinned versions are NOT changed",
+        "Phase 3: security/ package created with config.py, entra_auth.py, ai_session.py, defender_client.py",
+        "Phase 3: security/adapters/google_adk.py created — platform-specific code isolated from the core",
+        "Phase 3: Every generated file carries the marker comment 'A365 Security — added by instrument-security skill'",
+        "Phase 4: All four ADK callbacks wired via secure_agent_callbacks",
+        "Phase 4: Pre-existing callbacks are passed through and preserved, not replaced",
+        "Phase 5: DEFENDER_* keys appended to .env without duplicating existing keys",
+        "Phase 5: deploy.py forwards DEFENDER_* through env_vars, and the user is told deployed runtimes do not read .env",
+        "Phase 6: resourceConsents checked; missing prevention resource is surfaced as a GA handoff, never self-granted",
+        "Phase 7: Project compiles / imports cleanly",
+        "Phase 8: Benign turn allowed — one verdict logged per enabled hook",
+        "Phase 8: Known-bad turn blocked with reason and diagnostics surfaced to the user",
+        "Phase 9: Summary states endpoint, auth mode, identity seen by the webhook, fail mode consequence, and per-hook latency"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add defender prevention to this agent",
+      "description": "Idempotency — re-run against an already-instrumented agent",
+      "files": [],
+      "expected_output": "The skill detects the existing security package and callback wiring, reports that prevention is already in place, and makes no duplicate edits. Configuration questions already answered in .env are reported rather than re-asked.",
+      "expectations": [
+        "Existing security/ package is detected and not overwritten",
+        "secure_agent_callbacks is not applied a second time",
+        "DEFENDER_* keys already present in .env are not duplicated",
+        "Questions with values already in .env are skipped and the found values reported",
+        "No packages are reinstalled and no pinned versions are altered",
+        "The run ends with a clear 'already wired' summary rather than a no-op silence"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add security hooks to this agent",
+      "description": "Unsupported platform — a .NET or Node.js agent that is not Google ADK",
+      "files": [],
+      "expected_output": "The skill detects that no adapter exists for the platform and stops cleanly, explaining that the platform-agnostic core is reusable but the hook bridge is missing. No partial wiring is left behind.",
+      "expectations": [
+        "Platform detection identifies the stack as one without an implemented adapter",
+        "The skill stops before creating any files",
+        "The message names the platform and states that an adapter under security/adapters/ is required",
+        "No packages are installed and no source file is modified",
+        "The user is not told the agent is protected"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Instrument security for this agent",
+      "description": "Prerequisite missing — no Agent 365 registration in the workspace",
+      "files": [],
+      "expected_output": "With agent code present but no fresh detection cache, the skill runs a365-setup to register the agent and write the cache, then continues. With no agent code at all, it hard-stops and points at make-a365-agent.",
+      "expectations": [
+        "Agent code present + stale/missing cache → a365-setup is run to completion, then the skill resumes",
+        "No agent code → hard stop naming /agent365:make-a365-agent",
+        "No file is edited and no package installed before the cache exists",
+        "Default cache values are never invented"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Instrument security for this agent, and block anything Defender flags even if the service is down",
+      "description": "Fail-closed selection is honored end to end",
+      "files": [],
+      "expected_output": "DEFENDER_FAIL_MODE=closed is stamped, the client returns block=true when no verdict is obtained, and the block message distinguishes 'validation unavailable' from 'content flagged as malicious'.",
+      "expectations": [
+        "Phase 0.5: fail-closed is recorded and DEFENDER_FAIL_MODE=closed written to .env",
+        "The decision model blocks when the webhook errors, times out, or returns 4xx/5xx",
+        "The unavailable-service block message does not claim the content was malicious",
+        "The evaluated flag distinguishes a real allow from a masked failure",
+        "Phase 9: summary states plainly that a Defender outage will block agent actions"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Add prevention but only on tool calls",
+      "description": "Hook subset — only before_tool/after_tool enabled",
+      "files": [],
+      "expected_output": "Only the tool inspection points are wired; agent-level callbacks are passed through untouched. DEFENDER_HOOKS reflects the subset and the validator requires only the enabled hooks.",
+      "expectations": [
+        "DEFENDER_HOOKS=before_tool,after_tool written to .env",
+        "before_agent_callback and after_agent_callback are passed through unwrapped",
+        "toolRequest and toolResponse activities are built; agentRequest/agentResponse are not required",
+        "Phase 9: summary states which inspection points are NOT covered and what that means"
+      ]
+    }
+  ]
+}

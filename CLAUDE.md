@@ -18,6 +18,7 @@ agent365-skills/
 │       │   ├── make-a365-agent/SKILL.md               # Blueprint provisioning (Register / Observability paths)
 │       │   ├── make-ai-teammate/SKILL.md              # AI Teammate transformation + publish pipeline
 │       │   ├── instrument-observability/SKILL.md      # OTel + A365 tracing exporter instrumentation
+│       │   ├── instrument-security/SKILL.md           # Defender prevention hooks (inspect + block at runtime)
 │       │   ├── a365-code-validator/SKILL.md           # Observability/MAC Activity validation + guided fixes
 │       │   ├── add-workiq-tools/SKILL.md              # WorkIQ MCP server wiring
 │       │   └── test-local/SKILL.md                    # Local testing with AgentsPlayground
@@ -28,6 +29,7 @@ agent365-skills/
 │       │       ├── validate-make-a365-agent.js
 │       │       ├── validate-make-ai-teammate.js
 │       │       ├── validate-instrument-observability.js
+│       │       ├── validate-instrument-security.js
 │       │       ├── validate-add-workiq-tools.js
 │       │       └── validate-test-local.js
 │       └── shared/agent-detection.md  # Shared heuristics for detecting agent type and authMode
@@ -36,6 +38,7 @@ agent365-skills/
 │   ├── validate-a365-setup.test.js
 │   ├── validate-make-a365-agent.test.js
 │   ├── validate-observability.test.js
+│   ├── validate-instrument-security.test.js
 │   └── validate-workiq.test.js
 ├── evals/
 │   └── agent365/                      # Evaluation test cases (one per skill)
@@ -43,6 +46,7 @@ agent365-skills/
 │       ├── make-a365-agent/evals.json
 │       ├── make-ai-teammate/evals.json
 │       ├── instrument-observability/evals.json
+│       ├── instrument-security/evals.json
 │       ├── add-workiq-tools/evals.json
 │       └── test-local/evals.json
 ├── scripts/install.js                 # One-liner installer for Claude Code + Copilot CLI
@@ -108,6 +112,22 @@ agent365-skills/
    available. It then asks whether to apply safe fixes, create a fix plan, or stop. It must
    not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
+12. **`instrument-security` enforces, it does not provision.** It wires runtime Defender
+   prevention hooks that inspect prompts, responses, tool arguments, and tool results, and
+   block on the webhook verdict. It authenticates with the agent's **existing** Agent 365
+   Entra identity (the FMI 3-hop chain from the Blueprint created by `make-a365-agent`) — it
+   never creates Entra objects, never grants permissions (GA handoff only), and never writes a
+   credential into source. Existing agent callbacks are **composed, never replaced**: the
+   agent's own hooks run first (closing tracing scopes and applying any redaction) and
+   security inspects the *effective* result, so appending to an ADK callback list — which
+   stops at the first non-`None` return — is never correct. Two outcomes must stay distinct:
+   a real verdict (`200` + `blockAction`) versus no verdict (auth/transport/`4xx`/`5xx`),
+   which resolves via the configured `DEFENDER_FAIL_MODE` (`open` allows, `closed` blocks) and
+   is always logged with an `evaluated` flag — without it, a masked auth failure under
+   fail-open is indistinguishable from a genuine allow. Platform-specific code lives only in
+   `security/adapters/`; the config, Entra auth, AISession builders, and webhook client are
+   platform-agnostic and shared.
+
 ---
 
 ## Testing
@@ -120,6 +140,7 @@ npm test
 node --test tests/validate-a365-setup.test.js
 node --test tests/validate-make-a365-agent.test.js
 node --test tests/validate-observability.test.js
+node --test tests/validate-instrument-security.test.js
 node --test tests/validate-workiq.test.js
 
 # Validate stop hooks directly against the current directory
