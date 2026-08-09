@@ -238,6 +238,21 @@ Read from the cache: `agentStack`, `programmingLanguage`, `agentType`, `authMode
 > sources in the table above. Skipping this produces a confusing runtime failure —
 > `AGENT365_TENANT_ID is not set` — on an agent whose registration is perfectly fine.
 
+> ⚠️ **`AGENT365_*` are copies, and re-running `a365 setup all` makes them stale.**
+> Every setup run **mints a new blueprint client secret** and rewrites
+> `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET` — but nothing updates the
+> `AGENT365_CLIENT_SECRET` copy. The two silently diverge.
+>
+> This does not fail immediately, which is what makes it dangerous: Entra keeps the
+> previous secret valid, so the agent keeps authenticating on the **old** credential
+> until that one expires, and prevention then breaks for a reason with no obvious link
+> to the setup run weeks earlier.
+>
+> **On every run of this skill, re-derive the whole `AGENT365_*` block from the
+> `CONNECTIONS__*` values rather than trusting what is already there** — treat a
+> present-but-different value as stale, not as "already configured". If the values
+> changed, say so and note that a redeploy is needed to push them to the hosted agent.
+
 If `agenticAppId` is missing, tell the user the agent has no Agent Identity yet
 and that `a365 setup all` must be re-run before prevention can authenticate.
 There is no fallback — the FMI chain needs the agent identity, and no other
@@ -490,9 +505,11 @@ DEFENDER_TIMEOUT_SECONDS=10
 DEFENDER_MAX_CONTENT_CHARS=20000
 ```
 
-**Also stamp the canonical `AGENT365_*` identity values if they are absent** —
-`a365 setup all` does not write them (see Step 0.3). Map them from
-`a365.generated.config.json` and the CLI's own `.env` entries:
+**Also (re-)stamp the canonical `AGENT365_*` identity values** — `a365 setup all`
+does not write them (see Step 0.3). **Derive them fresh every run and overwrite
+whatever is there**; do not skip a key because it already has a value. These are
+copies, and a setup re-run mints a new client secret that leaves the copy stale
+while the agent keeps working on the old credential until it expires.
 
 ```bash
 # ── Agent 365 identity — consumed by the prevention config ──
@@ -506,7 +523,9 @@ AGENT365_USE_MANAGED_IDENTITY=false
 ```
 
 Without these the agent fails at runtime with `AGENT365_TENANT_ID is not set`,
-which looks like a broken registration but is only a naming mismatch.
+which looks like a broken registration but is only a naming mismatch. If any
+value *changed* on this run, tell the user the hosted agent needs a redeploy to
+pick it up — the local `.env` alone will not fix production.
 
 **Forward the variables to the deployed runtime.** Local `.env` is not visible to
 a hosted agent. For Vertex AI Agent Engine, add the keys to the `env_vars` passed
