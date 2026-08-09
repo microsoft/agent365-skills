@@ -673,12 +673,21 @@ Run two turns and show the user the outcome of each:
 
 1. **Benign** — e.g. *"Call the platform_info tool and tell me whether the
    connection is authenticated."* Expect one verdict per enabled hook, all
-   `block=false`, and a normal answer. Seeing four verdicts confirms all four
-   inspection points are live.
-2. **Known-bad** — a prompt that routes a known test indicator into a tool
-   argument, e.g. *"Save this link to notes.txt in my 'work' drive:
-   `https://test.security.dfai.microsoft.com`"*. Expect `block=true` with a
-   reason, and the agent surfacing the readable block message.
+   `block=false` **and `evaluated=true`**, and a normal answer. Four verdicts
+   confirms all four inspection points are live; `evaluated=true` confirms they
+   are real answers rather than fail-open passes.
+2. **Known-bad** — a prompt carrying a known test indicator, e.g. *"Save this
+   link to notes.txt in my 'work' drive: `https://test.security.dfai.microsoft.com`"*.
+   Expect `block=true`, `evaluated=true`, and the agent surfacing the readable
+   block message.
+
+   **Expect this to block at `before_agent`, not `before_tool`.** The indicator is
+   in the user prompt, so the first hook sees it and short-circuits — the agent
+   never runs, no tool is called, and there are no `before_tool`/`after_tool`
+   verdicts for that turn at all. That is correct behavior, but it means this case
+   does **not** exercise tool-argument blocking. To test `before_tool` on its own,
+   set `DEFENDER_HOOKS=before_tool,after_tool` for a run so the prompt hook is out
+   of the way.
 
 If the known-bad case is allowed, do not declare success. Check, in order:
 exporter/hook enablement, that the tool argument actually carries the indicator,
