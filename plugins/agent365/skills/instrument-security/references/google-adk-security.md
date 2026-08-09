@@ -85,7 +85,19 @@ unbypassable.
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Microsoft Defender prevention (Security for AI) integration."""
+"""Microsoft Defender prevention (Security for AI) integration.
+
+Platform-agnostic building blocks:
+
+* :mod:`config`          — environment-driven configuration.
+* :mod:`entra_auth`      — Entra access tokens for the Defender webhook, obtained
+  with the agent's **own** Agent 365 Entra identity.
+* :mod:`ai_session`      — builders for the Security4AI ``AISession`` payload.
+* :mod:`defender_client` — HTTP transport plus allow/block decision parsing.
+
+Platform adapters live in :mod:`.adapters` — one module per agent platform
+(Google ADK today; AWS and others plug in alongside it).
+"""
 
 from .config import SecurityConfig, get_config
 from .defender_client import DefenderClient, DefenderDecision, get_client
@@ -128,17 +140,30 @@ DEFENDER_ENDPOINTS = {
     "prod": "https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze",
 }
 
+# The prevention resource the access token is issued FOR — the first-party
+# "Defender for AI Prevention Webhook" application. This is the direct analogue of
+# observability's api://9b975845-388f-4429-889e-eab1ef63949c/.default.
+#
+# Note the identifier URI is an https:// form, NOT api:// — requesting
+# api://86a21212-.../.default fails with AADSTS500011 even when the service
+# principal is present, because that URI is not one of the SP's names.
+PREVENTION_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
+PREVENTION_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
+
+# Application role the agent identity must hold to call the prevention endpoint,
+# mirroring Agent365.Observability.OtelWrite for observability. Granted to the
+# Agent Identity service principal, not the blueprint.
+PREVENTION_APP_ROLE = "AIAgentsRTP.ToolInvocation"
+
 # The four inspection points supported. Platform adapters map their native
 # hooks onto these names.
 ALL_HOOKS = ("before_agent", "after_agent", "before_tool", "after_tool")
 
-# How the Defender access token is obtained:
-#   agent-identity  FMI 3-hop: blueprint credential -> agent identity -> Defender.
-#                   The token's appid/oid are the agent's own Entra identity.
-#   blueprint       Direct client credentials as the blueprint app (no FMI hop).
-#   federated       Workload-identity federation (platform OIDC -> Entra), for
-#                   hosts that cannot hold a secret.
-AUTH_MODES = ("agent-identity", "blueprint", "federated")
+# The token is always obtained through the FMI 3-hop chain — blueprint credential
+# -> agent identity -> Defender — so the token's appid/oid are the agent's own
+# Entra identity. This is the only supported flow: there is no gateway or
+# delegation path, and the webhook authorizes on the app role, not an app allow-list.
+# Mirrors observability/token_provider.py.
 
 FAIL_MODES = ("open", "closed")
 
@@ -191,10 +216,8 @@ class SecurityConfig:
     platform_agent_id: str
     platform_type: str
 
-    # --- Token acquisition -------------------------------------------------
-    auth_mode: str
+    # --- Token acquisition (FMI 3-hop, mirroring observability) ------------
     scope: str
-    federation_audience: str
     use_managed_identity: bool
     client_secret: str = field(repr=False, default="")
 
@@ -217,7 +240,7 @@ class SecurityConfig:
         """Non-sensitive one-line summary, safe to log at startup."""
         return (
             f"enabled={self.enabled} env={self.environment} url={self.webhook_url} "
-            f"authMode={self.auth_mode} failMode={self.fail_mode} "
+            f"failMode={self.fail_mode} "
             f"hooks={','.join(sorted(self.enabled_hooks))} "
             f"tenant={self.tenant_id or '<unset>'} agentId={self.agent_id or '<unset>'} "
             f"blueprintId={self.blueprint_id or '<unset>'} scope={self.scope or '<unset>'}"
@@ -231,18 +254,17 @@ class SecurityConfig:
         if _is_placeholder(self.tenant_id):
             errors.append("AGENT365_TENANT_ID is not set")
         if _is_placeholder(self.scope):
-            errors.append("DEFENDER_WEBHOOK_SCOPE/DEFENDER_WEBHOOK_APP_ID is not set")
-        if self.auth_mode not in AUTH_MODES:
-            errors.append(f"DEFENDER_AUTH_MODE '{self.auth_mode}' is not one of {', '.join(AUTH_MODES)}")
+            errors.append("no prevention scope resolved (DEFENDER_WEBHOOK_SCOPE override is invalid)")
         if self.fail_mode not in FAIL_MODES:
             errors.append(f"DEFENDER_FAIL_MODE '{self.fail_mode}' is not one of {', '.join(FAIL_MODES)}")
-        if self.auth_mode == "agent-identity" and _is_placeholder(self.agent_id):
-            errors.append("DEFENDER_AUTH_MODE=agent-identity requires AGENT365_AGENT_ID")
-        if self.auth_mode in ("agent-identity", "blueprint"):
-            if _is_placeholder(self.client_id):
-                errors.append("AGENT365_CLIENT_ID is not set")
-            if not self.use_managed_identity and _is_placeholder(self.client_secret):
-                errors.append("AGENT365_CLIENT_SECRET is not set (and managed identity is off)")
+        # The FMI chain needs the agent identity (fmi_path + hop-3 client) and the
+        # blueprint credential that asserts it.
+        if _is_placeholder(self.agent_id):
+            errors.append("AGENT365_AGENT_ID is not set")
+        if _is_placeholder(self.client_id):
+            errors.append("AGENT365_CLIENT_ID is not set")
+        if not self.use_managed_identity and _is_placeholder(self.client_secret):
+            errors.append("AGENT365_CLIENT_SECRET is not set (and managed identity is off)")
         return errors
 
 
@@ -265,10 +287,16 @@ def load_config() -> SecurityConfig:
     agent_id = _env("AGENT365_AGENT_ID")
     client_id = _env("AGENT365_CLIENT_ID") or blueprint_id
 
-    # Resource the Defender webhook validates the token audience against.
+    # Scope resolution, in precedence order:
+    #   1. DEFENDER_WEBHOOK_SCOPE  — full override for a non-standard environment
+    #   2. DEFENDER_WEBHOOK_APP_ID — legacy override; kept for callers that pin an
+    #      app whose identifier URI really is the api:// form
+    #   3. PREVENTION_SCOPE        — the shipped constant (normal case)
     webhook_app_id = _env("DEFENDER_WEBHOOK_APP_ID")
-    scope = _env("DEFENDER_WEBHOOK_SCOPE") or (
-        f"api://{webhook_app_id}/.default" if webhook_app_id else ""
+    scope = (
+        _env("DEFENDER_WEBHOOK_SCOPE")
+        or (f"api://{webhook_app_id}/.default" if webhook_app_id else "")
+        or PREVENTION_SCOPE
     )
 
     return SecurityConfig(
@@ -286,9 +314,7 @@ def load_config() -> SecurityConfig:
         agent_description=_env("AGENT365_AGENT_DESCRIPTION"),
         platform_agent_id=_env("AGENT365_PLATFORM_AGENT_ID") or agent_id or client_id,
         platform_type=_env("AGENT365_PLATFORM_TYPE", "CUSTOM_BUILT_AGENTS_USING_SDK"),
-        auth_mode=_env("DEFENDER_AUTH_MODE", "agent-identity").lower(),
         scope=scope,
-        federation_audience=_env("DEFENDER_FEDERATION_AUDIENCE", "api://AzureADTokenExchange"),
         use_managed_identity=_env_bool("AGENT365_USE_MANAGED_IDENTITY", False),
         client_secret=_env("AGENT365_CLIENT_SECRET"),
         fail_mode=_env("DEFENDER_FAIL_MODE", "open").lower(),
@@ -307,69 +333,68 @@ def get_config() -> SecurityConfig:
 
 ### `security/entra_auth.py`
 
-Acquires the Defender token with the agent's **own** identity. Never raises —
-returns `""` so the caller applies the fail policy.
+**This is `observability/token_provider.py` with a different scope.** Same FMI 3-hop
+chain, same synchronous in-process cache, same never-raise contract — only the auth
+target differs:
+
+| | Observability | Prevention |
+|---|---|---|
+| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
+| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
+| Resolver | `get_observability_token` | `get_defender_token` |
+
+If the agent already has observability wired, copy `observability/token_provider.py`
+and change those three things rather than writing this from scratch. Keep the two in
+step — a fix to the token chain in one almost certainly belongs in the other.
+
+Never raises: returns `""` so the caller applies the fail policy. Note a *missing app
+role grant* does not fail here — the token is issued without a `roles` claim and the
+webhook rejects it with 401/403 instead.
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Entra access tokens for the Defender prevention webhook.
+"""S2S Defender prevention token acquisition (3-hop FMI chain).
 
-The token is obtained with the agent's **own Agent 365 Entra identity**, which
-``a365 setup all`` provisioned alongside the Blueprint. Three modes are
-supported:
+    Blueprint (client secret or MSI)
+      -> Hop 1+2: FMI token (api://AzureADTokenExchange/.default, fmi_path=<agentId>)
+        -> Agent Identity
+          -> Hop 3: Defender prevention token
 
-``agent-identity`` (default)
-    The FMI 3-hop chain, identical to the one the observability exporter uses::
+This is **the same flow** ``observability/token_provider.py`` uses — deliberately
+so. Only the auth target differs:
 
-        Blueprint (client secret or MSI)
-          -> Hop 1+2: FMI token (api://AzureADTokenExchange/.default,
-                                 fmi_path=<agentId>)
-            -> Agent Identity
-              -> Hop 3: Defender prevention token
+===========  ====================================  ===================================================
+             Observability                         Prevention
+===========  ====================================  ===================================================
+Scope        ``api://9b975845-…/.default``         ``https://rtp-a365.ai.defender.microsoft.com/.default``
+App role     ``Agent365.Observability.OtelWrite``  ``AIAgentsRTP.ToolInvocation``
+Resolver     ``get_observability_token``           ``get_defender_token``
+===========  ====================================  ===================================================
 
-    The resulting token's ``appid`` is the Agent Identity and its ``oid`` is
-    that identity's service principal — so the webhook can bind the call to a
-    real agent rather than to a shared gateway app.
+Everything else — the FMI hops, the synchronous in-process cache, and the
+never-raise contract — is identical. Keep the two files in step: a fix to the
+token chain in one almost certainly belongs in the other.
 
-``blueprint``
-    Plain client credentials as the Blueprint app. Useful before per-agent
-    identities are granted the prevention resource.
-
-``federated``
-    Workload-identity federation for hosts that cannot hold a secret: a
-    platform-signed OIDC token is exchanged at Entra as a client assertion
-    (RFC 7521/7523). Google Cloud is wired here; other clouds plug in by
-    registering another assertion provider.
-
-Token acquisition never raises to callers — :func:`get_defender_token` returns
-an empty string on failure so the hook can apply its fail-open/fail-closed
-policy instead of breaking the turn.
+The prevention hooks call ``get_defender_token`` synchronously from the request
+path, so acquisition and caching are synchronous here. Vertex AI Agent Engine
+gives no application lifecycle hook for a background refresh loop, so the token is
+fetched lazily and cached until shortly before it expires.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import msal
 
-from .config import SecurityConfig, get_config
+from .config import PREVENTION_SCOPE, SecurityConfig, get_config
 
 logger = logging.getLogger(__name__)
 
 FMI_SCOPE = "api://AzureADTokenExchange/.default"
-_CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-
-# GCP metadata server endpoint that mints a Google-signed OIDC token for the
-# runtime service account.
-_GCP_METADATA_IDENTITY_URL = (
-    "http://metadata.google.internal/computeMetadata/v1/instance/"
-    "service-accounts/default/identity"
-)
 
 _EXPIRY_BUFFER = timedelta(minutes=5)
 _TOKEN_LIFETIME = timedelta(minutes=55)
@@ -396,45 +421,38 @@ def _get_cached_token(key: str) -> str | None:
 
 
 def reset_cache() -> None:
-    """Drop every cached token (used by tests and on config reload)."""
+    """Drop every cached token (used by tests and after a grant changes)."""
     with _lock:
         _cache.clear()
 
 
-def _authority(cfg: SecurityConfig) -> str:
-    return f"https://login.microsoftonline.com/{cfg.tenant_id}"
-
-
-def _blueprint_credential(cfg: SecurityConfig) -> dict[str, str]:
-    """Credential fields proving the Blueprint app identity."""
-    if not cfg.use_managed_identity:
-        return {"client_secret": cfg.client_secret}
-
-    from azure.identity import ManagedIdentityCredential
-
-    msi_token = ManagedIdentityCredential().get_token("api://AzureADTokenExchange")
-    return {
-        "client_assertion_type": _CLIENT_ASSERTION_TYPE,
-        "client_assertion": msi_token.token,
-    }
-
-
-def _acquire_fmi_token(cfg: SecurityConfig) -> str:
+def _acquire_t1(cfg: SecurityConfig, token_url: str, agent_id: str) -> str:
     """Hop 1+2 — Blueprint credential exchanged for an Agent Identity FMI token.
 
-    MSAL Python does not serialize ``fmi_path``, so this posts the token
-    endpoint directly.
+    MSAL Python does not pass `fmi_path` through, so this is a direct token
+    endpoint POST.
     """
     data = {
         "grant_type": "client_credentials",
         "client_id": cfg.client_id,
         "scope": FMI_SCOPE,
-        "fmi_path": cfg.agent_id,
-        **_blueprint_credential(cfg),
+        "fmi_path": agent_id,
     }
 
+    if cfg.use_managed_identity:
+        from azure.identity import ManagedIdentityCredential
+
+        credential = ManagedIdentityCredential()
+        msi_token = credential.get_token("api://AzureADTokenExchange")
+        data["client_assertion_type"] = (
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        )
+        data["client_assertion"] = msi_token.token
+    else:
+        data["client_secret"] = cfg.client_secret
+
     with httpx.Client(timeout=cfg.timeout_seconds) as client:
-        result = client.post(f"{_authority(cfg)}/oauth2/v2.0/token", data=data).json()
+        result = client.post(token_url, data=data).json()
 
     if "access_token" not in result:
         raise RuntimeError(
@@ -443,107 +461,33 @@ def _acquire_fmi_token(cfg: SecurityConfig) -> str:
     return result["access_token"]
 
 
-def _acquire_agent_identity_token(cfg: SecurityConfig) -> str:
-    """Hop 3 — Agent Identity asserts itself to get a Defender token."""
-    fmi_token = _acquire_fmi_token(cfg)
+def _acquire_prevention_token(cfg: SecurityConfig, tenant_id: str, agent_id: str) -> str:
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    t1_token = _acquire_t1(cfg, f"{authority}/oauth2/v2.0/token", agent_id)
 
     identity_app = msal.ConfidentialClientApplication(
-        client_id=cfg.agent_id,
-        client_credential={"client_assertion": fmi_token},
-        authority=_authority(cfg),
+        client_id=agent_id,
+        client_credential={"client_assertion": t1_token},
+        authority=authority,
     )
     result = identity_app.acquire_token_for_client(scopes=[cfg.scope])
     if "access_token" not in result:
         raise RuntimeError(
-            f"Defender token (hop 3) failed: "
+            f"Prevention token (hop 3) failed: "
             f"{result.get('error_description', result)}"
         )
     return result["access_token"]
-
-
-def _acquire_blueprint_token(cfg: SecurityConfig) -> str:
-    """Client credentials as the Blueprint app (no FMI hop)."""
-    app = msal.ConfidentialClientApplication(
-        client_id=cfg.client_id,
-        client_credential=(
-            cfg.client_secret
-            if not cfg.use_managed_identity
-            else _blueprint_credential(cfg)
-        ),
-        authority=_authority(cfg),
-    )
-    result = app.acquire_token_for_client(scopes=[cfg.scope])
-    if "access_token" not in result:
-        raise RuntimeError(
-            f"Defender token failed: {result.get('error_description', result)}"
-        )
-    return result["access_token"]
-
-
-def _mint_platform_oidc_assertion(cfg: SecurityConfig) -> str:
-    """Mint a platform-signed OIDC token to use as an Entra client assertion.
-
-    Google Cloud is the implemented provider: the runtime service account's
-    Google-signed ID token is already a public-issuer OIDC token, so no KMS key
-    or self-hosted JWKS is needed. Add another branch here for other clouds.
-    """
-    query = urllib.parse.urlencode(
-        {"audience": cfg.federation_audience, "format": "full"}
-    )
-    request = urllib.request.Request(
-        f"{_GCP_METADATA_IDENTITY_URL}?{query}",
-        headers={"Metadata-Flavor": "Google"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=cfg.timeout_seconds) as response:
-            return response.read().decode("utf-8").strip()
-    except Exception:
-        logger.info(
-            "[defender] metadata identity unavailable; falling back to google.auth"
-        )
-        from google.auth.transport.requests import Request as GoogleAuthRequest
-        from google.oauth2 import id_token as google_id_token
-
-        return google_id_token.fetch_id_token(
-            GoogleAuthRequest(), cfg.federation_audience
-        )
-
-
-def _acquire_federated_token(cfg: SecurityConfig) -> str:
-    """Exchange a platform OIDC assertion for an Entra access token."""
-    assertion = _mint_platform_oidc_assertion(cfg)
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": cfg.client_id,
-        "scope": cfg.scope,
-        "client_assertion_type": _CLIENT_ASSERTION_TYPE,
-        "client_assertion": assertion,
-    }
-
-    with httpx.Client(timeout=cfg.timeout_seconds) as client:
-        result = client.post(f"{_authority(cfg)}/oauth2/v2.0/token", data=data).json()
-
-    if "access_token" not in result:
-        raise RuntimeError(
-            f"Federated Defender token failed: "
-            f"{result.get('error_description', result)}"
-        )
-    return result["access_token"]
-
-
-_ACQUIRERS = {
-    "agent-identity": _acquire_agent_identity_token,
-    "blueprint": _acquire_blueprint_token,
-    "federated": _acquire_federated_token,
-}
 
 
 def get_defender_token(cfg: SecurityConfig | None = None) -> str:
-    """Return a cached Entra access token for the Defender webhook.
+    """Resolve the Defender prevention token for this agent.
 
-    Returns an empty string when the token cannot be acquired; the caller
-    applies the configured fail-open/fail-closed policy.
+    Never raises — a failed acquisition must not break the agent turn; the caller
+    applies the configured fail-open / fail-closed policy instead.
+
+    Returns an empty string when the token cannot be acquired. Note that a
+    *missing app role grant* does not fail here: the token is issued without a
+    ``roles`` claim and the webhook rejects it with 401/403 instead.
     """
     cfg = cfg or get_config()
 
@@ -552,32 +496,27 @@ def get_defender_token(cfg: SecurityConfig | None = None) -> str:
         logger.warning("[defender] token skipped — invalid config: %s", "; ".join(errors))
         return ""
 
-    key = f"{cfg.auth_mode}:{cfg.tenant_id}:{cfg.agent_id}:{cfg.scope}"
+    key = f"{cfg.agent_id}:{cfg.tenant_id}:{cfg.scope}"
     cached = _get_cached_token(key)
     if cached:
         return cached
 
-    acquire = _ACQUIRERS.get(cfg.auth_mode)
-    if acquire is None:
-        logger.warning("[defender] unknown auth mode '%s'", cfg.auth_mode)
-        return ""
-
     try:
-        token = acquire(cfg)
+        token = _acquire_prevention_token(cfg, cfg.tenant_id, cfg.agent_id)
     except Exception:
         logger.warning(
-            "[defender] token acquisition failed (mode=%s scope=%s)",
-            cfg.auth_mode,
+            "[defender] prevention token acquisition failed (scope=%s)",
             cfg.scope,
             exc_info=True,
         )
         return ""
 
     _cache_token(key, token)
-    logger.info(
-        "[defender] token acquired (mode=%s agentId=%s)", cfg.auth_mode, cfg.agent_id
-    )
+    logger.info("[defender] prevention token acquired for agent %s.", cfg.agent_id)
     return token
+
+
+__all__ = ["FMI_SCOPE", "PREVENTION_SCOPE", "get_defender_token", "reset_cache"]
 ```
 
 ### `security/ai_session.py`
@@ -1112,7 +1051,12 @@ def get_client() -> DefenderClient:
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Platform adapters that bridge native agent hooks onto Defender prevention."""
+"""Platform adapters that bridge native agent hooks onto Defender prevention.
+
+Each adapter translates one agent framework's callback contract into the
+platform-agnostic :mod:`security.ai_session` builders and
+:class:`security.defender_client.DefenderClient`.
+"""
 
 from .google_adk import (
     after_agent_security_hook,
@@ -1599,14 +1543,12 @@ Pass the agent's existing callbacks in; they are preserved. Hooks disabled via
 | `DEFENDER_PREVENTION_ENABLED` | `true` | Master switch |
 | `DEFENDER_ENVIRONMENT` | `dev` | Selects the endpoint (`dev`/`staging`/`prod`) |
 | `DEFENDER_WEBHOOK_URL` | — | Overrides the endpoint table |
-| `DEFENDER_WEBHOOK_APP_ID` | — | Resource app id → scope `api://<id>/.default` |
-| `DEFENDER_WEBHOOK_SCOPE` | derived | Explicit scope override |
-| `DEFENDER_AUTH_MODE` | `agent-identity` | `agent-identity` \| `blueprint` \| `federated` |
+| `DEFENDER_WEBHOOK_APP_ID` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` | **Resource** the token is issued for. Not the agent's identity — the caller comes from the FMI chain. Never set this to a client/demo app id. |
+| `DEFENDER_WEBHOOK_SCOPE` | `https://rtp-a365.ai.defender.microsoft.com/.default` | Explicit scope override. Note this resource uses the `https://` form — `api://<id>/.default` fails with `AADSTS500011`. |
 | `DEFENDER_FAIL_MODE` | `open` | Behavior when no verdict is obtained |
 | `DEFENDER_HOOKS` | all four | Comma-separated subset |
 | `DEFENDER_TIMEOUT_SECONDS` | `10` | Per-call timeout |
 | `DEFENDER_MAX_CONTENT_CHARS` | `20000` | Truncation limit |
-| `DEFENDER_FEDERATION_AUDIENCE` | `api://AzureADTokenExchange` | Federated mode only |
 | `AGENT365_AGENT_OBJECT_ID` | — | Optional; webhook stamps from the token when unset |
 
 Reused from the existing A365 setup: `AGENT365_TENANT_ID`, `AGENT365_AGENT_ID`,

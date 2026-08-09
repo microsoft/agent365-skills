@@ -104,6 +104,81 @@ never replaced, and re-running the skill is safe.
 
 ---
 
+## Prevention resource and app role
+
+Authentication is **the same FMI 3-hop chain `instrument-observability` uses** — only
+the target resource, app role, and endpoint differ. Everything else (blueprint
+credential → FMI token with `fmi_path=<agentId>` → Agent Identity → resource token,
+in-process caching, never raising to the caller) is identical, so read
+[instrument-observability](../instrument-observability/SKILL.md) for the shared shape.
+
+| | Observability | Prevention |
+|---|---|---|
+| Resource app id | `9b975845-388f-4429-889e-eab1ef63949c` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` |
+| Resource name | `Agent365Observability` | `Defender for AI Prevention Webhook` |
+| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
+| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
+| Granted to | blueprint SP (agents inherit via FMI) | blueprint SP (agents inherit via FMI) |
+| Granted by | `a365 setup all` (automatic) | Phase 6 of this skill — not yet in the CLI |
+| Endpoint | Observability ingestion | `/tp/v1/protection/analyze` |
+
+> **`AIAgentsRTP.ToolInvocation` is a reused role.** It is an existing role on the prevention
+> application, adopted so the path works today. A **dedicated role for the A365 SDK
+> prevention flow should replace it**, so prevention access can be granted and revoked
+> independently of tool invocation. Grants bind by role *id*, so a new role means a new
+> grant: run both values during the migration (the server takes a list with OR semantics).
+
+**One caller shape only.** An agent calls with its own Agent 365 Entra identity, obtained
+through the FMI chain, and is authorized by the app role in its token. There is no gateway
+or delegation path and no app allow-list — an application may only report prevention
+activity for itself, and the server binds the agent identity in the payload to the token's
+`oid` rather than trusting the body.
+
+Like the observability scope, these are **known constants** shipped in the generated
+`config.py` (`PREVENTION_RESOURCE_APP_ID`, `PREVENTION_SCOPE`, `PREVENTION_APP_ROLE`) —
+they are not per-agent values and must never be asked for per run.
+`DEFENDER_WEBHOOK_SCOPE` / `DEFENDER_WEBHOOK_APP_ID` exist only as overrides.
+
+> ⚠️ **The scope is an `https://` URI, not `api://`.** The prevention resource's
+> identifier URI is `https://rtp-a365.ai.defender.microsoft.com`; requesting
+> `api://86a21212-…/.default` fails with `AADSTS500011` *even when the service principal
+> exists*, because that URI is not one of the SP's `servicePrincipalNames`. Observability
+> happens to use the `api://<appId>` form, so blindly copying its shape breaks here.
+> The token's `aud` comes back as the raw app id (`86a21212-…`), which is what the
+> webhook matches against `AzureAd:AuthorizedApplications`.
+
+### Provisioning
+
+The grant is performed by **Phase 6** of this skill, which runs
+`scripts/Grant-PreventionRole.ps1`. It does the three operations `a365 setup all` already
+does for `Agent365.Observability.OtelWrite`:
+
+| Step | Observability | Prevention |
+|---|---|---|
+| 1. Resource SP in tenant | `a365 setup all` | `az ad sp create --id 86a21212-…` |
+| 2. Inheritable permissions on blueprint | `a365 setup all` | `a365 setup permissions custom` |
+| 3. App role assigned to **blueprint SP** | `a365 setup all` | Graph `appRoleAssignments` POST |
+
+`make-a365-agent` Phase 2.4 runs the same script, so an agent registered through that skill
+arrives here already granted and Phase 6 reports `already-granted`.
+
+Confirm success by decoding the token: `roles` must contain `AIAgentsRTP.ToolInvocation`.
+A token without it means the endpoint is accepting the call on audience validation alone.
+
+
+**Audience is not identity.** The scope sets `aud` — *which resource* the token is for.
+The caller (`azp`/`oid`) always comes from the FMI chain and is the agent's own identity.
+A correct token looks like:
+
+```
+aud   86a21212-634e-4553-b3d6-e477e4c9d9ec   ← WHAT is being called
+azp   <agenticAppId>                          ← WHO is calling — the agent (v2: azp, not appid)
+oid   <agent identity object id>
+roles ["AIAgentsRTP.ToolInvocation"]          ← authorization
+```
+
+---
+
 ## Phase 0: Load Detection Cache and Validate
 
 > **Task-list display (applies throughout this skill).** This skill creates tasks **inline** via `**TaskCreate** — "..."` markers at the start of each phase, and marks them complete at phase end. The user must see this progress visibly.
@@ -144,17 +219,30 @@ Read from the cache: `agentStack`, `programmingLanguage`, `agentType`, `authMode
 
 **Read** `a365.generated.config.json` (and `.env`). Extract:
 
-| Value | Source | Used for |
+| Value | Source | Becomes |
 |---|---|---|
 | `agentBlueprintId` | `a365.generated.config.json` | `AGENT365_BLUEPRINT_ID` |
 | `agenticAppId` | `a365.generated.config.json` | `AGENT365_AGENT_ID` — the Agent Identity |
-| blueprint client id / secret | `.env` (`AGENT365_CLIENT_ID` / `AGENT365_CLIENT_SECRET`) | FMI hop 1+2 |
-| tenant id | `.env` (`AGENT365_TENANT_ID`) | authority |
+| blueprint client id | `.env` `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID` (= the blueprint id) | `AGENT365_CLIENT_ID` |
+| blueprint client secret | `.env` `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET` | `AGENT365_CLIENT_SECRET` |
+| tenant id | `.env` `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID` | `AGENT365_TENANT_ID` |
+
+> **`a365 setup all` does NOT write the `AGENT365_*` names this skill's code reads.**
+> The CLI writes its own shapes — `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__*` and
+> `AGENT365OBSERVABILITY__*`. An agent that already has A365 observability wired may
+> also have the canonical `AGENT365_*` block, but a freshly registered agent will not.
+> Do not assume they exist: Phase 5 stamps any that are missing, mapping from the
+> sources in the table above. Skipping this produces a confusing runtime failure —
+> `AGENT365_TENANT_ID is not set` — on an agent whose registration is perfectly fine.
 
 If `agenticAppId` is missing, tell the user the agent has no Agent Identity yet
-and that `a365 setup all` must be re-run before prevention can authenticate;
-offer to continue with `DEFENDER_AUTH_MODE=blueprint` (the Blueprint app
-authenticates instead of the per-agent identity) as a documented fallback.
+and that `a365 setup all` must be re-run before prevention can authenticate.
+There is no fallback — the FMI chain needs the agent identity, and no other
+caller shape is accepted by the webhook.
+
+If the blueprint client secret is not in `.env` in any form, retrieve it with
+`a365 setup blueprint --show-secret` (same folder, machine, and user account that
+ran setup). Never echo it — write it straight into `.env`.
 
 **TaskUpdate** — complete.
 
@@ -175,6 +263,7 @@ authenticates instead of the per-agent identity) as a documented fallback.
 | Dev (Recommended for first wiring) | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` |
 | Staging | `https://prevention.thirdparty.stg.ai.defender.microsoft.com/tp/v1/protection/analyze` |
 | Prod | `https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze` |
+
 
 **Question 2 — Fail mode** (behavior when the webhook is unreachable, times out,
 or returns an error):
@@ -265,17 +354,25 @@ and create the files it specifies, adapting the package name to the agent:
 
 Non-negotiable rules for this phase:
 
-1. **Never write a secret into source.** Every credential is read from the
+1. **`entra_auth.py` is `observability/token_provider.py` with a different scope.**
+   If the agent already has observability wired, start from that file and change only:
+   the scope (`PREVENTION_SCOPE`), the resolver name (`get_defender_token`), and the
+   error strings. The FMI 3-hop chain, the in-process cache, and the never-raise
+   contract are identical and must stay identical — do not invent a second token flow.
+   There is exactly **one** flow: blueprint credential → FMI token (`fmi_path=<agentId>`)
+   → agent identity → prevention token. No gateway, no federation, no client-secret
+   shortcut.
+2. **Never write a secret into source.** Every credential is read from the
    environment.
-2. **Token acquisition never raises to the caller.** It returns an empty string
+3. **Token acquisition never raises to the caller.** It returns an empty string
    and lets the hook apply the fail policy.
-3. **The webhook client never raises.** Transport/auth/protocol errors are folded
+4. **The webhook client never raises.** Transport/auth/protocol errors are folded
    into a decision whose `block` value follows the fail mode.
-4. **`sessionContext` must be non-null** in every AISession, or the rule engine
+5. **`sessionContext` must be non-null** in every AISession, or the rule engine
    fails the evaluation open and silently allows everything.
-5. **`environment.agent.id` must set the `a365` case** — agent identity is still
+6. **`environment.agent.id` must set the `a365` case** — agent identity is still
    resolved from that oneof; a session without it is rejected.
-6. **Omit `entra` unless a non-empty `objectId` is configured.** An empty
+7. **Omit `entra` unless a non-empty `objectId` is configured.** An empty
    `objectId` is invalid; the webhook stamps it from the authenticated token.
 
 **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/references/defender-webhook.md`
@@ -342,18 +439,65 @@ Append to `.env` (do not duplicate keys that already exist):
 # ── Microsoft Defender prevention (Security for AI) — added by instrument-security ──
 DEFENDER_PREVENTION_ENABLED=true
 DEFENDER_ENVIRONMENT=dev
-DEFENDER_WEBHOOK_APP_ID=<resource app id the webhook validates the audience against>
-DEFENDER_AUTH_MODE=agent-identity
+# Override only. The prevention resource is a known constant (see "Prevention
+# resource and app role"), exactly as Observability uses api://9b975845-…/.default.
+# Sets the token AUDIENCE, never the caller identity.
+# DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped PREVENTION_SCOPE constant>
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
 DEFENDER_TIMEOUT_SECONDS=10
 DEFENDER_MAX_CONTENT_CHARS=20000
 ```
 
+**Also stamp the canonical `AGENT365_*` identity values if they are absent** —
+`a365 setup all` does not write them (see Step 0.3). Map them from
+`a365.generated.config.json` and the CLI's own `.env` entries:
+
+```bash
+# ── Agent 365 identity — consumed by the prevention config ──
+AGENT365_TENANT_ID=<CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID>
+AGENT365_AGENT_ID=<agenticAppId from a365.generated.config.json>
+AGENT365_BLUEPRINT_ID=<agentBlueprintId from a365.generated.config.json>
+AGENT365_CLIENT_ID=<agentBlueprintId — the blueprint app is the FMI client>
+AGENT365_CLIENT_SECRET=<CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET>
+AGENT365_AGENT_NAME=<agent name>
+AGENT365_USE_MANAGED_IDENTITY=false
+```
+
+Without these the agent fails at runtime with `AGENT365_TENANT_ID is not set`,
+which looks like a broken registration but is only a naming mismatch.
+
 **Forward the variables to the deployed runtime.** Local `.env` is not visible to
-a hosted agent. For Vertex AI Agent Engine, add the `DEFENDER_*` keys to the
-`env_vars` passed to `agent_engines.create/update` in `deploy.py`. For other
-hosts, set them at the platform level (`az webapp config appsettings set`,
+a hosted agent. For Vertex AI Agent Engine, add the keys to the `env_vars` passed
+to `agent_engines.create/update` in `deploy.py`:
+
+```python
+# A365 Security — added by instrument-security skill
+DEFENDER_ENV_KEYS = (
+    "DEFENDER_PREVENTION_ENABLED",
+    "DEFENDER_ENVIRONMENT",
+    "DEFENDER_WEBHOOK_URL",
+    "DEFENDER_WEBHOOK_APP_ID",
+    "DEFENDER_WEBHOOK_SCOPE",
+    "DEFENDER_FAIL_MODE",
+    "DEFENDER_HOOKS",
+    "DEFENDER_TIMEOUT_SECONDS",
+    "DEFENDER_MAX_CONTENT_CHARS",
+    "AGENT365_AGENT_OBJECT_ID",
+    "AGENT365_PLATFORM_AGENT_ID",
+    "AGENT365_PLATFORM_TYPE",
+)
+
+for key in DEFENDER_ENV_KEYS:          # inside build_env_vars()
+    value = os.environ.get(key)
+    if value:
+        env_vars[key] = value
+```
+
+The `AGENT365_*` identity keys must be forwarded the same way — most deploy
+scripts already do this for observability; verify rather than assume.
+
+For other hosts, set them at the platform level (`az webapp config appsettings set`,
 `gcloud run services update --set-env-vars`, `eb setenv`, …). Say this explicitly
 to the user — silently-missing env vars in the cloud is the most common reason
 prevention appears wired but never runs.
@@ -362,23 +506,56 @@ prevention appears wired but never runs.
 
 ---
 
-## Phase 6: Verify Permissions
+## Phase 6: Grant the Prevention App Role
 
-**TaskCreate** — "Verify the agent identity can reach the prevention resource"
+**TaskCreate** — "Grant the prevention app role to the agent's blueprint"
 
-The agent identity must be able to acquire a token for the prevention resource
-(`api://<DEFENDER_WEBHOOK_APP_ID>/.default`), and the webhook must accept that
-audience.
+The agent's token must carry `AIAgentsRTP.ToolInvocation` or the call is unauthorized.
+`a365 setup all` does **not** grant it yet (it does the equivalent automatically for
+`Agent365.Observability.OtelWrite`), so this skill performs the grant itself.
 
-Check `a365.generated.config.json` → `resourceConsents` and report status. If the
-prevention resource is absent, surface the handoff rather than attempting to
-grant anything: permission grants require a Global Administrator, and this skill
-never mutates Graph. Tell the user which resource app id needs consent for which
-blueprint, and that `a365 setup all` prints the GA script.
+Run the packaged script from the agent project folder. It takes no arguments — everything
+is discovered from `a365.generated.config.json`:
 
-A `401`/`403` from the webhook, or an `AADSTS500011`/`AADSTS65001` from the token
-endpoint, means this step is incomplete — say so plainly instead of reporting a
-generic failure.
+```bash
+pwsh ${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/scripts/Grant-PreventionRole.ps1 -Json
+```
+
+It performs the three operations `a365 setup all` would:
+
+1. `az ad sp create` — provisions the prevention resource SP in the tenant (without it the
+   token request fails `AADSTS500011`).
+2. `a365 setup permissions custom` — adds the resource to the blueprint's required access
+   and inheritable permissions.
+3. Graph `appRoleAssignments` POST on the **blueprint** SP — the actual grant. Agent
+   identities inherit it through the FMI chain, so one grant covers every agent from that
+   blueprint.
+
+**All three are required.** Steps 1–2 alone leave the token with **no `roles` claim** —
+inheritable permissions describe what *may* be inherited; they are not a grant.
+
+Parse the single-line JSON result and act on `status`:
+
+| `status` | Meaning | What to do |
+|---|---|---|
+| `already-granted` | Role present — including once the SDK grants it | Nothing. Report and move on. |
+| `granted` | The three operations succeeded | Report that prevention is authorized for every agent from this blueprint. |
+| `needs-admin` | Caller lacks privileges | Show `message` verbatim — it carries the exact command for a Global Administrator. The agent will run fail-open until it is done; say so plainly. |
+| `error` | Setup incomplete | Show `message`; usually `a365 setup all` has not run in this folder. |
+
+The script is **idempotent and self-retiring**: it checks first and exits immediately when
+the role is already granted. Once the A365 SDK grants it during `a365 setup all`, every run
+returns `already-granted` and this phase can be deleted.
+
+Use `-WhatIf` to report state without changing anything.
+
+**Do not** attempt any other authorization path. There is no app allow-list and no gateway
+delegation — an application may only report prevention activity for itself, and the app role
+is the only way in. If the grant cannot be completed, say the agent is unauthorized rather
+than looking for a bypass.
+
+Entra propagation can take up to a minute, and a token cached before the grant will not
+carry the role — so a smoke test immediately after granting may still show `401`.
 
 **TaskUpdate** — complete.
 

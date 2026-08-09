@@ -55,6 +55,24 @@ treat them as "no verdict obtained" and apply the configured fail mode.
 
 ## 2. Authentication — the agent's own Entra identity
 
+**This is the same FMI 3-hop chain `instrument-observability` uses.** Only the target
+resource, app role, and endpoint differ; the token flow, caching, and failure
+behavior are identical. If you have wired observability, this will look familiar by
+design — the two should not diverge.
+
+| | Observability | Prevention |
+|---|---|---|
+| Resource | `9b975845-388f-4429-889e-eab1ef63949c` (`Agent365Observability`) | `86a21212-634e-4553-b3d6-e477e4c9d9ec` (`Defender for AI Prevention Webhook`) |
+| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
+| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
+| Role grant | automatic via `a365 setup all` | manual today |
+
+> ⚠️ **The prevention scope is the `https://` form, not `api://`.** Every other A365
+> scope follows the `api://<app-id>/.default` convention, so deriving it from the app
+> id is the natural guess — and it fails with `AADSTS500011` *even when the service
+> principal exists*, because that URI is not in the resource's `servicePrincipalNames`.
+> The error reads like a missing SP and will send you down the wrong path.
+
 `make-a365-agent` / `a365 setup all` provisions two Entra objects:
 
 | Object | Value in `a365.generated.config.json` | Role |
@@ -83,14 +101,52 @@ Blueprint (client secret or managed identity)
 The resulting token carries the agent's identity:
 
 ```
-aud   api://<prevention resource app id>
-appid <agenticAppId>       ← the agent, not a shared gateway app
+aud   86a21212-634e-4553-b3d6-e477e4c9d9ec   ← WHAT is being called (raw app id)
+azp   <agenticAppId>       ← WHO is calling — the agent (v2 token: azp, not appid)
 oid   <agent identity object id>
 tid   <tenant>
+roles ["AIAgentsRTP.ToolInvocation"]         ← authorization
 ```
+
+`aud` and `azp` answer different questions and must not be conflated. The scope only
+sets `aud`; the caller identity always comes from the FMI chain above.
+
+> ⚠️ **A 403 with a valid `roles` claim is not your bug.** This is an AAD v2 token, so
+> the caller appears in `azp` and `appid` is absent. Webhook-side code that reads only
+> `appid` leaves every legitimate caller unidentified and 403s it — the same trap the
+> observability trace-ingestion handler calls out. Nothing in the agent can fix that;
+> check the token has `roles`, then hand it to whoever owns the webhook.
+
+> ⚠️ **Not granted by `a365 setup all` yet.** The CLI does this automatically for
+> `Agent365.Observability.OtelWrite` but has no step for prevention, so `make-a365-agent`
+> Phase 2.4 performs the three equivalent operations: (1) `az ad sp create --id 86a21212-…`
+> so the resource exists in the tenant (else `AADSTS500011`), (2)
+> `a365 setup permissions custom --resource-app-id 86a21212-… --scopes AIAgentsRTP.ToolInvocation`
+> for inheritable permissions, and (3) an app role assignment on the **blueprint** service
+> principal. Verified: with only (1)+(2) the token has **no `roles` claim** — inheritable
+> permissions are not a grant. Granting on the blueprint (not the agent identity) makes
+> every agent minted from it inherit the role, exactly as OtelWrite does. The durable fix
+> is for the A365 CLI to mirror its OtelWrite grant; the CLI ships as an external NuGet
+> tool, so it cannot be changed from these repositories.
 
 Cache the token in-process until shortly before `exp`; every hook otherwise pays
 a token round trip.
+
+### Authorization
+
+The token must carry the app role `AIAgentsRTP.ToolInvocation` in its `roles` claim. The
+server checks it with OR semantics over a configured list, mirroring the observability
+`RequireAppRole` handler.
+
+**One caller shape only.** An agent calls with its own Entra identity and is authorized by
+the role. There is no gateway/delegation path and no app allow-list: the server binds
+`environment.agent.id.entra.objectId` to the token's `oid` and rejects a body that names a
+different agent principal, so an application can only report activity for itself.
+
+> `AIAgentsRTP.ToolInvocation` is an existing role adopted so the path works today. A
+> dedicated role for the A365 SDK prevention flow should replace it, letting prevention
+> access be granted and revoked independently of tool invocation. Grants bind by role *id*,
+> so run both values during the migration.
 
 ### Alternative modes
 
@@ -242,20 +298,12 @@ trusting the body:
 
 - Tenant is taken from the token's `tid`; a conflicting tenant anywhere in the body
   is rejected (`403`) rather than honored.
-- `callerIdentity.appId` / `entraObjectId` are stamped from `appid`/`oid`.
-- When the caller **is** the agent (its token `appid`/`oid` matches the agent id
-  declared in the body), `environment.agent.id.entra.objectId` is set from `oid`,
-  overriding whatever the body claimed. This is why a client may safely omit
-  `entra` entirely.
-- When the caller asserts an `entra.objectId` belonging to a **different**
-  principal, the request is rejected (`403`) unless the caller is an explicitly
-  configured trusted gateway. Without that rule, any authenticated app in the
-  tenant could have prevention decisions and audit records attributed to another
-  agent.
-- Platform-only identities (hosts with no Entra principal, e.g. AWS AgentCore)
-  send no `entra` block and pass through unchanged.
+- `callerIdentity.appId` / `entraObjectId` are stamped from `appid`/`azp` and `oid`.
+- `environment.agent.id.entra.objectId` is set from the token's `oid` — always. The caller
+  *is* the agent, so a body naming a different agent principal is rejected (`403`).
+- Authorization is the `AIAgentsRTP.ToolInvocation` app role. There is no app allow-list
+  and no gateway delegation path.
 
 Consequently, identity fields sent by the agent are correlation hints — never a
 trust boundary. Send the agent id you know (`a365` / `platform`) and leave
-`entra.objectId` to the webhook unless you are a trusted gateway reporting for
-another agent.
+`entra.objectId` to the webhook.
