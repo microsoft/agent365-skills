@@ -289,11 +289,11 @@ wrapping.
 **Summary of what this skill does:**
 1. Loads the detection cache and confirms the agent has a Blueprint **and** an Agent Identity (`agenticAppId` in `a365.generated.config.json`). Hard-stops and runs `a365-setup` when the cache is missing; never invents defaults.
 2. Asks three questions (skipping any already answered in `.env`): Defender **environment** (dev/staging/prod), **fail mode** (open = allow when unreachable, closed = block), and which **inspection points** to enable (default: all four).
-3. Detects the platform. **Google ADK is implemented**; any other platform hard-stops at Phase 1 with an explanation, leaving no partial wiring.
+3. Detects the platform. **Google ADK is verified end-to-end**; .NET and Node.js have best-effort adapters (protocol and auth are ports of the verified flow, hook wiring is unverified and marked as such); other platforms hard-stop at Phase 1, leaving no partial wiring.
 4. Creates a `security/` package split into a platform-agnostic core (`config.py`, `entra_auth.py`, `ai_session.py`, `defender_client.py`) and a per-platform adapter (`adapters/google_adk.py`), so AWS and others are added as new adapters.
 5. Wires the four ADK callbacks through `secure_agent_callbacks(...)`, which **composes** rather than appends — ADK stops at the first callback returning a value, so appending would silently skip security whenever an existing hook rewrote the payload. `before_*`: existing hooks run first and a short-circuit is respected. `after_*`: existing hooks always run (closing tracing scopes), then security inspects the **effective** value and a block verdict wins.
 6. Stamps `DEFENDER_*` into `.env` **and** forwards them through the deployment script's `env_vars` — deployed runtimes do not read `.env`, and missing cloud env vars are the most common reason prevention looks wired but never runs.
-7. Reports permission status from `resourceConsents` and surfaces a **GA handoff** when the prevention resource is not granted. Never grants permissions itself.
+7. Verifies the prevention app role is present in the token (`roles` must contain `AIAgentsRTP.ToolInvocation`). `a365 setup all` grants it; if it is missing, setup was cancelled at its `[y/N]` prompt and must be re-run. Never grants permissions itself.
 8. Smoke-tests both paths: a benign turn (one verdict per enabled hook, all allowed) and a known-bad turn (blocked, with reason and diagnostics surfaced).
 
 **Enforcement mapping (Google ADK):**
@@ -305,7 +305,7 @@ wrapping.
 | `before_tool_callback` | tool name + args | `dict` | tool never executes |
 | `after_tool_callback` | tool result | `dict` | replaces what the model sees (indirect prompt-injection checkpoint) |
 
-**Authentication — the agent's existing Entra identity.** Uses the same FMI 3-hop chain as the observability exporter: Blueprint credential → FMI token (`api://AzureADTokenExchange/.default`, `fmi_path=<agenticAppId>`) → Agent Identity → Defender token. The webhook therefore sees `appid`/`oid` of the **agent**, not a shared gateway app. Modes: `agent-identity` (default), `blueprint` (fallback before per-agent grants exist), `federated` (workload identity for secretless hosts). Tokens are cached in-process; acquisition never raises — it returns empty and the fail policy applies.
+**Authentication — the agent's existing Entra identity.** FMI 3-hop chain: Blueprint credential → FMI token (`api://AzureADTokenExchange/.default`, `fmi_path=<agenticAppId>`) → Agent Identity → Defender token (scope `https://rtp-a365.ai.defender.microsoft.com/.default`, note the `https://` form — `api://<appId>` fails `AADSTS500011`). The webhook therefore sees the `azp`/`oid` of the **agent**, not a shared gateway app. This is the only supported flow — no gateway, delegation, or app allow-list. Tokens are cached in-process; acquisition never raises — it returns empty and the fail policy applies.
 
 **AISession rules that cause silent failure when broken:** `sessionContext` must be non-null (a null one makes the rule engine fail open and allow everything); `environment.agent.id` must set the `a365` case (agent identity is resolved from that deprecated oneof); `entra` must be omitted unless `objectId` is non-empty (the webhook stamps it from the token's `oid`); `evaluationPolicy` must be `EVALUATION_POLICY_TYPE_BLOCKING`.
 

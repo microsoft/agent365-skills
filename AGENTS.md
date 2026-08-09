@@ -24,7 +24,7 @@ This plugin instruments and configures A365 agents. It contains eight skills:
 
 **Supported languages for `instrument-observability`:** .NET AgentFramework · Node.js (LangChain · OpenAI · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
 
-**Supported platforms for `instrument-security`:** Google ADK (Vertex AI Agent Engine) ✅ implemented. Other platforms **hard-stop** at Phase 1 — the platform-agnostic core (config, Entra auth, AISession builders, webhook client) is reusable, but each host needs its own adapter under `security/adapters/`. AWS Bedrock AgentCore is the next planned adapter.
+**Supported platforms for `instrument-security`:** Google ADK (Vertex AI Agent Engine) ✅ verified end-to-end. .NET and Node.js ship best-effort adapters — protocol and auth layers are ports of the verified flow, hook wiring is unverified. Other platforms hard-stop at Phase 1; the platform-agnostic core (config, Entra auth, AISession builders, webhook client) is reusable, only the adapter under `security/adapters/` is missing.
 
 **Supported agent stacks for `add-workiq-tools`** (verified against Agent365-{dotnet,python,nodejs}):
 - **.NET:** Agent Framework · Semantic Kernel (different API: `AddToolServersToAgentAsync`, not `GetMcpToolsAsync`) · Azure AI Foundry (best-effort — package published, no Microsoft sample)

@@ -276,6 +276,7 @@ Monitor output carefully:
 
 | Condition | Action |
 |-----------|--------|
+| `Setup cancelled.` after the blueprint was created | An interactive `[y/N]` prompt defaulted to **N** — under a chat tool there is no stdin. The blueprint exists but the app roles and agent identity do not (`a365.generated.config.json` has no `agenticAppId`, `completed: false`). Re-run with the answers piped: `@('y','y','y','y') \| a365 setup all …`, or hand the command to the user for a real terminal. Re-running reuses the blueprint. |
 | `Graph API Forbidden / Authorization_RequestDenied` | Stop. Resolve permission issue (return to a365-setup Step 2 or grant the role). Then re-run. |
 | Interactive browser auth required | If headless, instruct user to use `az login --device-code` first. |
 | `managerApplications` error / blueprint rejected | Blueprint was created before May 2025 and lacks `managerApplications`. Delete and re-run `a365 setup all`, or patch via Graph API. |
@@ -288,16 +289,7 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **App roles are granted automatically** by `a365 setup all` — both
-   `Agent365.Observability.OtelWrite` and `AIAgentsRTP.ToolInvocation` (Defender
-   prevention) are assigned to the blueprint, and agent identities inherit them through
-   the FMI chain. No GA consent step is required for newly provisioned agents.
-   - These land only if the `Assign these application permissions now? [y/N]` prompt was
-     answered **y**. If setup printed `Setup cancelled.`, the roles are missing — re-run
-     and answer the prompts.
-   - If the CLI output includes a "Permission Grants" action item (upgrade scenario for
-     pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a
-     Global Admin.
+2. **App roles are granted automatically** by `a365 setup all` — `Agent365.Observability.OtelWrite` and `AIAgentsRTP.ToolInvocation` (Defender prevention) are both assigned to the blueprint, and agent identities inherit them through the FMI chain. No GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.

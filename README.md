@@ -283,15 +283,15 @@ Security4AI `AISession` to the Defender third-party prevention webhook
 | After tool | tool result | result the model sees is replaced (indirect prompt-injection checkpoint) |
 
 **Authentication uses the agent's own Entra identity** — the Agent Identity provisioned by
-`a365 setup all`, via the same FMI 3-hop chain the observability exporter uses. The token the
-webhook receives carries the agent's `appid`/`oid`, so verdicts bind to a real agent rather than a
-shared gateway app. No new app registration, and no credential in source.
+`a365 setup all`, via an FMI 3-hop chain. The token the webhook receives carries the agent's
+`azp`/`oid`, so verdicts bind to a real agent rather than a shared gateway app. No new app
+registration, and no credential in source.
 
-**Platform coverage.** Google ADK (Vertex AI Agent Engine) is implemented, wiring
+**Platform coverage.** Google ADK (Vertex AI Agent Engine) is verified end-to-end, wiring
 `before_agent_callback`, `after_agent_callback`, `before_tool_callback`, and
-`after_tool_callback`. Generated code separates the platform-agnostic core (config, Entra auth,
-AISession builders, webhook client) from a thin per-platform adapter, so AWS and other hosts are
-added as new adapters without touching the core.
+`after_tool_callback`. .NET and Node.js ship best-effort adapters. Generated code separates the
+platform-agnostic core (config, Entra auth, AISession builders, webhook client) from a thin
+per-platform adapter, so other hosts are added as new adapters without touching the core.
 
 Existing callbacks are **composed, never replaced** — the agent's own hooks still run (closing
 tracing scopes, redacting payloads), and security inspects the effective result and has the final

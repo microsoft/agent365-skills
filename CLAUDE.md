@@ -113,20 +113,15 @@ agent365-skills/
    not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
 12. **`instrument-security` enforces, it does not provision.** It wires runtime Defender
-   prevention hooks that inspect prompts, responses, tool arguments, and tool results, and
-   block on the webhook verdict. It authenticates with the agent's **existing** Agent 365
-   Entra identity (the FMI 3-hop chain from the Blueprint created by `make-a365-agent`) — it
-   never creates Entra objects, never grants permissions (GA handoff only), and never writes a
-   credential into source. Existing agent callbacks are **composed, never replaced**: the
-   agent's own hooks run first (closing tracing scopes and applying any redaction) and
-   security inspects the *effective* result, so appending to an ADK callback list — which
-   stops at the first non-`None` return — is never correct. Two outcomes must stay distinct:
-   a real verdict (`200` + `blockAction`) versus no verdict (auth/transport/`4xx`/`5xx`),
-   which resolves via the configured `DEFENDER_FAIL_MODE` (`open` allows, `closed` blocks) and
-   is always logged with an `evaluated` flag — without it, a masked auth failure under
-   fail-open is indistinguishable from a genuine allow. Platform-specific code lives only in
-   `security/adapters/`; the config, Entra auth, AISession builders, and webhook client are
-   platform-agnostic and shared.
+   prevention hooks and authenticates with the agent's **existing** Agent 365 identity (the
+   FMI 3-hop chain from the Blueprint) — it never creates Entra objects, grants permissions,
+   or writes a credential into source. Existing agent callbacks are **composed, never
+   replaced**: an ADK callback list stops at the first non-`None` return, so appending after
+   a hook that already rewrites output silently disables prevention. A real verdict
+   (`200` + `blockAction`) and no verdict (auth/transport/`4xx`/`5xx` → `DEFENDER_FAIL_MODE`)
+   must stay distinguishable in logs via the `evaluated` flag — otherwise a masked auth
+   failure under fail-open looks exactly like a genuine allow. Platform-specific code lives
+   only in `security/adapters/`.
 
 ---
 
