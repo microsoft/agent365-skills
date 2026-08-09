@@ -134,10 +134,12 @@ or delegation path and no app allow-list — an application may only report prev
 activity for itself, and the server binds the agent identity in the payload to the token's
 `oid` rather than trusting the body.
 
-These are **known constants** shipped in the generated config
-(`PREVENTION_RESOURCE_APP_ID`, `PREVENTION_SCOPE`, `PREVENTION_APP_ROLE`) —
-they are not per-agent values and must never be asked for per run.
-`DEFENDER_WEBHOOK_SCOPE` / `DEFENDER_WEBHOOK_APP_ID` exist only as overrides.
+These are **code constants**, not environment variables — `DEFENDER_RESOURCE_APP_ID`,
+`DEFENDER_SCOPE`, `DEFENDER_APP_ROLE`, and `DEFENDER_ENDPOINT` are declared in the
+generated config module. They are not per-agent values and must never be asked for per
+run. Setting them in `.env` does nothing; the matching overrides are the
+`DEFENDER_WEBHOOK_*` environment variables (`DEFENDER_WEBHOOK_SCOPE`,
+`DEFENDER_WEBHOOK_APP_ID`, `DEFENDER_WEBHOOK_URL`).
 
 > ⚠️ **The scope is an `https://` URI, not `api://`.** The prevention resource's
 > identifier URI is `https://rtp-a365.ai.defender.microsoft.com`; requesting
@@ -495,10 +497,10 @@ Append to `.env` (do not duplicate keys that already exist):
 
 ```bash
 # ── Microsoft Defender prevention (Security for AI) — added by instrument-security ──
-DEFENDER_PREVENTION_ENABLED=true
+DEFENDER_ENABLED=true
 # Endpoint and resource are shipped constants — overrides only, normally unset.
 # DEFENDER_WEBHOOK_URL=<override only — defaults to the shipped DEFENDER_ENDPOINT constant>
-# DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped PREVENTION_SCOPE constant>
+# DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped DEFENDER_SCOPE constant>
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
 DEFENDER_TIMEOUT_SECONDS=10
@@ -534,7 +536,7 @@ to `agent_engines.create/update` in `deploy.py`:
 ```python
 # A365 Security — added by instrument-security skill
 DEFENDER_ENV_KEYS = (
-    "DEFENDER_PREVENTION_ENABLED",
+    "DEFENDER_ENABLED",
     "DEFENDER_WEBHOOK_URL",
     "DEFENDER_WEBHOOK_APP_ID",
     "DEFENDER_WEBHOOK_SCOPE",

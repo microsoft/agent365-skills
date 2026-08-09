@@ -167,12 +167,12 @@ DEFENDER_ENDPOINT = (
 # Note the identifier URI is an https:// form, NOT api:// — requesting
 # api://86a21212-.../.default fails with AADSTS500011 even when the service
 # principal is present, because that URI is not one of the SP's names.
-PREVENTION_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
-PREVENTION_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
+DEFENDER_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
+DEFENDER_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
 
 # Application role the agent identity must hold to call the prevention endpoint.
 # Granted to the Agent Identity service principal, not the blueprint.
-PREVENTION_APP_ROLE = "AIAgentsRTP.ToolInvocation"
+DEFENDER_APP_ROLE = "AIAgentsRTP.ToolInvocation"
 
 # The four inspection points supported. Platform adapters map their native
 # hooks onto these names.
@@ -305,16 +305,16 @@ def load_config() -> SecurityConfig:
     #   1. DEFENDER_WEBHOOK_SCOPE  — full override for a non-standard resource
     #   2. DEFENDER_WEBHOOK_APP_ID — legacy override; kept for callers that pin an
     #      app whose identifier URI really is the api:// form
-    #   3. PREVENTION_SCOPE        — the shipped constant (normal case)
+    #   3. DEFENDER_SCOPE        — the shipped constant (normal case)
     webhook_app_id = _env("DEFENDER_WEBHOOK_APP_ID")
     scope = (
         _env("DEFENDER_WEBHOOK_SCOPE")
         or (f"api://{webhook_app_id}/.default" if webhook_app_id else "")
-        or PREVENTION_SCOPE
+        or DEFENDER_SCOPE
     )
 
     return SecurityConfig(
-        enabled=_env_bool("DEFENDER_PREVENTION_ENABLED", True),
+        enabled=_env_bool("DEFENDER_ENABLED", True),
         webhook_url=webhook_url,
         tenant_id=_env("AGENT365_TENANT_ID"),
         agent_id=agent_id,
@@ -398,7 +398,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import msal
 
-from .config import PREVENTION_SCOPE, SecurityConfig, get_config
+from .config import DEFENDER_SCOPE, SecurityConfig, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -524,7 +524,7 @@ def get_defender_token(cfg: SecurityConfig | None = None) -> str:
     return token
 
 
-__all__ = ["FMI_SCOPE", "PREVENTION_SCOPE", "get_defender_token", "reset_cache"]
+__all__ = ["FMI_SCOPE", "DEFENDER_SCOPE", "get_defender_token", "reset_cache"]
 ```
 
 ### `security/ai_session.py`
@@ -1548,7 +1548,7 @@ Pass the agent's existing callbacks in; they are preserved. Hooks disabled via
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEFENDER_PREVENTION_ENABLED` | `true` | Master switch |
+| `DEFENDER_ENABLED` | `true` | Master switch |
 | `DEFENDER_WEBHOOK_URL` | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` | Overrides the shipped `DEFENDER_ENDPOINT` constant |
 | `DEFENDER_WEBHOOK_APP_ID` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` | **Resource** the token is issued for. Not the agent's identity — the caller comes from the FMI chain. Never set this to a client/demo app id. |
 | `DEFENDER_WEBHOOK_SCOPE` | `https://rtp-a365.ai.defender.microsoft.com/.default` | Explicit scope override. Note this resource uses the `https://` form — `api://<id>/.default` fails with `AADSTS500011`. |
@@ -1598,7 +1598,7 @@ Troubleshooting:
 
 | Symptom | Cause |
 |---|---|
-| No `[defender]` lines at all | `DEFENDER_PREVENTION_ENABLED=false`, hooks not wired, or env vars missing in the deployed runtime |
+| No `[defender]` lines at all | `DEFENDER_ENABLED=false`, hooks not wired, or env vars missing in the deployed runtime |
 | `evaluated=false` with `block=false` | No verdict obtained and fail-open masked it — read `error`/`httpStatus` |
 | Known-bad allowed | Indicator never reached an inspected field, or the config errors are being logged and hooks skipped |
 | One verdict instead of four | Only one hook is enabled, or existing callbacks short-circuit before security (check composition) |

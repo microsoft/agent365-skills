@@ -67,12 +67,12 @@ public sealed class SecurityOptions
     // Note the identifier URI is an https:// form, NOT api:// — requesting
     // api://86a21212-.../.default fails with AADSTS500011 even when the service
     // principal is present, because that URI is not one of the SP's names.
-    public const string PreventionResourceAppId = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
-    public const string PreventionScope = "https://rtp-a365.ai.defender.microsoft.com/.default";
+    public const string DefenderResourceAppId = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
+    public const string DefenderScope = "https://rtp-a365.ai.defender.microsoft.com/.default";
 
     // Application role the agent identity must hold to call the prevention
     // endpoint. Granted to the Agent Identity service principal, not the blueprint.
-    public const string PreventionAppRole = "AIAgentsRTP.ToolInvocation";
+    public const string DefenderAppRole = "AIAgentsRTP.ToolInvocation";
 
     public bool Enabled { get; set; } = true;
     public string? WebhookUrl { get; set; }
@@ -183,7 +183,7 @@ public sealed class PreventionTokenProvider : IPreventionTokenProvider
                 .Build();
 
             var result = await agentApp
-                .AcquireTokenForClient([SecurityOptions.PreventionScope])
+                .AcquireTokenForClient([SecurityOptions.DefenderScope])
                 .ExecuteAsync(ct);
 
             _token = result.AccessToken;

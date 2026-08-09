@@ -47,12 +47,12 @@ export const DEFENDER_ENDPOINT =
 // Note the identifier URI is an https:// form, NOT api:// — requesting
 // api://86a21212-.../.default fails with AADSTS500011 even when the service
 // principal is present, because that URI is not one of the SP's names.
-export const PREVENTION_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
-export const PREVENTION_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default";
+export const DEFENDER_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
+export const DEFENDER_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default";
 
 // Application role the agent identity must hold to call the prevention endpoint.
 // Granted to the Agent Identity service principal, not the blueprint.
-export const PREVENTION_APP_ROLE = "AIAgentsRTP.ToolInvocation";
+export const DEFENDER_APP_ROLE = "AIAgentsRTP.ToolInvocation";
 
 // The four inspection points supported. Platform adapters map their native
 // hooks onto these names.
@@ -85,11 +85,11 @@ export function getConfig(): SecurityConfig {
   const hooksRaw = process.env.DEFENDER_HOOKS;
 
   return {
-    enabled: truthy(process.env.DEFENDER_PREVENTION_ENABLED, true),
+    enabled: truthy(process.env.DEFENDER_ENABLED, true),
     url: process.env.DEFENDER_WEBHOOK_URL || DEFENDER_ENDPOINT,
     // Override only — falls back to the shipped constant. Deriving
     // api://<appId>/.default here would break with AADSTS500011.
-    scope: process.env.DEFENDER_WEBHOOK_SCOPE || PREVENTION_SCOPE,
+    scope: process.env.DEFENDER_WEBHOOK_SCOPE || DEFENDER_SCOPE,
     failClosed: (process.env.DEFENDER_FAIL_MODE ?? "open").toLowerCase() === "closed",
     timeoutMs: Number(process.env.DEFENDER_TIMEOUT_SECONDS ?? 10) * 1000,
     maxContentChars: Number(process.env.DEFENDER_MAX_CONTENT_CHARS ?? 20000),
@@ -322,7 +322,7 @@ when editing a shared handler — do not restructure them out.
 
 ```bash
 # ── Microsoft Defender prevention (Security for AI) ──
-DEFENDER_PREVENTION_ENABLED=true
+DEFENDER_ENABLED=true
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
 DEFENDER_TIMEOUT_SECONDS=10

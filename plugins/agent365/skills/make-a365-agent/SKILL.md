@@ -276,7 +276,6 @@ Monitor output carefully:
 
 | Condition | Action |
 |-----------|--------|
-| `Setup cancelled.` after the blueprint was created | An interactive `[y/N]` prompt defaulted to **N** — under a chat tool there is no stdin. The blueprint exists but the app roles and agent identity do not (`a365.generated.config.json` has no `agenticAppId`, `completed: false`). Re-run with the answers piped: `@('y','y','y','y') \| a365 setup all …`, or hand the command to the user for a real terminal. Re-running reuses the blueprint. |
 | `Graph API Forbidden / Authorization_RequestDenied` | Stop. Resolve permission issue (return to a365-setup Step 2 or grant the role). Then re-run. |
 | Interactive browser auth required | If headless, instruct user to use `az login --device-code` first. |
 | `managerApplications` error / blueprint rejected | Blueprint was created before May 2025 and lacks `managerApplications`. Delete and re-run `a365 setup all`, or patch via Graph API. |
