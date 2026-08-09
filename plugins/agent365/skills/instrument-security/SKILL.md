@@ -243,6 +243,21 @@ and that `a365 setup all` must be re-run before prevention can authenticate.
 There is no fallback — the FMI chain needs the agent identity, and no other
 caller shape is accepted by the webhook.
 
+> ⚠️ **A missing `agenticAppId` usually means setup was *cancelled*, not that it
+> failed.** `a365 setup all` asks interactive `[y/N]` questions ("Assign these
+> application permissions now?", "Add these permissions to the blueprint
+> programmatically?") and opens a browser for admin consent with a 180s timeout.
+> Under a chat tool there is no stdin, so each prompt defaults to **N** and the
+> CLI prints `Setup cancelled.` — after having already created the blueprint.
+> The result is a half-provisioned folder: `a365.generated.config.json` exists
+> with a blueprint but **no `agenticAppId`** and `"completed": false`.
+>
+> Check `completed` before trusting the file. To re-run non-interactively, pipe
+> the answers (`@('y','y','y','y') | a365 setup all …`), or hand the command to
+> the user to run in a real terminal — see the CLI buffering guidance. Re-running
+> is safe: the CLI reuses the existing blueprint and reports `already assigned`
+> for anything already done.
+
 If the blueprint client secret is not in `.env` in any form, retrieve it with
 `a365 setup blueprint --show-secret` (same folder, machine, and user account that
 ran setup). Never echo it — write it straight into `.env`.
@@ -534,19 +549,29 @@ prevention appears wired but never runs.
 
 ## Phase 6: Grant the Prevention App Role
 
-**TaskCreate** — "Grant the prevention app role to the agent's blueprint"
+**TaskCreate** — "Verify the prevention app role is granted"
 
 The agent's token must carry `AIAgentsRTP.ToolInvocation` or the call is unauthorized.
-`a365 setup all` does **not** grant it yet, so this skill performs the grant itself.
 
-Run the packaged script from the agent project folder. It takes no arguments — everything
-is discovered from `a365.generated.config.json`:
+> ✅ **`a365 setup all` grants this automatically as of CLI 1.1.220.** Setup lists
+> `Defender Prevention API: AIAgentsRTP.ToolInvocation` under "Configuring application
+> permissions" and assigns it alongside the observability role. **Verified end-to-end:**
+> a blueprint provisioned by 1.1.220 yields a token with
+> `roles: ["AIAgentsRTP.ToolInvocation"]` without this phase running at all. On such an
+> agent this phase is a no-op — confirm and move on.
+
+The check is one line — decode the token the agent will actually send and look for the
+role. If it is present, skip the rest of this phase.
+
+For an agent provisioned by an **older CLI**, or where the grant is missing for any other
+reason, run the packaged script from the agent project folder. It takes no arguments —
+everything is discovered from `a365.generated.config.json`:
 
 ```bash
 pwsh ${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/scripts/Grant-PreventionRole.ps1 -Json
 ```
 
-It performs the three operations `a365 setup all` would:
+It performs three operations:
 
 1. `az ad sp create` — provisions the prevention resource SP in the tenant (without it the
    token request fails `AADSTS500011`).
@@ -563,14 +588,13 @@ Parse the single-line JSON result and act on `status`:
 
 | `status` | Meaning | What to do |
 |---|---|---|
-| `already-granted` | Role present — including once the SDK grants it | Nothing. Report and move on. |
+| `already-granted` | Role present — the normal result on CLI 1.1.220+ | Nothing. Report and move on. |
 | `granted` | The three operations succeeded | Report that prevention is authorized for every agent from this blueprint. |
 | `needs-admin` | Caller lacks privileges | Show `message` verbatim — it carries the exact command for a Global Administrator. The agent will run fail-open until it is done; say so plainly. |
 | `error` | Setup incomplete | Show `message`; usually `a365 setup all` has not run in this folder. |
 
 The script is **idempotent and self-retiring**: it checks first and exits immediately when
-the role is already granted. Once the A365 SDK grants it during `a365 setup all`, every run
-returns `already-granted` and this phase can be deleted.
+the role is already granted (verified against a 1.1.220-provisioned blueprint).
 
 Use `-WhatIf` to report state without changing anything.
 
@@ -594,6 +618,23 @@ Python: `python -m compileall -q <agent_package>` and import the agent module.
 Fix any error before continuing. Do not proceed to a smoke test on a project that
 does not import.
 
+Then confirm all four hooks actually landed on the agent object and the token
+carries the role — the two things a smoke test cannot distinguish from a
+misconfiguration:
+
+```python
+from mcp_tools_agent.agent import root_agent          # adapt to the agent package
+for h in ("before_agent_callback", "after_agent_callback",
+          "before_tool_callback", "after_tool_callback"):
+    print(h, bool(getattr(root_agent, h, None)))
+
+from <agent_package>.security import entra_auth
+import base64, json
+t = entra_auth.get_defender_token()
+p = t.split(".")[1]; p += "=" * (-len(p) % 4)
+print(json.loads(base64.urlsafe_b64decode(p)).get("roles"))   # expect ['AIAgentsRTP.ToolInvocation']
+```
+
 **TaskUpdate** — complete.
 
 ---
@@ -601,6 +642,23 @@ does not import.
 ## Phase 8: Smoke Test
 
 **TaskCreate** — "Smoke-test allow and block paths"
+
+> **Public API of the generated package** — use these exact names. They are not
+> guessable; inventing `build_before_agent_session` or `client.evaluate(...)`
+> wastes a round trip on an `AttributeError`.
+>
+> | Purpose | Call |
+> |---|---|
+> | Config | `get_config()` → `SecurityConfig` |
+> | Client | `get_client()` → `DefenderClient` |
+> | Evaluate | `client.analyze(ai_session, *, correlation_id="")` → `DefenderDecision` |
+> | Before-agent session | `build_agent_request_session(cfg, *, prompts, session_id, ...)` |
+> | After-agent session | `build_agent_response_session(cfg, *, ...)` |
+> | Before-tool session | `build_tool_request_session(cfg, *, tool_name, arguments, session_id, ...)` |
+> | After-tool session | `build_tool_response_session(cfg, *, ...)` |
+> | Decision | `.block`, `.evaluated`, `.reason`, `.block_message(subject)` |
+>
+> Every builder takes `cfg` positionally and everything else keyword-only.
 
 Run two turns and show the user the outcome of each:
 

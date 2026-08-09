@@ -295,15 +295,17 @@ Mark Todo 1 as completed.
 
 ---
 
-## Phase 2.4 — Grant the Defender prevention app role
+## Phase 2.4 — Verify the Defender prevention app role
 
-`a365 setup all` grants `Agent365.Observability.OtelWrite` automatically. An equivalent
-grant for `AIAgentsRTP.ToolInvocation` (Defender prevention) is being added to the A365
-SDK; until it ships, this phase performs the same three operations so prevention reaches
-the identical granted-by-default state.
+> ✅ **CLI 1.1.220+ grants this automatically.** `a365 setup all` now lists
+> `Defender Prevention API: AIAgentsRTP.ToolInvocation` under "Configuring application
+> permissions" and assigns it alongside `Agent365.Observability.OtelWrite`. **Verified
+> end-to-end:** a blueprint provisioned by 1.1.220 produces a token with
+> `roles: ["AIAgentsRTP.ToolInvocation"]` with no extra step. On current CLI versions
+> this phase is a no-op — confirm and move on.
 
-Run the packaged script — it needs no arguments and discovers everything from
-`a365.generated.config.json`:
+For an agent provisioned by an **older CLI**, run the packaged script — it needs no
+arguments and discovers everything from `a365.generated.config.json`:
 
 ```bash
 pwsh ${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/scripts/Grant-PreventionRole.ps1 -Json
@@ -313,14 +315,13 @@ Parse the single-line JSON result and act on `status`:
 
 | `status` | Meaning | What to tell the user |
 |---|---|---|
-| `already-granted` | Role already present — including once the SDK grants it | Nothing needed. Do not re-run. |
+| `already-granted` | Role already present — the normal result on CLI 1.1.220+ | Nothing needed. Do not re-run. |
 | `granted` | The three operations succeeded | Prevention is authorized for every agent from this blueprint. |
 | `needs-admin` | Caller lacks privileges | Show the `message` verbatim — it contains the exact command for a Global Administrator. |
 | `error` | Setup incomplete or misconfigured | Show the `message`; usually `a365 setup all` has not run in this folder. |
 
 The script is **idempotent and self-retiring**: it checks first whether the role is already
-granted and exits immediately if so. Once the SDK change ships, every run returns
-`already-granted` and this phase can be deleted outright.
+granted and exits immediately if so (verified against a 1.1.220-provisioned blueprint).
 
 **Skip this phase** only if the user has said the agent will never use Defender prevention.
 

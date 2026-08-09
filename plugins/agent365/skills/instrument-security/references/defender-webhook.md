@@ -191,10 +191,6 @@ Schema: `Security4AI.Schema` (`session.proto`, `activity.proto`,
   "callerIdentity": { "tenantId": "...", "appId": "...", "userAgent": "..." },
   "sessionContext": { "a365": { "id": "<session or invocation id>" } },
   "activities":  [ { /* exactly one activity — see §3.2 */ } ],
-  "evaluationPolicy": {
-    "type": "EVALUATION_POLICY_TYPE_BLOCKING",
-    "threatScenarios": [ { "type": "THREAT_SCENARIO_TYPE_ALL" } ]
-  },
   "timestamp": "2026-01-01T00:00:00.000Z"
 }
 ```
