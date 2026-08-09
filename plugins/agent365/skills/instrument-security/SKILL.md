@@ -158,15 +158,21 @@ lists both roles and assigns them together:
 Configuring application permissions...
     The following application permissions will be granted to the agent blueprint:
         Observability API: Agent365.Observability.OtelWrite
-        Defender Prevention API: AIAgentsRTP.ToolInvocation
+        Defender API: AIAgentsRTP.ToolInvocation
 
     Assign these application permissions now? [y/N]: y
     S2S app role assigned for Observability API
-    S2S app role assigned for Defender Prevention API
+    S2S app role assigned for Defender API
 ```
+
+The resource **label** is server-driven and has already changed once ("Defender
+Prevention API" → "Defender API") without a CLI upgrade — match on the role name
+`AIAgentsRTP.ToolInvocation`, never on the label.
 
 The grant lands on the **blueprint** service principal; agent identities inherit it
 through the FMI chain, so one grant covers every agent minted from that blueprint.
+In Entra the assignment shows against the resource's real display name,
+`Defender for AI Prevention Webhook`.
 
 > ⚠️ **That `[y/N]` prompt must be answered `y`.** Under a chat tool there is no stdin,
 > so it defaults to **N** and the CLI prints `Setup cancelled.` — after having already
