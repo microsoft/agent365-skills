@@ -288,77 +288,19 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **`Agent365.Observability.OtelWrite` is automatically granted** to the agent identity by `a365 setup all` — no GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
+2. **App roles are granted automatically** by `a365 setup all` — both
+   `Agent365.Observability.OtelWrite` and `AIAgentsRTP.ToolInvocation` (Defender
+   prevention) are assigned to the blueprint, and agent identities inherit them through
+   the FMI chain. No GA consent step is required for newly provisioned agents.
+   - These land only if the `Assign these application permissions now? [y/N]` prompt was
+     answered **y**. If setup printed `Setup cancelled.`, the roles are missing — re-run
+     and answer the prompts.
+   - If the CLI output includes a "Permission Grants" action item (upgrade scenario for
+     pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a
+     Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.
-
----
-
-## Phase 2.4 — Verify the Defender prevention app role
-
-> ✅ **CLI 1.1.220+ grants this automatically.** `a365 setup all` now lists
-> `Defender Prevention API: AIAgentsRTP.ToolInvocation` under "Configuring application
-> permissions" and assigns it alongside `Agent365.Observability.OtelWrite`. **Verified
-> end-to-end:** a blueprint provisioned by 1.1.220 produces a token with
-> `roles: ["AIAgentsRTP.ToolInvocation"]` with no extra step. On current CLI versions
-> this phase is a no-op — confirm and move on.
-
-For an agent provisioned by an **older CLI**, run the packaged script — it needs no
-arguments and discovers everything from `a365.generated.config.json`:
-
-```bash
-pwsh ${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/scripts/Grant-PreventionRole.ps1 -Json
-```
-
-Parse the single-line JSON result and act on `status`:
-
-| `status` | Meaning | What to tell the user |
-|---|---|---|
-| `already-granted` | Role already present — the normal result on CLI 1.1.220+ | Nothing needed. Do not re-run. |
-| `granted` | The three operations succeeded | Prevention is authorized for every agent from this blueprint. |
-| `needs-admin` | Caller lacks privileges | Show the `message` verbatim — it contains the exact command for a Global Administrator. |
-| `error` | Setup incomplete or misconfigured | Show the `message`; usually `a365 setup all` has not run in this folder. |
-
-The script is **idempotent and self-retiring**: it checks first whether the role is already
-granted and exits immediately if so (verified against a 1.1.220-provisioned blueprint).
-
-**Skip this phase** only if the user has said the agent will never use Defender prevention.
-
-Verify later with `-WhatIf` (reports state, changes nothing), or by decoding an agent's
-prevention token — `roles` must contain `AIAgentsRTP.ToolInvocation`.
-
-<details>
-<summary>What the script does, if you need to run it by hand</summary>
-
-```powershell
-$generated = Get-Content a365.generated.config.json -Raw | ConvertFrom-Json
-$blueprintSp = $generated.agentBlueprintServicePrincipalObjectId
-$resourceAppId = "86a21212-634e-4553-b3d6-e477e4c9d9ec"   # Defender for AI Prevention Webhook
-
-# 1. Resource SP must exist in the tenant, or the token request fails AADSTS500011.
-az ad sp show --id $resourceAppId 2>$null || az ad sp create --id $resourceAppId
-
-# 2. Inheritable permissions on the blueprint (the CLI owns this shape).
-a365 setup permissions custom --resource-app-id $resourceAppId --scopes AIAgentsRTP.ToolInvocation
-
-# 3. App role assignment on the BLUEPRINT SP — this is the actual grant.
-$preventionSp = az ad sp show --id $resourceAppId --query id -o tsv
-$roleId = az ad sp show --id $resourceAppId --query "appRoles[?value=='AIAgentsRTP.ToolInvocation'].id | [0]" -o tsv
-@{ principalId = $blueprintSp; resourceId = $preventionSp; appRoleId = $roleId } |
-    ConvertTo-Json -Compress | Out-File body.json -Encoding ascii -NoNewline
-az rest --method POST `
-    --url "https://graph.microsoft.com/v1.0/servicePrincipals/$blueprintSp/appRoleAssignments" `
-    --headers "Content-Type=application/json" --body "@body.json"
-Remove-Item body.json
-```
-
-**All three steps are required.** Steps 1–2 alone leave the token with **no `roles` claim** —
-inheritable permissions describe what *may* be inherited, they are not themselves a grant.
-
-**Grant on the blueprint SP, not an individual agent identity.** Every agent identity minted
-from that blueprint then inherits the role through the FMI chain, exactly as `OtelWrite` does.
-</details>
 
 ---
 

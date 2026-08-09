@@ -150,22 +150,29 @@ they are not per-agent values and must never be asked for per run.
 
 ### Provisioning
 
-The grant is performed by **Phase 6** of this skill, which runs
-`scripts/Grant-PreventionRole.ps1` in three steps:
+**`a365 setup all` grants this role.** Under "Configuring application permissions" it
+lists both roles and assigns them together:
 
-| Step | Operation |
-|---|---|
-| 1. Resource SP in tenant | `az ad sp create --id 86a21212-…` |
-| 2. Inheritable permissions on blueprint | `a365 setup permissions custom` |
-| 3. App role assigned to **blueprint SP** | Graph `appRoleAssignments` POST |
+```
+Configuring application permissions...
+    The following application permissions will be granted to the agent blueprint:
+        Observability API: Agent365.Observability.OtelWrite
+        Defender Prevention API: AIAgentsRTP.ToolInvocation
 
-All three are required. With only (1)+(2) the token comes back with **no `roles`
-claim** — inheritable permissions are not a grant.
+    Assign these application permissions now? [y/N]: y
+    S2S app role assigned for Observability API
+    S2S app role assigned for Defender Prevention API
+```
 
-`make-a365-agent` Phase 2.4 runs the same script, so an agent registered through that skill
-arrives here already granted and Phase 6 reports `already-granted`.
+The grant lands on the **blueprint** service principal; agent identities inherit it
+through the FMI chain, so one grant covers every agent minted from that blueprint.
 
-Confirm success by decoding the token: `roles` must contain `AIAgentsRTP.ToolInvocation`.
+> ⚠️ **That `[y/N]` prompt must be answered `y`.** Under a chat tool there is no stdin,
+> so it defaults to **N** and the CLI prints `Setup cancelled.` — after having already
+> created the blueprint. The role is then missing and the token carries no `roles`
+> claim. See Step 0.3 for how to re-run non-interactively.
+
+Confirm by decoding the token: `roles` must contain `AIAgentsRTP.ToolInvocation`.
 A token without it means the endpoint is accepting the call on audience validation alone.
 
 
@@ -566,56 +573,40 @@ prevention appears wired but never runs.
 
 ---
 
-## Phase 6: Grant the Prevention App Role
+## Phase 6: Verify the Prevention App Role
 
 **TaskCreate** — "Verify the prevention app role is granted"
 
 The agent's token must carry `AIAgentsRTP.ToolInvocation` or the call is unauthorized.
+`a365 setup all` grants this (see "Prevention resource and app role"), so this phase
+only **confirms** it — decode the token the agent will actually send:
 
-> ✅ **`a365 setup all` grants this automatically as of CLI 1.1.220.** Setup lists
-> `Defender Prevention API: AIAgentsRTP.ToolInvocation` under "Configuring application
-> permissions" and assigns it alongside the observability role. **Verified end-to-end:**
-> a blueprint provisioned by 1.1.220 yields a token with
-> `roles: ["AIAgentsRTP.ToolInvocation"]` without this phase running at all. On such an
-> agent this phase is a no-op — confirm and move on.
-
-The check is one line — decode the token the agent will actually send and look for the
-role. If it is present, skip the rest of this phase.
-
-For an agent provisioned by an **older CLI**, or where the grant is missing for any other
-reason, run the packaged script from the agent project folder. It takes no arguments —
-everything is discovered from `a365.generated.config.json`:
-
-```bash
-pwsh ${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/scripts/Grant-PreventionRole.ps1 -Json
+```python
+from <agent_package>.security import entra_auth
+import base64, json
+t = entra_auth.get_defender_token()
+p = t.split(".")[1]; p += "=" * (-len(p) % 4)
+print(json.loads(base64.urlsafe_b64decode(p)).get("roles"))
 ```
 
-It performs three operations:
+Expect `['AIAgentsRTP.ToolInvocation']`. If it is there, the phase is done.
 
-1. `az ad sp create` — provisions the prevention resource SP in the tenant (without it the
-   token request fails `AADSTS500011`).
-2. `a365 setup permissions custom` — adds the resource to the blueprint's required access
-   and inheritable permissions.
-3. Graph `appRoleAssignments` POST on the **blueprint** SP — the actual grant. Agent
-   identities inherit it through the FMI chain, so one grant covers every agent from that
-   blueprint.
+**If `roles` is absent or the token is empty**, the grant did not happen — almost always
+because the `Assign these application permissions now? [y/N]` prompt defaulted to **N**
+and setup cancelled. Re-run setup, answering the prompts:
 
-**All three are required.** Steps 1–2 alone leave the token with **no `roles` claim** —
-inheritable permissions describe what *may* be inherited; they are not a grant.
+```bash
+a365 setup all -n "<agent-name>" --authmode s2s     # answer y to the permission prompts
+```
 
-Parse the single-line JSON result and act on `status`:
+Re-running is safe: the CLI reuses the existing blueprint and agent identity and reports
+`already assigned` for anything already done. Under a chat tool, pipe the answers
+(`@('y','y','y','y') | a365 setup all …`) or hand the command to the user to run in a
+real terminal.
 
-| `status` | Meaning | What to do |
-|---|---|---|
-| `already-granted` | Role present — the normal result on CLI 1.1.220+ | Nothing. Report and move on. |
-| `granted` | The three operations succeeded | Report that prevention is authorized for every agent from this blueprint. |
-| `needs-admin` | Caller lacks privileges | Show `message` verbatim — it carries the exact command for a Global Administrator. The agent will run fail-open until it is done; say so plainly. |
-| `error` | Setup incomplete | Show `message`; usually `a365 setup all` has not run in this folder. |
-
-The script is **idempotent and self-retiring**: it checks first and exits immediately when
-the role is already granted (verified against a 1.1.220-provisioned blueprint).
-
-Use `-WhatIf` to report state without changing anything.
+If setup reports it needs a Global Administrator, show its message verbatim. Until the
+grant lands, the agent runs fail-open and inspects nothing — say that plainly rather than
+letting it look wired.
 
 **Do not** attempt any other authorization path. There is no app allow-list and no gateway
 delegation — an application may only report prevention activity for itself, and the app role
