@@ -8,13 +8,12 @@ per-platform reference docs.
 
 ## 1. Endpoint
 
-`POST {base}/tp/v1/protection/analyze`
+```
+POST https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze
+```
 
-| Environment | Base URL |
-|---|---|
-| Dev | `https://prevention.thirdparty.dev.ai.defender.microsoft.com` |
-| Staging | `https://prevention.thirdparty.stg.ai.defender.microsoft.com` |
-| Prod | `https://prevention.thirdparty.ai.defender.microsoft.com` |
+Shipped as the `DEFENDER_ENDPOINT` constant in the generated config. Override with
+`DEFENDER_WEBHOOK_URL` — it is not a per-agent value and must not be asked for per run.
 
 ### Request
 

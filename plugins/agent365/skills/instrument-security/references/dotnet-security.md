@@ -41,8 +41,7 @@ package is required — prevention talks plain HTTPS + Entra.
 {
   "DefenderPrevention": {
     "Enabled": true,
-    "Environment": "dev",
-    // Override only — the resource is a shipped constant.
+    // Override only — the endpoint is a shipped constant.
     "WebhookUrl": "",
     "FailMode": "Open",              // Open | Closed
     "TimeoutSeconds": 10,
@@ -58,14 +57,9 @@ public sealed class SecurityOptions
 {
     public const string SectionName = "DefenderPrevention";
 
-    // Defender third-party prevention endpoints, by environment.
-    public static readonly IReadOnlyDictionary<string, string> Endpoints =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["dev"] = "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze",
-            ["staging"] = "https://prevention.thirdparty.staging.ai.defender.microsoft.com/tp/v1/protection/analyze",
-            ["prod"] = "https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze",
-        };
+    // Defender third-party prevention endpoint. Override with WebhookUrl.
+    public const string DefenderEndpoint =
+        "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze";
 
     // The prevention resource the access token is issued FOR — the first-party
     // "Defender for AI Prevention Webhook" application.
@@ -81,7 +75,6 @@ public sealed class SecurityOptions
     public const string PreventionAppRole = "AIAgentsRTP.ToolInvocation";
 
     public bool Enabled { get; set; } = true;
-    public string Environment { get; set; } = "dev";
     public string? WebhookUrl { get; set; }
     public string FailMode { get; set; } = "Open";
     public int TimeoutSeconds { get; set; } = 10;
@@ -93,9 +86,7 @@ public sealed class SecurityOptions
         string.Equals(FailMode, "Closed", StringComparison.OrdinalIgnoreCase);
 
     public string ResolvedUrl =>
-        !string.IsNullOrWhiteSpace(WebhookUrl)
-            ? WebhookUrl!
-            : Endpoints.TryGetValue(Environment, out var u) ? u : Endpoints["dev"];
+        !string.IsNullOrWhiteSpace(WebhookUrl) ? WebhookUrl! : DefenderEndpoint;
 }
 ```
 

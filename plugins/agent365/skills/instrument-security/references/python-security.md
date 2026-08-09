@@ -156,12 +156,10 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-# Defender third-party prevention endpoints, by environment.
-DEFENDER_ENDPOINTS = {
-    "dev": "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze",
-    "staging": "https://prevention.thirdparty.stg.ai.defender.microsoft.com/tp/v1/protection/analyze",
-    "prod": "https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze",
-}
+# Defender third-party prevention endpoint. Override with DEFENDER_WEBHOOK_URL.
+DEFENDER_ENDPOINT = (
+    "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze"
+)
 
 # The prevention resource the access token is issued FOR — the first-party
 # "Defender for AI Prevention Webhook" application.
@@ -222,7 +220,6 @@ class SecurityConfig:
     """Resolved prevention configuration for one process."""
 
     enabled: bool
-    environment: str
     webhook_url: str
 
     # --- Agent 365 Entra identity (from the blueprint) ---------------------
@@ -259,7 +256,7 @@ class SecurityConfig:
     def describe(self) -> str:
         """Non-sensitive one-line summary, safe to log at startup."""
         return (
-            f"enabled={self.enabled} env={self.environment} url={self.webhook_url} "
+            f"enabled={self.enabled} url={self.webhook_url} "
             f"failMode={self.fail_mode} "
             f"hooks={','.join(sorted(self.enabled_hooks))} "
             f"tenant={self.tenant_id or '<unset>'} agentId={self.agent_id or '<unset>'} "
@@ -270,7 +267,7 @@ class SecurityConfig:
         """Configuration problems that make prevention unusable."""
         errors: list[str] = []
         if not self.webhook_url:
-            errors.append("no Defender endpoint resolved (DEFENDER_WEBHOOK_URL/DEFENDER_ENVIRONMENT)")
+            errors.append("no Defender endpoint resolved (DEFENDER_WEBHOOK_URL override is invalid)")
         if _is_placeholder(self.tenant_id):
             errors.append("AGENT365_TENANT_ID is not set")
         if _is_placeholder(self.scope):
@@ -298,17 +295,14 @@ def _resolve_hooks() -> frozenset[str]:
 
 def load_config() -> SecurityConfig:
     """Build a :class:`SecurityConfig` from the current environment."""
-    environment = _env("DEFENDER_ENVIRONMENT", "dev").lower()
-    webhook_url = _env("DEFENDER_WEBHOOK_URL") or DEFENDER_ENDPOINTS.get(
-        environment, DEFENDER_ENDPOINTS["dev"]
-    )
+    webhook_url = _env("DEFENDER_WEBHOOK_URL") or DEFENDER_ENDPOINT
 
     blueprint_id = _env("AGENT365_BLUEPRINT_ID")
     agent_id = _env("AGENT365_AGENT_ID")
     client_id = _env("AGENT365_CLIENT_ID") or blueprint_id
 
     # Scope resolution, in precedence order:
-    #   1. DEFENDER_WEBHOOK_SCOPE  — full override for a non-standard environment
+    #   1. DEFENDER_WEBHOOK_SCOPE  — full override for a non-standard resource
     #   2. DEFENDER_WEBHOOK_APP_ID — legacy override; kept for callers that pin an
     #      app whose identifier URI really is the api:// form
     #   3. PREVENTION_SCOPE        — the shipped constant (normal case)
@@ -321,7 +315,6 @@ def load_config() -> SecurityConfig:
 
     return SecurityConfig(
         enabled=_env_bool("DEFENDER_PREVENTION_ENABLED", True),
-        environment=environment,
         webhook_url=webhook_url,
         tenant_id=_env("AGENT365_TENANT_ID"),
         agent_id=agent_id,
@@ -1556,8 +1549,7 @@ Pass the agent's existing callbacks in; they are preserved. Hooks disabled via
 | Variable | Default | Purpose |
 |---|---|---|
 | `DEFENDER_PREVENTION_ENABLED` | `true` | Master switch |
-| `DEFENDER_ENVIRONMENT` | `dev` | Selects the endpoint (`dev`/`staging`/`prod`) |
-| `DEFENDER_WEBHOOK_URL` | — | Overrides the endpoint table |
+| `DEFENDER_WEBHOOK_URL` | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` | Overrides the shipped `DEFENDER_ENDPOINT` constant |
 | `DEFENDER_WEBHOOK_APP_ID` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` | **Resource** the token is issued for. Not the agent's identity — the caller comes from the FMI chain. Never set this to a client/demo app id. |
 | `DEFENDER_WEBHOOK_SCOPE` | `https://rtp-a365.ai.defender.microsoft.com/.default` | Explicit scope override. Note this resource uses the `https://` form — `api://<id>/.default` fails with `AADSTS500011`. |
 | `DEFENDER_FAIL_MODE` | `open` | Behavior when no verdict is obtained |

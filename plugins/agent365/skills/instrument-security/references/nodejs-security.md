@@ -37,12 +37,9 @@ prevention talks plain HTTPS + Entra.
 ```typescript
 // A365 Security — added by instrument-security skill
 
-// Defender third-party prevention endpoints, by environment.
-const ENDPOINTS: Record<string, string> = {
-  dev: "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze",
-  staging: "https://prevention.thirdparty.staging.ai.defender.microsoft.com/tp/v1/protection/analyze",
-  prod: "https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze",
-};
+// Defender third-party prevention endpoint. Override with DEFENDER_WEBHOOK_URL.
+export const DEFENDER_ENDPOINT =
+  "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze";
 
 // The prevention resource the access token is issued FOR — the first-party
 // "Defender for AI Prevention Webhook" application.
@@ -85,12 +82,11 @@ const truthy = (v: string | undefined, dflt = false): boolean =>
   v === undefined ? dflt : ["1", "true", "yes", "on"].includes(v.toLowerCase());
 
 export function getConfig(): SecurityConfig {
-  const env = (process.env.DEFENDER_ENVIRONMENT ?? "dev").toLowerCase();
   const hooksRaw = process.env.DEFENDER_HOOKS;
 
   return {
     enabled: truthy(process.env.DEFENDER_PREVENTION_ENABLED, true),
-    url: process.env.DEFENDER_WEBHOOK_URL || ENDPOINTS[env] || ENDPOINTS.dev,
+    url: process.env.DEFENDER_WEBHOOK_URL || DEFENDER_ENDPOINT,
     // Override only — falls back to the shipped constant. Deriving
     // api://<appId>/.default here would break with AADSTS500011.
     scope: process.env.DEFENDER_WEBHOOK_SCOPE || PREVENTION_SCOPE,
@@ -327,7 +323,6 @@ when editing a shared handler — do not restructure them out.
 ```bash
 # ── Microsoft Defender prevention (Security for AI) ──
 DEFENDER_PREVENTION_ENABLED=true
-DEFENDER_ENVIRONMENT=dev
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
 DEFENDER_TIMEOUT_SECONDS=10

@@ -290,22 +290,17 @@ ran setup). Never echo it — write it straight into `.env`.
 
 ## Phase 0.5: Prevention Options
 
-**TaskCreate** — "Confirm prevention environment, fail mode, and hooks"
+**TaskCreate** — "Confirm fail mode and inspection points"
 
 > **INTERACTION POINT.** Ask these with `AskUserQuestion`, one question at a time.
 > Skip any question whose value is already present in `.env` and simply report
 > what was found (idempotent re-run).
 
-**Question 1 — Defender environment:**
+The endpoint is **not** a question — it is a shipped constant (see
+[defender-webhook.md](references/defender-webhook.md) §1), overridable only via
+`DEFENDER_WEBHOOK_URL`.
 
-| Choice | Endpoint |
-|---|---|
-| Dev (Recommended for first wiring) | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` |
-| Staging | `https://prevention.thirdparty.stg.ai.defender.microsoft.com/tp/v1/protection/analyze` |
-| Prod | `https://prevention.thirdparty.ai.defender.microsoft.com/tp/v1/protection/analyze` |
-
-
-**Question 2 — Fail mode** (behavior when the webhook is unreachable, times out,
+**Question 1 — Fail mode** (behavior when the webhook is unreachable, times out,
 or returns an error):
 
 - **Fail open (Recommended to start)** — allow the action. Availability of the
@@ -313,14 +308,13 @@ or returns an error):
   platform's own allow-on-failure model.
 - **Fail closed** — block the action. Choose this only when the agent handles
   data where an uninspected action is unacceptable, and only after latency and
-  reliability have been observed in dev.
+  reliability have been observed.
 
-**Question 3 — Which inspection points to enable.** Default and recommended: all
+**Question 2 — Which inspection points to enable.** Default and recommended: all
 four. Offer the subset only if the user asks (e.g. tool-only enforcement while
 evaluating latency).
 
-Record answers; they become `DEFENDER_ENVIRONMENT`, `DEFENDER_FAIL_MODE`,
-`DEFENDER_HOOKS`.
+Record answers; they become `DEFENDER_FAIL_MODE` and `DEFENDER_HOOKS`.
 
 **TaskUpdate** — complete.
 
@@ -502,9 +496,8 @@ Append to `.env` (do not duplicate keys that already exist):
 ```bash
 # ── Microsoft Defender prevention (Security for AI) — added by instrument-security ──
 DEFENDER_PREVENTION_ENABLED=true
-DEFENDER_ENVIRONMENT=dev
-# Override only. The prevention resource is a known constant (see "Prevention
-# resource and app role"). Sets the token AUDIENCE, never the caller identity.
+# Endpoint and resource are shipped constants — overrides only, normally unset.
+# DEFENDER_WEBHOOK_URL=<override only — defaults to the shipped DEFENDER_ENDPOINT constant>
 # DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped PREVENTION_SCOPE constant>
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
@@ -542,7 +535,6 @@ to `agent_engines.create/update` in `deploy.py`:
 # A365 Security — added by instrument-security skill
 DEFENDER_ENV_KEYS = (
     "DEFENDER_PREVENTION_ENABLED",
-    "DEFENDER_ENVIRONMENT",
     "DEFENDER_WEBHOOK_URL",
     "DEFENDER_WEBHOOK_APP_ID",
     "DEFENDER_WEBHOOK_SCOPE",
@@ -696,8 +688,8 @@ being masked by fail-open).
 
 Report:
 
-- Which inspection points are live, and the endpoint/environment in use.
-- The auth mode, and the identity the webhook sees (`appid` = Agent Identity).
+- Which inspection points are live, and the endpoint in use.
+- The identity the webhook sees (`azp` = Agent Identity).
 - The fail mode, stated as its operational consequence — *"if Defender is
   unreachable, calls are allowed"* or *"…are blocked"*.
 - Observed per-call latency from the smoke test, and that each enabled hook adds
