@@ -16,8 +16,8 @@ The code splits into two layers:
 
 | Layer | Files | Framework-specific? |
 |---|---|---|
-| Core | `SecurityOptions`, `PreventionTokenProvider`, `AiSessionBuilder`, `DefenderClient` | No |
-| Adapter | `PreventionMiddleware` / handler wiring | Yes |
+| Core | `SecurityOptions`, `DefenderTokenProvider`, `AiSessionBuilder`, `DefenderClient` | No |
+| Adapter | `DefenderMiddleware` / handler wiring | Yes |
 
 ---
 
@@ -58,7 +58,7 @@ public sealed class SecurityOptions
     public const string SectionName = "DefenderPrevention";
 
     // Defender third-party prevention endpoint. Override with WebhookUrl.
-    public const string DefenderEndpoint =
+    public const string DefenderWebhookEndpoint =
         "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze";
 
     // The prevention resource the access token is issued FOR — the first-party
@@ -67,12 +67,12 @@ public sealed class SecurityOptions
     // Note the identifier URI is an https:// form, NOT api:// — requesting
     // api://86a21212-.../.default fails with AADSTS500011 even when the service
     // principal is present, because that URI is not one of the SP's names.
-    public const string DefenderResourceAppId = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
-    public const string DefenderScope = "https://rtp-a365.ai.defender.microsoft.com/.default";
+    public const string DefenderWebhookAppId = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
+    public const string DefenderWebhookScope = "https://rtp-a365.ai.defender.microsoft.com/.default";
 
     // Application role the agent identity must hold to call the prevention
     // endpoint. Granted to the Agent Identity service principal, not the blueprint.
-    public const string DefenderAppRole = "AIAgentsRTP.ToolInvocation";
+    public const string DefenderWebhookAppRole = "AIAgentsRTP.ToolInvocation";
 
     public bool Enabled { get; set; } = true;
     public string? WebhookUrl { get; set; }
@@ -86,7 +86,7 @@ public sealed class SecurityOptions
         string.Equals(FailMode, "Closed", StringComparison.OrdinalIgnoreCase);
 
     public string ResolvedUrl =>
-        !string.IsNullOrWhiteSpace(WebhookUrl) ? WebhookUrl! : DefenderEndpoint;
+        !string.IsNullOrWhiteSpace(WebhookUrl) ? WebhookUrl! : DefenderWebhookEndpoint;
 }
 ```
 
@@ -118,23 +118,23 @@ and Python this does not need a hand-rolled token-endpoint POST.
 using System.Collections.Concurrent;
 using Microsoft.Identity.Client;
 
-public interface IPreventionTokenProvider
+public interface IDefenderTokenProvider
 {
     /// <summary>Returns a bearer token, or empty string on any failure.</summary>
     Task<string> GetTokenAsync(CancellationToken ct = default);
 }
 
-public sealed class PreventionTokenProvider : IPreventionTokenProvider
+public sealed class DefenderTokenProvider : IDefenderTokenProvider
 {
     private const string FmiScope = "api://AzureADTokenExchange/.default";
     private static readonly TimeSpan ExpiryBuffer = TimeSpan.FromMinutes(5);
 
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private readonly ILogger<PreventionTokenProvider> _log;
+    private readonly ILogger<DefenderTokenProvider> _log;
     private string? _token;
     private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
 
-    public PreventionTokenProvider(ILogger<PreventionTokenProvider> log) => _log = log;
+    public DefenderTokenProvider(ILogger<DefenderTokenProvider> log) => _log = log;
 
     public async Task<string> GetTokenAsync(CancellationToken ct = default)
     {
@@ -183,7 +183,7 @@ public sealed class PreventionTokenProvider : IPreventionTokenProvider
                 .Build();
 
             var result = await agentApp
-                .AcquireTokenForClient([SecurityOptions.DefenderScope])
+                .AcquireTokenForClient([SecurityOptions.DefenderWebhookScope])
                 .ExecuteAsync(ct);
 
             _token = result.AccessToken;
@@ -226,13 +226,13 @@ public sealed record DefenderDecision(bool Block, string? Reason, bool Evaluated
 public sealed class DefenderClient
 {
     private readonly HttpClient _http;
-    private readonly IPreventionTokenProvider _tokens;
+    private readonly IDefenderTokenProvider _tokens;
     private readonly SecurityOptions _opts;
     private readonly ILogger<DefenderClient> _log;
 
     public DefenderClient(
         HttpClient http,
-        IPreventionTokenProvider tokens,
+        IDefenderTokenProvider tokens,
         IOptions<SecurityOptions> opts,
         ILogger<DefenderClient> log)
     {
@@ -323,7 +323,7 @@ when editing a shared handler — do not restructure them out.
 // A365 Security — added by instrument-security skill
 builder.Services.Configure<SecurityOptions>(
     builder.Configuration.GetSection(SecurityOptions.SectionName));
-builder.Services.AddSingleton<IPreventionTokenProvider, PreventionTokenProvider>();
+builder.Services.AddSingleton<IDefenderTokenProvider, DefenderTokenProvider>();
 builder.Services.AddHttpClient<DefenderClient>();
 ```
 

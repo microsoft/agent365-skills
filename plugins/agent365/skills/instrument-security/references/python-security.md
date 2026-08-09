@@ -1,4 +1,4 @@
-# Python — Defender prevention implementation
+# Python — Defender webhook implementation
 
 Complete implementation of the `security/` package for a Python agent. Read
 [defender-webhook.md](defender-webhook.md) first for the endpoint contract,
@@ -108,7 +108,7 @@ unbypassable.
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Microsoft Defender prevention (Security for AI) integration.
+"""Microsoft Defender (Security for AI) integration.
 
 Platform-agnostic building blocks:
 
@@ -137,17 +137,17 @@ __all__ = [
 ### `security/config.py`
 
 Environment-driven. Agent identity values (`AGENT365_*`) are the ones already
-stamped into `.env` by `a365 setup all`, so prevention authenticates as the same
+stamped into `.env` by `a365 setup all`, so defender authenticates as the same
 identity the agent uses everywhere else; only `DEFENDER_*` is new.
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Configuration for the Defender prevention integration.
+"""Configuration for the Defender integration.
 
 Agent identity values (`AGENT365_*`) are the ones already stamped into `.env`
-by ``a365 setup all`` and reused here, so prevention authenticates as the same
+by ``a365 setup all`` and reused here, so Defender authenticates as the same
 Entra identity the agent uses everywhere else. Only the `DEFENDER_*` values are
-specific to prevention.
+specific to Defender.
 """
 
 from __future__ import annotations
@@ -156,23 +156,23 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-# Defender third-party prevention endpoint. Override with DEFENDER_WEBHOOK_URL.
-DEFENDER_ENDPOINT = (
+# Defender webhook endpoint. Override with the DEFENDER_WEBHOOK_ENDPOINT env var.
+DEFENDER_WEBHOOK_ENDPOINT = (
     "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze"
 )
 
-# The prevention resource the access token is issued FOR — the first-party
-# "Defender for AI Prevention Webhook" application.
+# The resource the access token is issued FOR — the first-party Defender webhook
+# application.
 #
 # Note the identifier URI is an https:// form, NOT api:// — requesting
 # api://86a21212-.../.default fails with AADSTS500011 even when the service
 # principal is present, because that URI is not one of the SP's names.
-DEFENDER_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
-DEFENDER_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
+DEFENDER_WEBHOOK_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
+DEFENDER_WEBHOOK_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
 
-# Application role the agent identity must hold to call the prevention endpoint.
+# Application role the agent identity must hold to call the Defender endpoint.
 # Granted to the Agent Identity service principal, not the blueprint.
-DEFENDER_APP_ROLE = "AIAgentsRTP.ToolInvocation"
+DEFENDER_WEBHOOK_APP_ROLE = "AIAgentsRTP.ToolInvocation"
 
 # The four inspection points supported. Platform adapters map their native
 # hooks onto these names.
@@ -217,10 +217,10 @@ def _is_placeholder(value: str) -> bool:
 
 @dataclass(frozen=True)
 class SecurityConfig:
-    """Resolved prevention configuration for one process."""
+    """Resolved Defender configuration for one process."""
 
     enabled: bool
-    webhook_url: str
+    webhook_endpoint: str
 
     # --- Agent 365 Entra identity (from the blueprint) ---------------------
     tenant_id: str
@@ -256,7 +256,7 @@ class SecurityConfig:
     def describe(self) -> str:
         """Non-sensitive one-line summary, safe to log at startup."""
         return (
-            f"enabled={self.enabled} url={self.webhook_url} "
+            f"enabled={self.enabled} url={self.webhook_endpoint} "
             f"failMode={self.fail_mode} "
             f"hooks={','.join(sorted(self.enabled_hooks))} "
             f"tenant={self.tenant_id or '<unset>'} agentId={self.agent_id or '<unset>'} "
@@ -264,14 +264,14 @@ class SecurityConfig:
         )
 
     def validation_errors(self) -> list[str]:
-        """Configuration problems that make prevention unusable."""
+        """Configuration problems that make Defender calls unusable."""
         errors: list[str] = []
-        if not self.webhook_url:
-            errors.append("no Defender endpoint resolved (DEFENDER_WEBHOOK_URL override is invalid)")
+        if not self.webhook_endpoint:
+            errors.append("no Defender endpoint resolved (DEFENDER_WEBHOOK_ENDPOINT override is invalid)")
         if _is_placeholder(self.tenant_id):
             errors.append("AGENT365_TENANT_ID is not set")
         if _is_placeholder(self.scope):
-            errors.append("no prevention scope resolved (DEFENDER_WEBHOOK_SCOPE override is invalid)")
+            errors.append("no Defender scope resolved (DEFENDER_WEBHOOK_SCOPE override is invalid)")
         if self.fail_mode not in FAIL_MODES:
             errors.append(f"DEFENDER_FAIL_MODE '{self.fail_mode}' is not one of {', '.join(FAIL_MODES)}")
         # The FMI chain needs the agent identity (fmi_path + hop-3 client) and the
@@ -295,27 +295,27 @@ def _resolve_hooks() -> frozenset[str]:
 
 def load_config() -> SecurityConfig:
     """Build a :class:`SecurityConfig` from the current environment."""
-    webhook_url = _env("DEFENDER_WEBHOOK_URL") or DEFENDER_ENDPOINT
+    webhook_endpoint = _env("DEFENDER_WEBHOOK_ENDPOINT") or DEFENDER_WEBHOOK_ENDPOINT
 
     blueprint_id = _env("AGENT365_BLUEPRINT_ID")
     agent_id = _env("AGENT365_AGENT_ID")
     client_id = _env("AGENT365_CLIENT_ID") or blueprint_id
 
     # Scope resolution, in precedence order:
-    #   1. DEFENDER_WEBHOOK_SCOPE  — full override for a non-standard resource
-    #   2. DEFENDER_WEBHOOK_APP_ID — legacy override; kept for callers that pin an
-    #      app whose identifier URI really is the api:// form
-    #   3. DEFENDER_SCOPE        — the shipped constant (normal case)
+    #   1. DEFENDER_WEBHOOK_SCOPE env var    — full override for a non-standard resource
+    #   2. DEFENDER_WEBHOOK_APP_ID env var   — legacy override; kept for callers that pin
+    #      an app whose identifier URI really is the api:// form
+    #   3. DEFENDER_WEBHOOK_SCOPE constant   — the shipped value (normal case)
     webhook_app_id = _env("DEFENDER_WEBHOOK_APP_ID")
     scope = (
         _env("DEFENDER_WEBHOOK_SCOPE")
         or (f"api://{webhook_app_id}/.default" if webhook_app_id else "")
-        or DEFENDER_SCOPE
+        or DEFENDER_WEBHOOK_SCOPE
     )
 
     return SecurityConfig(
         enabled=_env_bool("DEFENDER_ENABLED", True),
-        webhook_url=webhook_url,
+        webhook_endpoint=webhook_endpoint,
         tenant_id=_env("AGENT365_TENANT_ID"),
         agent_id=agent_id,
         blueprint_id=blueprint_id,
@@ -346,7 +346,7 @@ def get_config() -> SecurityConfig:
 
 ### `security/entra_auth.py`
 
-Acquires the prevention token through the FMI 3-hop chain so the agent
+Acquires the defender token through the FMI 3-hop chain so the agent
 authenticates as **itself** — the blueprint credential only starts the chain, and
 the token that reaches Defender carries the Agent Identity in `azp`/`oid`.
 
@@ -354,7 +354,7 @@ the token that reaches Defender carries the Agent Identity in `azp`/`oid`.
 Blueprint (client secret or MSI)
   └─ Hop 1+2: client_credentials + fmi_path=<agentId> → FMI assertion
      └─ Agent Identity
-        └─ Hop 3: client_assertion → prevention token
+        └─ Hop 3: client_assertion → defender token
 ```
 
 The hooks call this synchronously from the request path, so acquisition and the
@@ -368,19 +368,19 @@ webhook rejects it with 401/403 instead.
 
 ```python
 # A365 Security — added by instrument-security skill
-"""S2S Defender prevention token acquisition (3-hop FMI chain).
+"""S2S Defender token acquisition (3-hop FMI chain).
 
     Blueprint (client secret or MSI)
       -> Hop 1+2: FMI token (api://AzureADTokenExchange/.default, fmi_path=<agentId>)
         -> Agent Identity
-          -> Hop 3: Defender prevention token
+          -> Hop 3: Defender token
 
 The agent authenticates as **itself**. The blueprint credential is only the
 starting point of the chain; the token that reaches Defender carries the Agent
 Identity in ``azp``/``oid``, so a verdict is always attributable to the specific
 agent that asked for it.
 
-The prevention hooks call ``get_defender_token`` synchronously from the request
+The Defender hooks call ``get_defender_token`` synchronously from the request
 path, so acquisition and caching are synchronous here. Vertex AI Agent Engine
 gives no application lifecycle hook for a background refresh loop, so the token is
 fetched lazily and cached until shortly before it expires.
@@ -398,7 +398,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import msal
 
-from .config import DEFENDER_SCOPE, SecurityConfig, get_config
+from .config import DEFENDER_WEBHOOK_SCOPE, SecurityConfig, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -469,7 +469,7 @@ def _acquire_t1(cfg: SecurityConfig, token_url: str, agent_id: str) -> str:
     return result["access_token"]
 
 
-def _acquire_prevention_token(cfg: SecurityConfig, tenant_id: str, agent_id: str) -> str:
+def _acquire_defender_token(cfg: SecurityConfig, tenant_id: str, agent_id: str) -> str:
     authority = f"https://login.microsoftonline.com/{tenant_id}"
     t1_token = _acquire_t1(cfg, f"{authority}/oauth2/v2.0/token", agent_id)
 
@@ -481,14 +481,14 @@ def _acquire_prevention_token(cfg: SecurityConfig, tenant_id: str, agent_id: str
     result = identity_app.acquire_token_for_client(scopes=[cfg.scope])
     if "access_token" not in result:
         raise RuntimeError(
-            f"Prevention token (hop 3) failed: "
+            f"Defender token (hop 3) failed: "
             f"{result.get('error_description', result)}"
         )
     return result["access_token"]
 
 
 def get_defender_token(cfg: SecurityConfig | None = None) -> str:
-    """Resolve the Defender prevention token for this agent.
+    """Resolve the Defender token for this agent.
 
     Never raises — a failed acquisition must not break the agent turn; the caller
     applies the configured fail-open / fail-closed policy instead.
@@ -510,21 +510,21 @@ def get_defender_token(cfg: SecurityConfig | None = None) -> str:
         return cached
 
     try:
-        token = _acquire_prevention_token(cfg, cfg.tenant_id, cfg.agent_id)
+        token = _acquire_defender_token(cfg, cfg.tenant_id, cfg.agent_id)
     except Exception:
         logger.warning(
-            "[defender] prevention token acquisition failed (scope=%s)",
+            "[defender] token acquisition failed (scope=%s)",
             cfg.scope,
             exc_info=True,
         )
         return ""
 
     _cache_token(key, token)
-    logger.info("[defender] prevention token acquired for agent %s.", cfg.agent_id)
+    logger.info("[defender] token acquired for agent %s.", cfg.agent_id)
     return token
 
 
-__all__ = ["FMI_SCOPE", "DEFENDER_SCOPE", "get_defender_token", "reset_cache"]
+__all__ = ["FMI_SCOPE", "DEFENDER_WEBHOOK_SCOPE", "get_defender_token", "reset_cache"]
 ```
 
 ### `security/ai_session.py`
@@ -871,11 +871,10 @@ distinguishes "allowed" from "never checked".
 
 ```python
 # A365 Security — added by instrument-security skill
-"""HTTP transport for the Defender third-party prevention webhook.
+"""HTTP transport for the Defender webhook.
 
-``POST {webhook_url}`` with an ``AISession`` body and an Entra bearer token
-obtained from the agent's own identity. The response is the prevention
-decision::
+``POST {webhook_endpoint}`` with an ``AISession`` body and an Entra bearer token
+obtained from the agent's own identity. The response is the Defender decision::
 
     {"blockAction": true, "reasonCode": 403, "reason": "...", "diagnostics": "..."}
 
@@ -904,7 +903,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class DefenderDecision:
-    """Outcome of one prevention evaluation."""
+    """Outcome of one Defender evaluation."""
 
     block: bool
     reason: str = ""
@@ -927,10 +926,7 @@ class DefenderDecision:
             if self.failed
             else "It was flagged as unsafe."
         )
-        text = (
-            f"{subject} was blocked by Microsoft Defender for AI "
-            f"(Security for AI prevention). Reason: {reason}"
-        )
+        text = f"{subject} was blocked by Microsoft Defender for AI. Reason: {reason}"
         if self.diagnostics:
             text += f" [{self.diagnostics}]"
         return text
@@ -949,7 +945,7 @@ class DefenderDecision:
 
 
 class DefenderClient:
-    """Calls the Defender prevention webhook for a single agent process."""
+    """Calls the Defender webhook for a single agent process."""
 
     def __init__(self, config: SecurityConfig | None = None) -> None:
         self._config = config or get_config()
@@ -987,7 +983,7 @@ class DefenderClient:
         *,
         correlation_id: str = "",
     ) -> DefenderDecision:
-        """Evaluate one AISession and return the prevention decision."""
+        """Evaluate one AISession and return the Defender decision."""
         started = time.perf_counter()
         correlation_id = correlation_id or f"a365-{uuid.uuid4()}"
 
@@ -998,7 +994,7 @@ class DefenderClient:
         try:
             with httpx.Client(timeout=self._config.timeout_seconds) as client:
                 response = client.post(
-                    self._config.webhook_url,
+                    self._config.webhook_endpoint,
                     content=json.dumps(ai_session).encode("utf-8"),
                     headers={
                         "Content-Type": "application/json",
@@ -1059,7 +1055,7 @@ def get_client() -> DefenderClient:
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Platform adapters that bridge native agent hooks onto Defender prevention.
+"""Platform adapters that bridge native agent hooks onto Defender.
 
 Each adapter translates one agent framework's callback contract into the
 platform-agnostic :mod:`security.ai_session` builders and
@@ -1087,7 +1083,7 @@ __all__ = [
 
 ```python
 # A365 Security — added by instrument-security skill
-"""Google ADK adapter: Defender prevention on the four agent callbacks.
+"""Google ADK adapter: Defender on the four agent callbacks.
 
 Mapping from ADK callback to inspected content and enforcement:
 
@@ -1489,7 +1485,7 @@ _COMPOSERS = {
 
 
 def secure_agent_callbacks(**callbacks: Any) -> dict[str, Any]:
-    """Wrap the agent's callback keyword arguments with Defender prevention.
+    """Wrap the agent's callback keyword arguments with Defender.
 
     Usage::
 
@@ -1511,7 +1507,7 @@ def secure_agent_callbacks(**callbacks: Any) -> dict[str, Any]:
         if cfg.hook_enabled(hook_name):
             merged[key] = composer(merged.get(key))
 
-    logger.info("[defender] prevention configured: %s", cfg.describe())
+    logger.info("[defender] configured: %s", cfg.describe())
     return merged
 ```
 
@@ -1549,7 +1545,7 @@ Pass the agent's existing callbacks in; they are preserved. Hooks disabled via
 | Variable | Default | Purpose |
 |---|---|---|
 | `DEFENDER_ENABLED` | `true` | Master switch |
-| `DEFENDER_WEBHOOK_URL` | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` | Overrides the shipped `DEFENDER_ENDPOINT` constant |
+| `DEFENDER_WEBHOOK_ENDPOINT` | `https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze` | Webhook URL. Set only to point at a non-standard deployment. |
 | `DEFENDER_WEBHOOK_APP_ID` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` | **Resource** the token is issued for. Not the agent's identity — the caller comes from the FMI chain. Never set this to a client/demo app id. |
 | `DEFENDER_WEBHOOK_SCOPE` | `https://rtp-a365.ai.defender.microsoft.com/.default` | Explicit scope override. Note this resource uses the `https://` form — `api://<id>/.default` fails with `AADSTS500011`. |
 | `DEFENDER_FAIL_MODE` | `open` | Behavior when no verdict is obtained |
@@ -1590,7 +1586,7 @@ A known-bad turn blocks with the reason surfaced:
                       "diagnostics": "Detected threat types: MaliciousContentPropagation;
                                       MaliciousUrl: https://test.security.dfai.microsoft.com"}
 [defender] BLOCKED user prompt invocation=e-a7ac… reasonCode=403
-[model] This request was blocked by Microsoft Defender for AI (Security for AI prevention).
+[model] This request was blocked by Microsoft Defender.
         Reason: … [Detected threat types: MaliciousContentPropagation; MaliciousUrl: …]
 ```
 

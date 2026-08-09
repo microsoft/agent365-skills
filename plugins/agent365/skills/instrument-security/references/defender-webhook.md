@@ -12,8 +12,8 @@ per-platform reference docs.
 POST https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze
 ```
 
-Shipped as the `DEFENDER_ENDPOINT` constant in the generated config. Override with
-`DEFENDER_WEBHOOK_URL` — it is not a per-agent value and must not be asked for per run.
+Shipped as the `DEFENDER_WEBHOOK_ENDPOINT` constant in the generated config. Override with
+`DEFENDER_WEBHOOK_ENDPOINT` — it is not a per-agent value and must not be asked for per run.
 
 ### Request
 

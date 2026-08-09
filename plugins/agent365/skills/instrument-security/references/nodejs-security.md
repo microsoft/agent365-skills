@@ -37,8 +37,8 @@ prevention talks plain HTTPS + Entra.
 ```typescript
 // A365 Security — added by instrument-security skill
 
-// Defender third-party prevention endpoint. Override with DEFENDER_WEBHOOK_URL.
-export const DEFENDER_ENDPOINT =
+// Defender third-party prevention endpoint. Override with DEFENDER_WEBHOOK_ENDPOINT.
+export const DEFENDER_WEBHOOK_ENDPOINT =
   "https://prevention.thirdparty.dev.ai.defender.microsoft.com/tp/v1/protection/analyze";
 
 // The prevention resource the access token is issued FOR — the first-party
@@ -47,12 +47,12 @@ export const DEFENDER_ENDPOINT =
 // Note the identifier URI is an https:// form, NOT api:// — requesting
 // api://86a21212-.../.default fails with AADSTS500011 even when the service
 // principal is present, because that URI is not one of the SP's names.
-export const DEFENDER_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
-export const DEFENDER_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default";
+export const DEFENDER_WEBHOOK_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec";
+export const DEFENDER_WEBHOOK_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default";
 
 // Application role the agent identity must hold to call the prevention endpoint.
 // Granted to the Agent Identity service principal, not the blueprint.
-export const DEFENDER_APP_ROLE = "AIAgentsRTP.ToolInvocation";
+export const DEFENDER_WEBHOOK_APP_ROLE = "AIAgentsRTP.ToolInvocation";
 
 // The four inspection points supported. Platform adapters map their native
 // hooks onto these names.
@@ -86,10 +86,10 @@ export function getConfig(): SecurityConfig {
 
   return {
     enabled: truthy(process.env.DEFENDER_ENABLED, true),
-    url: process.env.DEFENDER_WEBHOOK_URL || DEFENDER_ENDPOINT,
+    url: process.env.DEFENDER_WEBHOOK_ENDPOINT || DEFENDER_WEBHOOK_ENDPOINT,
     // Override only — falls back to the shipped constant. Deriving
     // api://<appId>/.default here would break with AADSTS500011.
-    scope: process.env.DEFENDER_WEBHOOK_SCOPE || DEFENDER_SCOPE,
+    scope: process.env.DEFENDER_WEBHOOK_SCOPE || DEFENDER_WEBHOOK_SCOPE,
     failClosed: (process.env.DEFENDER_FAIL_MODE ?? "open").toLowerCase() === "closed",
     timeoutMs: Number(process.env.DEFENDER_TIMEOUT_SECONDS ?? 10) * 1000,
     maxContentChars: Number(process.env.DEFENDER_MAX_CONTENT_CHARS ?? 20000),

@@ -87,7 +87,7 @@ if (!fs.existsSync(path.join(cwd, '.a365-workspace-detection.local.json'))) {
 // ── Endpoint + payload ──────────────────────────────────────────────────────
 
 const hasEndpoint = anyMatches(sourceFiles, /tp\/v1\/protection\/analyze/) ||
-  anyMatches(envFiles, /^\s*DEFENDER_WEBHOOK_URL\s*=/m);
+  anyMatches(envFiles, /^\s*DEFENDER_WEBHOOK_ENDPOINT\s*=/m);
 if (!hasEndpoint) {
   issues.push('No Defender prevention endpoint (/tp/v1/protection/analyze) is referenced in code or configuration');
 }

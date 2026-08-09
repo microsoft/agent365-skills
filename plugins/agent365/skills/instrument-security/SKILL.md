@@ -134,12 +134,11 @@ or delegation path and no app allow-list — an application may only report prev
 activity for itself, and the server binds the agent identity in the payload to the token's
 `oid` rather than trusting the body.
 
-These are **code constants**, not environment variables — `DEFENDER_RESOURCE_APP_ID`,
-`DEFENDER_SCOPE`, `DEFENDER_APP_ROLE`, and `DEFENDER_ENDPOINT` are declared in the
-generated config module. They are not per-agent values and must never be asked for per
-run. Setting them in `.env` does nothing; the matching overrides are the
-`DEFENDER_WEBHOOK_*` environment variables (`DEFENDER_WEBHOOK_SCOPE`,
-`DEFENDER_WEBHOOK_APP_ID`, `DEFENDER_WEBHOOK_URL`).
+`DEFENDER_WEBHOOK_ENDPOINT`, `DEFENDER_WEBHOOK_APP_ID`, `DEFENDER_WEBHOOK_SCOPE`, and
+`DEFENDER_WEBHOOK_APP_ROLE` are shipped as **constants in the generated config module**,
+with the shipped value used unless an environment variable **of the same name** is set.
+They are not per-agent values and must never be asked for per run — the env vars exist
+only to point a non-standard deployment somewhere else.
 
 > ⚠️ **The scope is an `https://` URI, not `api://`.** The prevention resource's
 > identifier URI is `https://rtp-a365.ai.defender.microsoft.com`; requesting
@@ -300,7 +299,7 @@ ran setup). Never echo it — write it straight into `.env`.
 
 The endpoint is **not** a question — it is a shipped constant (see
 [defender-webhook.md](references/defender-webhook.md) §1), overridable only via
-`DEFENDER_WEBHOOK_URL`.
+`DEFENDER_WEBHOOK_ENDPOINT`.
 
 **Question 1 — Fail mode** (behavior when the webhook is unreachable, times out,
 or returns an error):
@@ -499,8 +498,8 @@ Append to `.env` (do not duplicate keys that already exist):
 # ── Microsoft Defender prevention (Security for AI) — added by instrument-security ──
 DEFENDER_ENABLED=true
 # Endpoint and resource are shipped constants — overrides only, normally unset.
-# DEFENDER_WEBHOOK_URL=<override only — defaults to the shipped DEFENDER_ENDPOINT constant>
-# DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped DEFENDER_SCOPE constant>
+# DEFENDER_WEBHOOK_ENDPOINT=<override only — defaults to the shipped DEFENDER_WEBHOOK_ENDPOINT constant>
+# DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped DEFENDER_WEBHOOK_SCOPE constant>
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
 DEFENDER_TIMEOUT_SECONDS=10
@@ -537,7 +536,7 @@ to `agent_engines.create/update` in `deploy.py`:
 # A365 Security — added by instrument-security skill
 DEFENDER_ENV_KEYS = (
     "DEFENDER_ENABLED",
-    "DEFENDER_WEBHOOK_URL",
+    "DEFENDER_WEBHOOK_ENDPOINT",
     "DEFENDER_WEBHOOK_APP_ID",
     "DEFENDER_WEBHOOK_SCOPE",
     "DEFENDER_FAIL_MODE",
