@@ -55,23 +55,25 @@ treat them as "no verdict obtained" and apply the configured fail mode.
 
 ## 2. Authentication — the agent's own Entra identity
 
-**This is the same FMI 3-hop chain `instrument-observability` uses.** Only the target
-resource, app role, and endpoint differ; the token flow, caching, and failure
-behavior are identical. If you have wired observability, this will look familiar by
-design — the two should not diverge.
+The agent authenticates as **itself**, using an FMI 3-hop chain. The blueprint
+credential only starts the chain; the token that reaches the webhook carries the
+Agent Identity, so every verdict is attributable to the specific agent that asked
+for it. There is no gateway, no delegation, and no app allow-list — authorization
+is by app role.
 
-| | Observability | Prevention |
-|---|---|---|
-| Resource | `9b975845-388f-4429-889e-eab1ef63949c` (`Agent365Observability`) | `86a21212-634e-4553-b3d6-e477e4c9d9ec` (`Defender for AI Prevention Webhook`) |
-| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
-| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
-| Role grant | automatic via `a365 setup all` | manual today |
+| | Value |
+|---|---|
+| Resource | `86a21212-634e-4553-b3d6-e477e4c9d9ec` (`Defender for AI Prevention Webhook`) |
+| Scope | `https://rtp-a365.ai.defender.microsoft.com/.default` |
+| App role | `AIAgentsRTP.ToolInvocation` |
+| Role grant | manual today — see the grant phase |
 
-> ⚠️ **The prevention scope is the `https://` form, not `api://`.** Every other A365
-> scope follows the `api://<app-id>/.default` convention, so deriving it from the app
-> id is the natural guess — and it fails with `AADSTS500011` *even when the service
-> principal exists*, because that URI is not in the resource's `servicePrincipalNames`.
-> The error reads like a missing SP and will send you down the wrong path.
+> ⚠️ **The prevention scope is the `https://` form, not `api://`.** Most A365
+> scopes follow the `api://<app-id>/.default` convention, so deriving it from the
+> app id is the natural guess — and it fails with `AADSTS500011` *even when the
+> service principal exists*, because that URI is not in the resource's
+> `servicePrincipalNames`. The error reads like a missing SP and will send you
+> down the wrong path.
 
 `make-a365-agent` / `a365 setup all` provisions two Entra objects:
 
@@ -80,8 +82,7 @@ design — the two should not diverge.
 | Blueprint app | `agentBlueprintId` | Holds the credential (secret or MSI) |
 | Agent Identity | `agenticAppId` | The agent's own identity — what Defender should see |
 
-Prevention authenticates as the **Agent Identity** using the same FMI 3-hop chain
-the observability exporter uses:
+Prevention authenticates as the **Agent Identity** using an FMI 3-hop chain:
 
 ```
 Blueprint (client secret or managed identity)
@@ -113,21 +114,20 @@ sets `aud`; the caller identity always comes from the FMI chain above.
 
 > ⚠️ **A 403 with a valid `roles` claim is not your bug.** This is an AAD v2 token, so
 > the caller appears in `azp` and `appid` is absent. Webhook-side code that reads only
-> `appid` leaves every legitimate caller unidentified and 403s it — the same trap the
-> observability trace-ingestion handler calls out. Nothing in the agent can fix that;
-> check the token has `roles`, then hand it to whoever owns the webhook.
+> `appid` leaves every legitimate caller unidentified and 403s it. Nothing in the agent
+> can fix that; check the token has `roles`, then hand it to whoever owns the webhook.
 
-> ⚠️ **Not granted by `a365 setup all` yet.** The CLI does this automatically for
-> `Agent365.Observability.OtelWrite` but has no step for prevention, so `make-a365-agent`
-> Phase 2.4 performs the three equivalent operations: (1) `az ad sp create --id 86a21212-…`
-> so the resource exists in the tenant (else `AADSTS500011`), (2)
+> ⚠️ **Not granted by `a365 setup all` yet.** The CLI has no step for the prevention
+> role, so `make-a365-agent` Phase 2.4 performs three operations: (1)
+> `az ad sp create --id 86a21212-…` so the resource exists in the tenant (else
+> `AADSTS500011`), (2)
 > `a365 setup permissions custom --resource-app-id 86a21212-… --scopes AIAgentsRTP.ToolInvocation`
 > for inheritable permissions, and (3) an app role assignment on the **blueprint** service
 > principal. Verified: with only (1)+(2) the token has **no `roles` claim** — inheritable
 > permissions are not a grant. Granting on the blueprint (not the agent identity) makes
-> every agent minted from it inherit the role, exactly as OtelWrite does. The durable fix
-> is for the A365 CLI to mirror its OtelWrite grant; the CLI ships as an external NuGet
-> tool, so it cannot be changed from these repositories.
+> every agent minted from it inherit the role. The durable fix is for the A365 CLI to
+> perform this grant at provisioning time; the CLI ships as an external NuGet tool, so
+> it cannot be changed from these repositories.
 
 Cache the token in-process until shortly before `exp`; every hook otherwise pays
 a token round trip.
@@ -135,8 +135,7 @@ a token round trip.
 ### Authorization
 
 The token must carry the app role `AIAgentsRTP.ToolInvocation` in its `roles` claim. The
-server checks it with OR semantics over a configured list, mirroring the observability
-`RequireAppRole` handler.
+server checks it with OR semantics over a configured list.
 
 **One caller shape only.** An agent calls with its own Entra identity and is authorized by
 the role. There is no gateway/delegation path and no app allow-list: the server binds

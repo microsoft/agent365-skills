@@ -313,7 +313,9 @@ wrapping.
 
 **Reference patterns:**
 - Webhook contract, identity model, AISession mapping: [plugins/agent365/skills/instrument-security/references/defender-webhook.md](../plugins/agent365/skills/instrument-security/references/defender-webhook.md)
-- Google ADK implementation: [plugins/agent365/skills/instrument-security/references/google-adk-security.md](../plugins/agent365/skills/instrument-security/references/google-adk-security.md)
+- Python: [plugins/agent365/skills/instrument-security/references/python-security.md](../plugins/agent365/skills/instrument-security/references/python-security.md)
+- .NET: [plugins/agent365/skills/instrument-security/references/dotnet-security.md](../plugins/agent365/skills/instrument-security/references/dotnet-security.md)
+- Node.js: [plugins/agent365/skills/instrument-security/references/nodejs-security.md](../plugins/agent365/skills/instrument-security/references/nodejs-security.md)
 
 ---
 

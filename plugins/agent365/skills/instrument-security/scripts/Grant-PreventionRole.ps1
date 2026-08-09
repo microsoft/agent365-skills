@@ -1,7 +1,6 @@
 # Grant the Defender prevention app role to an agent blueprint.
 #
-# Brings prevention to parity with Agent365.Observability.OtelWrite, which
-# 'a365 setup all' grants automatically.
+# 'a365 setup all' does not grant this role yet, so it must be granted out of band.
 #
 # SELF-RETIRING: the first thing this does is check whether the role is already
 # granted. Once the A365 SDK grants it as part of 'a365 setup all', this script

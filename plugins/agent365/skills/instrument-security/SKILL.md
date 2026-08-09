@@ -106,21 +106,21 @@ never replaced, and re-running the skill is safe.
 
 ## Prevention resource and app role
 
-Authentication is **the same FMI 3-hop chain `instrument-observability` uses** — only
-the target resource, app role, and endpoint differ. Everything else (blueprint
-credential → FMI token with `fmi_path=<agentId>` → Agent Identity → resource token,
-in-process caching, never raising to the caller) is identical, so read
-[instrument-observability](../instrument-observability/SKILL.md) for the shared shape.
+The agent authenticates as **itself** through an FMI 3-hop chain: blueprint
+credential → FMI token with `fmi_path=<agentId>` → Agent Identity → prevention
+token. The blueprint credential only starts the chain; the token that reaches the
+webhook carries the Agent Identity, so every verdict is attributable to the
+specific agent that asked for it.
 
-| | Observability | Prevention |
-|---|---|---|
-| Resource app id | `9b975845-388f-4429-889e-eab1ef63949c` | `86a21212-634e-4553-b3d6-e477e4c9d9ec` |
-| Resource name | `Agent365Observability` | `Defender for AI Prevention Webhook` |
-| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
-| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
-| Granted to | blueprint SP (agents inherit via FMI) | blueprint SP (agents inherit via FMI) |
-| Granted by | `a365 setup all` (automatic) | Phase 6 of this skill — not yet in the CLI |
-| Endpoint | Observability ingestion | `/tp/v1/protection/analyze` |
+| | Value |
+|---|---|
+| Resource app id | `86a21212-634e-4553-b3d6-e477e4c9d9ec` |
+| Resource name | `Defender for AI Prevention Webhook` |
+| Scope | `https://rtp-a365.ai.defender.microsoft.com/.default` |
+| App role | `AIAgentsRTP.ToolInvocation` |
+| Granted to | blueprint SP (agents inherit via FMI) |
+| Granted by | Phase 6 of this skill — not yet in the CLI |
+| Endpoint | `/tp/v1/protection/analyze` |
 
 > **`AIAgentsRTP.ToolInvocation` is a reused role.** It is an existing role on the prevention
 > application, adopted so the path works today. A **dedicated role for the A365 SDK
@@ -134,30 +134,33 @@ or delegation path and no app allow-list — an application may only report prev
 activity for itself, and the server binds the agent identity in the payload to the token's
 `oid` rather than trusting the body.
 
-Like the observability scope, these are **known constants** shipped in the generated
-`config.py` (`PREVENTION_RESOURCE_APP_ID`, `PREVENTION_SCOPE`, `PREVENTION_APP_ROLE`) —
+These are **known constants** shipped in the generated config
+(`PREVENTION_RESOURCE_APP_ID`, `PREVENTION_SCOPE`, `PREVENTION_APP_ROLE`) —
 they are not per-agent values and must never be asked for per run.
 `DEFENDER_WEBHOOK_SCOPE` / `DEFENDER_WEBHOOK_APP_ID` exist only as overrides.
 
 > ⚠️ **The scope is an `https://` URI, not `api://`.** The prevention resource's
 > identifier URI is `https://rtp-a365.ai.defender.microsoft.com`; requesting
 > `api://86a21212-…/.default` fails with `AADSTS500011` *even when the service principal
-> exists*, because that URI is not one of the SP's `servicePrincipalNames`. Observability
-> happens to use the `api://<appId>` form, so blindly copying its shape breaks here.
-> The token's `aud` comes back as the raw app id (`86a21212-…`), which is what the
-> webhook matches against `AzureAd:AuthorizedApplications`.
+> exists*, because that URI is not one of the SP's `servicePrincipalNames`. Most A365
+> scopes use the `api://<appId>` form, so deriving it from the app id is the natural
+> guess and it breaks here. The token's `aud` comes back as the raw app id
+> (`86a21212-…`), which is what the webhook matches against
+> `AzureAd:AuthorizedApplications`.
 
 ### Provisioning
 
 The grant is performed by **Phase 6** of this skill, which runs
-`scripts/Grant-PreventionRole.ps1`. It does the three operations `a365 setup all` already
-does for `Agent365.Observability.OtelWrite`:
+`scripts/Grant-PreventionRole.ps1` in three steps:
 
-| Step | Observability | Prevention |
-|---|---|---|
-| 1. Resource SP in tenant | `a365 setup all` | `az ad sp create --id 86a21212-…` |
-| 2. Inheritable permissions on blueprint | `a365 setup all` | `a365 setup permissions custom` |
-| 3. App role assigned to **blueprint SP** | `a365 setup all` | Graph `appRoleAssignments` POST |
+| Step | Operation |
+|---|---|
+| 1. Resource SP in tenant | `az ad sp create --id 86a21212-…` |
+| 2. Inheritable permissions on blueprint | `a365 setup permissions custom` |
+| 3. App role assigned to **blueprint SP** | Graph `appRoleAssignments` POST |
+
+All three are required. With only (1)+(2) the token comes back with **no `roles`
+claim** — inheritable permissions are not a grant.
 
 `make-a365-agent` Phase 2.4 runs the same script, so an agent registered through that skill
 arrives here already granted and Phase 6 reports `already-granted`.
@@ -292,18 +295,38 @@ Record answers; they become `DEFENDER_ENVIRONMENT`, `DEFENDER_FAIL_MODE`,
 
 Determine the platform from the cache plus the code:
 
-| Signal | Platform | Adapter |
-|---|---|---|
-| `agentStack = GoogleADK`, or `google.adk` imports / `google-adk` in requirements | **Google ADK** (Vertex AI Agent Engine) | `security/adapters/google_adk.py` ✅ implemented |
-| `bedrock-agentcore`, AgentCore gateway/interceptor Lambda | AWS Bedrock AgentCore | ⛔ not yet implemented |
-| anything else | — | ⛔ not yet implemented |
+| Signal | Language | Framework | Adapter status |
+|---|---|---|---|
+| `agentStack = GoogleADK`, or `google.adk` imports / `google-adk` in requirements | Python | **Google ADK** | ✅ Verified end-to-end |
+| `microsoft-agents-*` / `agent_framework` in requirements | Python | Agent Framework | ⚠️ Best-effort adapter |
+| `langchain` in requirements | Python | LangChain | ⚠️ Best-effort adapter |
+| `.csproj` referencing `Microsoft.Agents.*` | .NET | Agent Framework / SK | ⚠️ Best-effort adapter |
+| `package.json` referencing `@microsoft/agents-*` | Node.js | any | ⚠️ Best-effort adapter |
+| `bedrock-agentcore`, AgentCore gateway/interceptor Lambda | Python | AWS Bedrock AgentCore | ⛔ Not implemented |
 
-For a **not yet implemented** platform, stop and tell the user exactly this:
-*"Defender prevention hooks are currently implemented for Google ADK agents. This
-agent runs on `<platform>`, which needs its own adapter under
-`security/adapters/`. The platform-agnostic pieces (config, Entra auth, AISession
-builders, webhook client) are reusable as-is — only the hook bridge is missing."*
+The **core** layer (config, Entra auth, AISession builders, webhook client) is
+framework-agnostic within a language and is used verbatim in every row above. Only
+the adapter — the bridge from the framework's native callbacks to the four
+inspection points — varies.
+
+For a ⚠️ **best-effort** row: proceed, but say so plainly first —
+*"The protocol and auth layers are verified; the `<framework>` hook wiring is not.
+I'll generate it, mark it best-effort, and we should smoke-test that a block
+actually blocks before trusting it."* Mark adapter code with
+`A365 Security — best-effort wiring (verify against SDK source before production)`.
+
+For a ⛔ **not implemented** row, stop and tell the user exactly this:
+*"Defender prevention needs an adapter for `<platform>` under `security/adapters/`.
+The core pieces (config, Entra auth, AISession builders, webhook client) are
+reusable as-is — only the hook bridge is missing."*
 Do not partially wire an unsupported platform.
+
+Then **read the reference for the detected language** — it contains the complete
+implementation:
+
+- If Python: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/references/python-security.md`
+- If .NET: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/references/dotnet-security.md`
+- If Node.js: **Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/references/nodejs-security.md`
 
 **TaskUpdate** — complete.
 
@@ -313,21 +336,28 @@ Do not partially wire an unsupported platform.
 
 **TaskCreate** — "Install prevention dependencies"
 
-Python (Google ADK):
+Install per the detected language:
+
+| Language | Packages |
+|---|---|
+| Python | `httpx>=0.27.0`, `msal>=1.34.0`, `azure-identity>=1.20.0` |
+| .NET | `Microsoft.Identity.Client` 4.66+ |
+| Node.js | `@azure/msal-node` |
 
 ```bash
+# Python
 pip3 install "httpx>=0.27.0" "msal>=1.34.0" "azure-identity>=1.20.0" 2>/dev/null || \
 pip install "httpx>=0.27.0" "msal>=1.34.0" "azure-identity>=1.20.0"
 ```
 
-Add the same three to `requirements.txt` if absent. If the agent already has A365
-observability wired, these are almost certainly present already — verify rather
-than reinstall, and **do not change pinned versions**: an agent's OpenTelemetry
-pins are usually load-bearing.
+Add these to `requirements.txt` / `.csproj` / `package.json` if absent. If the
+agent already has A365 observability wired, they are almost certainly present —
+verify rather than reinstall, and **do not change pinned versions**: an agent's
+OpenTelemetry pins are usually load-bearing.
 
-`azure-identity` is only needed when `AGENT365_USE_MANAGED_IDENTITY=true`; keep
-the import inside the function that uses it so managed-identity-less deployments
-never pay for it.
+For Python, `azure-identity` is only needed when
+`AGENT365_USE_MANAGED_IDENTITY=true`; keep the import inside the function that
+uses it so managed-identity-less deployments never pay for it.
 
 **TaskUpdate** — complete.
 
@@ -337,8 +367,8 @@ never pay for it.
 
 **TaskCreate** — "Create the platform-agnostic security package"
 
-**Read** `${CLAUDE_PLUGIN_ROOT}/skills/instrument-security/references/google-adk-security.md`
-and create the files it specifies, adapting the package name to the agent:
+Create the files the language reference specifies, adapting names to the agent.
+The Python layout (others mirror it with native naming):
 
 ```
 <agent_package>/security/
@@ -349,19 +379,15 @@ and create the files it specifies, adapting the package name to the agent:
 ├── defender_client.py     # webhook POST + decision model + fail policy
 └── adapters/
     ├── __init__.py
-    └── google_adk.py      # the four ADK hooks + additive wiring
+    └── <framework>.py     # the four hooks + additive wiring
 ```
 
 Non-negotiable rules for this phase:
 
-1. **`entra_auth.py` is `observability/token_provider.py` with a different scope.**
-   If the agent already has observability wired, start from that file and change only:
-   the scope (`PREVENTION_SCOPE`), the resolver name (`get_defender_token`), and the
-   error strings. The FMI 3-hop chain, the in-process cache, and the never-raise
-   contract are identical and must stay identical — do not invent a second token flow.
-   There is exactly **one** flow: blueprint credential → FMI token (`fmi_path=<agentId>`)
-   → agent identity → prevention token. No gateway, no federation, no client-secret
-   shortcut.
+1. **There is exactly one auth flow:** blueprint credential → FMI token
+   (`fmi_path=<agentId>`) → agent identity → prevention token. No gateway, no
+   federation, no client-secret shortcut, no delegated/user token. The agent
+   authenticates as itself so every verdict is attributable to it.
 2. **Never write a secret into source.** Every credential is read from the
    environment.
 3. **Token acquisition never raises to the caller.** It returns an empty string
@@ -379,8 +405,9 @@ Non-negotiable rules for this phase:
 for the endpoint contract, the AISession field mapping per hook, and the
 permission/consent prerequisites.
 
-Mark every generated file with the marker comment on its first line:
-`# A365 Security — added by instrument-security skill`
+Mark every generated file with the marker comment on its first line
+(`#` for Python, `//` for .NET and Node.js):
+`A365 Security — added by instrument-security skill`
 
 **TaskUpdate** — complete.
 
@@ -440,8 +467,7 @@ Append to `.env` (do not duplicate keys that already exist):
 DEFENDER_PREVENTION_ENABLED=true
 DEFENDER_ENVIRONMENT=dev
 # Override only. The prevention resource is a known constant (see "Prevention
-# resource and app role"), exactly as Observability uses api://9b975845-…/.default.
-# Sets the token AUDIENCE, never the caller identity.
+# resource and app role"). Sets the token AUDIENCE, never the caller identity.
 # DEFENDER_WEBHOOK_SCOPE=<override only — defaults to the shipped PREVENTION_SCOPE constant>
 DEFENDER_FAIL_MODE=open
 DEFENDER_HOOKS=before_agent,after_agent,before_tool,after_tool
@@ -511,8 +537,7 @@ prevention appears wired but never runs.
 **TaskCreate** — "Grant the prevention app role to the agent's blueprint"
 
 The agent's token must carry `AIAgentsRTP.ToolInvocation` or the call is unauthorized.
-`a365 setup all` does **not** grant it yet (it does the equivalent automatically for
-`Agent365.Observability.OtelWrite`), so this skill performs the grant itself.
+`a365 setup all` does **not** grant it yet, so this skill performs the grant itself.
 
 Run the packaged script from the agent project folder. It takes no arguments — everything
 is discovered from `a365.generated.config.json`:
@@ -620,5 +645,7 @@ Report:
 
 ## Reference
 
-- Full Google ADK implementation: [references/google-adk-security.md](references/google-adk-security.md)
+- **Python** (Google ADK verified; other frameworks best-effort): [references/python-security.md](references/python-security.md)
+- **.NET** (best-effort adapter): [references/dotnet-security.md](references/dotnet-security.md)
+- **Node.js** (best-effort adapter): [references/nodejs-security.md](references/nodejs-security.md)
 - Webhook contract, AISession mapping, auth and consent: [references/defender-webhook.md](references/defender-webhook.md)

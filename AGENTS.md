@@ -91,9 +91,13 @@ plugins/agent365/
 │   │       └── validation-checklist.md
 │   ├── instrument-security/
 │   │   ├── SKILL.md              # Defender prevention hooks (inspect + block at runtime)
-│   │   └── references/
-│   │       ├── defender-webhook.md      # Endpoint contract, identity model, AISession mapping
-│   │       └── google-adk-security.md   # Full Google ADK implementation
+│   │   ├── references/
+│   │   │   ├── defender-webhook.md   # Endpoint contract, identity model, AISession mapping
+│   │   │   ├── python-security.md    # Python (Google ADK verified; others best-effort)
+│   │   │   ├── dotnet-security.md    # .NET patterns (best-effort adapter)
+│   │   │   └── nodejs-security.md    # Node.js patterns (best-effort adapter)
+│   │   └── scripts/
+│   │       └── Grant-PreventionRole.ps1
 │   ├── add-workiq-tools/
 │   │   ├── SKILL.md              # WorkIQ MCP tool wiring
 │   │   └── references/

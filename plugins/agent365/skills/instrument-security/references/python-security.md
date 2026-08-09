@@ -1,8 +1,31 @@
-# Google ADK — Defender prevention implementation
+# Python — Defender prevention implementation
 
-Complete, tested implementation for a Google ADK agent running on Vertex AI
-Agent Engine. Read [defender-webhook.md](defender-webhook.md) first for the
-endpoint contract, identity model, and AISession rules.
+Complete implementation of the `security/` package for a Python agent. Read
+[defender-webhook.md](defender-webhook.md) first for the endpoint contract,
+identity model, and AISession rules.
+
+The package splits into two layers:
+
+| Layer | Files | Framework-specific? |
+|---|---|---|
+| Core | `config.py`, `entra_auth.py`, `ai_session.py`, `defender_client.py` | No — identical for every Python agent |
+| Adapter | `adapters/<framework>.py` | Yes — one module per agent framework |
+
+Only the adapter changes between frameworks. It translates the framework's
+native callbacks into the four inspection points and applies the verdict.
+
+## Framework support
+
+| Framework | Status |
+|---|---|
+| Google ADK | ✅ Verified end-to-end on Vertex AI Agent Engine |
+| Agent Framework | ⚠️ Best-effort — core ports as-is; adapter needs the framework's middleware hooks |
+| LangChain | ⚠️ Best-effort — map onto callback handlers / `RunnableConfig` callbacks |
+| OpenAI Agents SDK | ⚠️ Best-effort — map onto agent + tool hooks |
+
+Everything below §4 (`security/config.py` through `security/defender_client.py`)
+is framework-agnostic and can be used verbatim regardless of the row above.
+§5 is the Google ADK adapter — the verified one.
 
 ---
 
@@ -141,8 +164,7 @@ DEFENDER_ENDPOINTS = {
 }
 
 # The prevention resource the access token is issued FOR — the first-party
-# "Defender for AI Prevention Webhook" application. This is the direct analogue of
-# observability's api://9b975845-388f-4429-889e-eab1ef63949c/.default.
+# "Defender for AI Prevention Webhook" application.
 #
 # Note the identifier URI is an https:// form, NOT api:// — requesting
 # api://86a21212-.../.default fails with AADSTS500011 even when the service
@@ -150,9 +172,8 @@ DEFENDER_ENDPOINTS = {
 PREVENTION_RESOURCE_APP_ID = "86a21212-634e-4553-b3d6-e477e4c9d9ec"
 PREVENTION_SCOPE = "https://rtp-a365.ai.defender.microsoft.com/.default"
 
-# Application role the agent identity must hold to call the prevention endpoint,
-# mirroring Agent365.Observability.OtelWrite for observability. Granted to the
-# Agent Identity service principal, not the blueprint.
+# Application role the agent identity must hold to call the prevention endpoint.
+# Granted to the Agent Identity service principal, not the blueprint.
 PREVENTION_APP_ROLE = "AIAgentsRTP.ToolInvocation"
 
 # The four inspection points supported. Platform adapters map their native
@@ -163,7 +184,6 @@ ALL_HOOKS = ("before_agent", "after_agent", "before_tool", "after_tool")
 # -> agent identity -> Defender — so the token's appid/oid are the agent's own
 # Entra identity. This is the only supported flow: there is no gateway or
 # delegation path, and the webhook authorizes on the app role, not an app allow-list.
-# Mirrors observability/token_provider.py.
 
 FAIL_MODES = ("open", "closed")
 
@@ -216,7 +236,7 @@ class SecurityConfig:
     platform_agent_id: str
     platform_type: str
 
-    # --- Token acquisition (FMI 3-hop, mirroring observability) ------------
+    # --- Token acquisition (FMI 3-hop) -------------------------------------
     scope: str
     use_managed_identity: bool
     client_secret: str = field(repr=False, default="")
@@ -333,19 +353,21 @@ def get_config() -> SecurityConfig:
 
 ### `security/entra_auth.py`
 
-**This is `observability/token_provider.py` with a different scope.** Same FMI 3-hop
-chain, same synchronous in-process cache, same never-raise contract — only the auth
-target differs:
+Acquires the prevention token through the FMI 3-hop chain so the agent
+authenticates as **itself** — the blueprint credential only starts the chain, and
+the token that reaches Defender carries the Agent Identity in `azp`/`oid`.
 
-| | Observability | Prevention |
-|---|---|---|
-| Scope | `api://9b975845-…/.default` | `https://rtp-a365.ai.defender.microsoft.com/.default` |
-| App role | `Agent365.Observability.OtelWrite` | `AIAgentsRTP.ToolInvocation` |
-| Resolver | `get_observability_token` | `get_defender_token` |
+```
+Blueprint (client secret or MSI)
+  └─ Hop 1+2: client_credentials + fmi_path=<agentId> → FMI assertion
+     └─ Agent Identity
+        └─ Hop 3: client_assertion → prevention token
+```
 
-If the agent already has observability wired, copy `observability/token_provider.py`
-and change those three things rather than writing this from scratch. Keep the two in
-step — a fix to the token chain in one almost certainly belongs in the other.
+The hooks call this synchronously from the request path, so acquisition and the
+in-process cache are synchronous. Vertex AI Agent Engine offers no application
+lifecycle hook for a background refresh loop, so the token is fetched lazily and
+cached until shortly before expiry.
 
 Never raises: returns `""` so the caller applies the fail policy. Note a *missing app
 role grant* does not fail here — the token is issued without a `roles` claim and the
@@ -360,25 +382,18 @@ webhook rejects it with 401/403 instead.
         -> Agent Identity
           -> Hop 3: Defender prevention token
 
-This is **the same flow** ``observability/token_provider.py`` uses — deliberately
-so. Only the auth target differs:
-
-===========  ====================================  ===================================================
-             Observability                         Prevention
-===========  ====================================  ===================================================
-Scope        ``api://9b975845-…/.default``         ``https://rtp-a365.ai.defender.microsoft.com/.default``
-App role     ``Agent365.Observability.OtelWrite``  ``AIAgentsRTP.ToolInvocation``
-Resolver     ``get_observability_token``           ``get_defender_token``
-===========  ====================================  ===================================================
-
-Everything else — the FMI hops, the synchronous in-process cache, and the
-never-raise contract — is identical. Keep the two files in step: a fix to the
-token chain in one almost certainly belongs in the other.
+The agent authenticates as **itself**. The blueprint credential is only the
+starting point of the chain; the token that reaches Defender carries the Agent
+Identity in ``azp``/``oid``, so a verdict is always attributable to the specific
+agent that asked for it.
 
 The prevention hooks call ``get_defender_token`` synchronously from the request
 path, so acquisition and caching are synchronous here. Vertex AI Agent Engine
 gives no application lifecycle hook for a background refresh loop, so the token is
 fetched lazily and cached until shortly before it expires.
+
+This module never raises. A failure returns ``""`` and the caller applies the
+configured fail mode — an auth outage must not take the agent down with it.
 """
 
 from __future__ import annotations
