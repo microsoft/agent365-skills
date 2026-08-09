@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "validate": "node plugins/agent365/hooks/stop/validate-a365-setup.js && node plugins/agent365/hooks/stop/validate-make-a365-agent.js && node plugins/agent365/hooks/stop/validate-make-ai-teammate.js && node plugins/agent365/hooks/stop/validate-instrument-observability.js && node plugins/agent365/hooks/stop/validate-a365-code-validator.js && node plugins/agent365/hooks/stop/validate-add-workiq-tools.js && node plugins/agent365/hooks/stop/validate-test-local.js"
+    "validate": "node plugins/agent365/hooks/stop/validate-a365-setup.js && node plugins/agent365/hooks/stop/validate-make-a365-agent.js && node plugins/agent365/hooks/stop/validate-make-ai-teammate.js && node plugins/agent365/hooks/stop/validate-instrument-observability.js && node plugins/agent365/hooks/stop/validate-instrument-security.js && node plugins/agent365/hooks/stop/validate-a365-code-validator.js && node plugins/agent365/hooks/stop/validate-add-workiq-tools.js && node plugins/agent365/hooks/stop/validate-test-local.js"
   },
   "engines": {
     "node": ">=18"

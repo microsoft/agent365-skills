@@ -288,7 +288,7 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **`Agent365.Observability.OtelWrite` is automatically granted** to the agent identity by `a365 setup all` — no GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
+2. **App roles are granted automatically** by `a365 setup all` — `Agent365.Observability.OtelWrite` and `AIAgentsRTP.ToolInvocation` (Defender prevention) are both assigned to the blueprint, and agent identities inherit them through the FMI chain. No GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.

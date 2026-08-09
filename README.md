@@ -102,6 +102,7 @@ a365-setup  (recommended entry point — handles CLI, Azure, Blueprint)
 
 test-local  ← standalone; run at any point to test your agent locally
 a365-code-validator  ← standalone; run at any point to diagnose MAC Activity / telemetry readiness
+instrument-security  ← standalone; run after registration to add Defender prevention (blocking) hooks
 ```
 
 `a365-setup` writes `.a365-workspace-detection.local.json`. All downstream skills read this file to skip re-detection.
@@ -131,6 +132,7 @@ The file is safe to delete — the next `a365-setup` run rebuilds it. Skills als
 ```
 "Make this agent an AI Teammate"    → make-ai-teammate       (Blueprint must exist)
 "Add observability to this agent"   → instrument-observability
+"Add Defender prevention"           → instrument-security    (inspects + blocks at runtime)
 "Validate A365 code"                → a365-code-validator    (diagnostics + optional guided fixes)
 "Add WorkIQ tools to this agent"    → add-workiq-tools
 "Test this agent locally"           → test-local
@@ -259,6 +261,53 @@ All new code is marked `// A365 Observability — best-effort instrumentation` a
 "Make this agent visible in Microsoft Defender"
 "Wire up OpenTelemetry for this agent"      "Enable Agent 365 telemetry"
 "Add observability to this .NET agent"      "Add A365 observability to this Python agent"
+```
+
+---
+
+### `instrument-security` — Add Defender Prevention (Runtime Blocking)
+
+> **Prerequisite:** `a365-setup` → `make-a365-agent` must have run first — this skill uses the
+> Blueprint and Agent Identity they create. It does **not** provision Entra objects.
+
+Where `instrument-observability` makes an agent *visible*, `instrument-security` makes it
+*enforceable*. It inserts inspection points at the agent's own lifecycle hooks; each one posts a
+Security4AI `AISession` to the Defender third-party prevention webhook
+(`/tp/v1/protection/analyze`) and **enforces the verdict**:
+
+| Inspection point | Content inspected | Effect when Defender blocks |
+|---|---|---|
+| Before agent | inbound user prompt | agent never runs; block message is the reply |
+| After agent | final agent answer | answer is replaced by the block message |
+| Before tool | tool name + arguments | tool never executes |
+| After tool | tool result | result the model sees is replaced (indirect prompt-injection checkpoint) |
+
+**Authentication uses the agent's own Entra identity** — the Agent Identity provisioned by
+`a365 setup all`, via an FMI 3-hop chain. The token the webhook receives carries the agent's
+`azp`/`oid`, so verdicts bind to a real agent rather than a shared gateway app. No new app
+registration, and no credential in source.
+
+**Platform coverage.** Google ADK (Vertex AI Agent Engine) is verified end-to-end, wiring
+`before_agent_callback`, `after_agent_callback`, `before_tool_callback`, and
+`after_tool_callback`. .NET and Node.js ship best-effort adapters. Generated code separates the
+platform-agnostic core (config, Entra auth, AISession builders, webhook client) from a thin
+per-platform adapter, so other hosts are added as new adapters without touching the core.
+
+Existing callbacks are **composed, never replaced** — the agent's own hooks still run (closing
+tracing scopes, redacting payloads), and security inspects the effective result and has the final
+say. Blocking always surfaces a readable reason. A configurable fail mode decides what happens
+when no verdict can be obtained: **fail open** (allow — a Defender outage can't break the agent)
+or **fail closed** (block).
+
+All new code is marked `A365 Security — added by instrument-security skill`; changes are
+non-destructive and idempotent.
+
+**Trigger phrases:**
+```
+"Instrument security for this agent"     "Add Defender prevention to this agent"
+"Add A365 security"                      "Protect this agent with Defender"
+"Add security hooks to this agent"       "Block malicious tool calls"
+"Inspect prompts and tool calls with Defender"
 ```
 
 ---
