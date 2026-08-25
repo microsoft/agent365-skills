@@ -20,6 +20,7 @@ agent365-skills/
 │       │   ├── instrument-observability/SKILL.md      # OTel + A365 tracing exporter instrumentation
 │       │   ├── a365-code-validator/SKILL.md           # Observability/MAC Activity validation + guided fixes
 │       │   ├── add-workiq-tools/SKILL.md              # WorkIQ MCP server wiring
+│       │   ├── purview-dlp-integration/SKILL.md       # Purview DLP guard + gate wiring (Node.js / Python / .NET)
 │       │   └── test-local/SKILL.md                    # Local testing with AgentsPlayground
 │       ├── hooks/
 │       │   ├── preToolUse/path-guard.js               # Blocks writes outside project root
@@ -29,6 +30,7 @@ agent365-skills/
 │       │       ├── validate-make-ai-teammate.js
 │       │       ├── validate-instrument-observability.js
 │       │       ├── validate-add-workiq-tools.js
+│       │       ├── validate-purview-dlp-integration.js
 │       │       └── validate-test-local.js
 │       └── shared/agent-detection.md  # Shared heuristics for detecting agent type and authMode
 ├── tests/                             # Unit tests for stop hook validators
@@ -36,7 +38,8 @@ agent365-skills/
 │   ├── validate-a365-setup.test.js
 │   ├── validate-make-a365-agent.test.js
 │   ├── validate-observability.test.js
-│   └── validate-workiq.test.js
+│   ├── validate-workiq.test.js
+│   └── validate-purview-dlp-integration.test.js
 ├── evals/
 │   └── agent365/                      # Evaluation test cases (one per skill)
 │       ├── a365-setup/evals.json
@@ -44,6 +47,7 @@ agent365-skills/
 │       ├── make-ai-teammate/evals.json
 │       ├── instrument-observability/evals.json
 │       ├── add-workiq-tools/evals.json
+│       ├── purview-dlp-integration/evals.json
 │       └── test-local/evals.json
 ├── scripts/install.js                 # One-liner installer for Claude Code + Copilot CLI
 ├── AGENTS.md                          # Top-level contributor guidelines
@@ -108,6 +112,15 @@ agent365-skills/
    available. It then asks whether to apply safe fixes, create a fix plan, or stop. It must
    not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
+12. **`purview-dlp-integration` is additive and report-first-validated.** It copies one generic
+   env-driven guard (`purview.ts` / `purview.py` / `purview.cs`) and wires an INPUT gate before
+   the LLM + an optional OUTPUT gate. The guard uses the agent's **agentic delegated** token
+   evaluated as `/me` (never app-only client credentials on a blueprint app), always sets
+   `contentEntry.name`, and fails closed. Never run `az ad app permission admin-consent` on the
+   blueprint app — append the `Content.Process.User` scope instead. Its validator
+   (`validate-purview-dlp-integration.js`) is report-first (advisory `findings`, always
+   `ok: true`) because "start disabled / skip policy" is a valid bring-up state.
+
 ---
 
 ## Testing
@@ -142,4 +155,4 @@ For comprehensive eval test cases, see [evals/README.md](evals/README.md).
 
 ## Allowed commands
 
-`dotnet *`, `npm *`, `node *`, `python *`, `python3 *`, `pip *`, `pip3 *`, `uv *`, `a365 *`, `az *`, `devtunnel *`, `agentsplayground *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
+`dotnet *`, `npm *`, `node *`, `python *`, `python3 *`, `pip *`, `pip3 *`, `uv *`, `a365 *`, `az *`, `pwsh *`, `devtunnel *`, `agentsplayground *`, `git *`, `grep *`, `find *`, `cat *`, `ls *`
