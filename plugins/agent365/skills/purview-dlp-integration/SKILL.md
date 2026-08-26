@@ -98,6 +98,37 @@ user turn ─► [INPUT gate] processContent(uploadText, /me)  ─► block? ─
 - **Policy:** a dedicated Purview DLP policy scoped to the agent's **Entra app id** (portal:
   "Managed cloud apps" / `Applications` workload) with a **RestrictAccess=Block** rule.
 
+### S2S / app-only agents (autonomous, no AgentApplication)
+
+For an agent that authenticates **service-to-service** (no signed-in user, no
+`@microsoft/agents-hosting` AgentApplication — e.g. an Express / worker-loop agent using the A365
+FMI client-credentials chain), use the **S2S guard** [`assets/purview-s2s.ts`](./assets/purview-s2s.ts)
+instead of `purview.ts`.
+
+**Verified 2026-08-26 (tenant 01eed126-…):** app-only DLP *is* supported — the "blueprint app-only
+tokens get stripped" rule is true for the **blueprint** app but **not** for the **agent identity**:
+
+| Token source | `roles` in the Graph token |
+|---|---|
+| Blueprint app-only (client-credentials) | `AgentIdentity.CreateAsManager` — **Content.Process.* STRIPPED** |
+| Agent identity via the FMI 3-hop chain | **`Content.Process.All` RETAINED** ✅ |
+
+So the S2S guard (1) mints the **agent identity's** Graph token through the FMI chain
+(Blueprint → `fmi_path` → Agent Identity → Graph), (2) calls the app-only endpoint
+`POST /beta/users/{sponsorUserId}/dataSecurityAndGovernance/processContent` (app-only can't use
+`/me`), and (3) passes an `agents:[{"@odata.type":"aiAgentInfo", blueprintId, identifier, name}]`
+entry plus `protectedAppMetadata.applicationLocation` = the agent app id (the DLP policy scope).
+
+**Two steps differ from the delegated path:**
+- **Permission:** grant `Content.Process.All` (**Application**) to the **agent identity** SP (not the
+  blueprint) — run [`scripts/Grant-ContentProcessAppRole.ps1`](./scripts/Grant-ContentProcessAppRole.ps1)
+  instead of `Grant-DelegatedGraphScope.ps1`.
+- **Wiring:** import `purviewGuard` from `./purview-s2s.js` and call `evaluatePrompt(text)` /
+  `evaluateResponse(text)` directly around the LLM call (no TurnContext / Authorization args). The
+  guard reuses the `agent365Observability__*` S2S credentials already stamped by `a365 setup all`.
+
+Everything else — the DLP policy (Step 6), the `[purview]` log format, fail-closed semantics — is identical.
+
 ---
 
 ## Before you start — read the A365 config, then ask for the rest
@@ -280,7 +311,7 @@ own agentic auth handler + a plain HTTPS POST.
 - **.NET:** `Microsoft.Agents.*` hosting packages (standard); uses `System.Net.Http` + `System.Text.Json` (no extra NuGet).
 
 ## Non-negotiable constraints (why it's built this way)
-1. **Agentic delegated token + `/me`** — app-only client-credentials on a blueprint app is stripped of data-plane roles by Graph. Use the agent's agentic delegated token (Node.js `AgenticAuthenticationService.GetAgenticUserToken`, Python `authorization.exchange_token(…)`, .NET `UserAuthorization.GetTurnTokenAsync(…)`). Do not "fix" this by switching to client-credentials.
+1. **Agentic delegated token + `/me` (AgentApplication agents); agent-identity FMI token (S2S agents)** — a *blueprint* app-only token is stripped of data-plane roles (Content.Process.*) by Graph, so an AgentApplication agent must use its agentic delegated token (Node.js `AgenticAuthenticationService.GetAgenticUserToken`, Python `authorization.exchange_token(…)`, .NET `UserAuthorization.GetTurnTokenAsync(…)`). **But an S2S / autonomous agent CAN do app-only DLP** — using the **agent identity's** FMI-minted Graph token (not the blueprint's) against `/users/{sponsor}/…` instead of `/me`. See "S2S / app-only agents" above. Do not "fix" the AgentApplication path by switching *it* to client-credentials.
 2. **`contentEntry.name` is required** — omitting it returns a permanent `BadRequest` that looks like a clean allow. The guard always sets it and treats `processingErrors` as fail-closed.
 3. **Dedicated AI-app policy** — the `Applications`/Managed-cloud-apps location can't be combined with Exchange/SharePoint/OneDrive/Teams in one policy.
 4. **`RestrictAccess` block, `EnforcementPlanes=Application`** — not `BlockAccess`, not `CopilotExperiences` (that's first-party Copilot).
@@ -292,9 +323,11 @@ own agentic auth handler + a plain HTTPS POST.
 | File | Purpose |
 |------|---------|
 | [`assets/purview.ts`](./assets/purview.ts) · [`purview.py`](./assets/purview.py) · [`purview.cs`](./assets/purview.cs) | Drop-in DLP guard (Node.js / Python / .NET — generic, env-driven). |
+| [`assets/purview-s2s.ts`](./assets/purview-s2s.ts) | **S2S (app-only)** DLP guard for autonomous Node.js agents — agent-identity FMI Graph token, `/users/{sponsor}` endpoint. |
 | [`assets/wiring-snippet.ts`](./assets/wiring-snippet.ts) · [`.py`](./assets/wiring-snippet.py) · [`.cs`](./assets/wiring-snippet.cs) | The minimal handler edits (Node.js / Python / .NET). |
 | [`assets/purview.env.example`](./assets/purview.env.example) | Environment variables (same for all three languages). |
 | [`scripts/Grant-DelegatedGraphScope.ps1`](./scripts/Grant-DelegatedGraphScope.ps1) | Append the delegated Graph scope (surgical, no admin-consent). |
+| [`scripts/Grant-ContentProcessAppRole.ps1`](./scripts/Grant-ContentProcessAppRole.ps1) | **S2S:** grant `Content.Process.All` (Application) to the agent identity SP. |
 | [`scripts/New-AiAppDlpPolicy.ps1`](./scripts/New-AiAppDlpPolicy.ps1) | Create the AI-app DLP policy + block rule. |
 | [`references/purview-portal-guide.md`](./references/purview-portal-guide.md) | Tenant enablement (billing/DSPM) + manual portal policy steps. |
 | [`references/troubleshooting.md`](./references/troubleshooting.md) | Log reference + symptom→cause→fix table. |
