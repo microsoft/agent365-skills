@@ -5,7 +5,7 @@
 // signed-in user and NO @microsoft/agents-hosting AgentApplication (e.g. an Express or
 // worker-loop agent authenticating via the A365 FMI client-credentials chain).
 //
-// ── WHY A SEPARATE GUARD (verified 2026-08-26, tenant 01eed126-…) ─────────────
+// ── WHY A SEPARATE GUARD (verified 2026-08-26 in a live tenant) ─────────────
 //  The delegated guard (purview.ts) needs an agentic `/me` token, which an S2S agent does
 //  not have. The blocker in the base skill — "blueprint app-only tokens get Content.Process
 //  stripped" — is REAL for the *blueprint* app, but NOT for the *agent identity*:
