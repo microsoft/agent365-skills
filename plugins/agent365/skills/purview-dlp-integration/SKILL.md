@@ -105,7 +105,7 @@ For an agent that authenticates **service-to-service** (no signed-in user, no
 FMI client-credentials chain), use the **S2S guard** [`assets/purview-s2s.ts`](./assets/purview-s2s.ts)
 instead of `purview.ts`.
 
-**Verified 2026-08-26 (tenant 01eed126-…):** app-only DLP *is* supported — the "blueprint app-only
+**Verified 2026-08-26:** app-only DLP *is* supported — the "blueprint app-only
 tokens get stripped" rule is true for the **blueprint** app but **not** for the **agent identity**:
 
 | Token source | `roles` in the Graph token |
