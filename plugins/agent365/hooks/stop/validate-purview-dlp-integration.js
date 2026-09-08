@@ -38,7 +38,6 @@ const allFiles = scanProject(cwd, { maxDepth: 7 })
   .filter(f => !path.basename(f).includes('validate-purview-dlp-integration'))
   .filter(f => !f.includes(path.join('plugins', 'agent365', 'hooks')))
   .filter(f => !f.includes(path.join('plugins', 'agent365', 'skills', 'purview-dlp-integration')))
-  .filter(f => !f.includes(path.join('.github copy', 'skills', 'purview-dlp-integration')))
   .filter(f => !isTestPath(f));
 
 const codeFiles = filterByName(allFiles, '.ts', '.js', '.py', '.cs');
