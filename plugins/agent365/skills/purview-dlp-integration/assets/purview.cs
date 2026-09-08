@@ -1,7 +1,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 // Microsoft Purview DLP + Audit guard for Microsoft Agent 365 (A365) agents — .NET.
 //
-// A365 WorkIQ / DLP — best-effort wiring (verify against SDK source before production).
+// A365 DLP — best-effort wiring (verify against SDK source before production).
 // Node.js and Python variants of this guard are verified against a live agent; this .NET
 // port mirrors their logic and the verified UserAuthorization.GetTurnTokenAsync pattern from
 // instrument-observability/references/dotnet-observability.md, but the exact SDK namespaces
