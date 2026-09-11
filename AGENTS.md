@@ -7,7 +7,7 @@ Read this before making any changes to skill files.
 
 ## Plugin Purpose
 
-This plugin instruments and configures A365 agents. It contains seven skills:
+This plugin instruments and configures A365 agents. It contains eight skills:
 
 | Skill | Command | Trigger |
 |-------|---------|---------|
@@ -17,6 +17,7 @@ This plugin instruments and configures A365 agents. It contains seven skills:
 | `add-workiq-tools` | `/agent365:add-workiq-tools` | "add workiq tools", "add MCP servers to this agent" |
 | `instrument-observability` | `/agent365:instrument-observability` | "instrument observability", "add a365 observability" |
 | `a365-code-validator` | `/agent365:a365-code-validator` | "validate a365 code", "debug MAC activity", "check A365 exporter flags" |
+| `purview-dlp-integration` | `/agent365:purview-dlp-integration` | "add purview dlp", "block credit cards/PII before the LLM", "add data loss prevention to my agent" |
 | `test-local` | `/agent365:test-local` | "test this agent locally", "open agentsplayground" |
 
 **Supported languages for `make-ai-teammate`:** .NET (AgentFramework · Semantic Kernel) · Node.js (LangChain · OpenAI Agents SDK · Claude SDK · Semantic Kernel · Google ADK) · Python (AgentFramework · LangChain · OpenAI · Claude · Semantic Kernel · Google ADK)
@@ -27,6 +28,8 @@ This plugin instruments and configures A365 agents. It contains seven skills:
 - **.NET:** Agent Framework · Semantic Kernel (different API: `AddToolServersToAgentAsync`, not `GetMcpToolsAsync`) · Azure AI Foundry (best-effort — package published, no Microsoft sample)
 - **Node.js:** LangChain (returns new agent — capture return) · OpenAI Agents SDK (mutates in place) · Claude SDK (first arg is `Options`, mutates in place) · ⚠ Semantic Kernel and Google ADK **hard-stop** (no Microsoft adapter — skill exits at Phase 0B)
 - **Python:** Agent Framework (uses `turn_context=` kwarg, requires `initial_tools=[]`) · OpenAI Agents SDK (uses `context=` kwarg, no `agentic_app_id`) · Google ADK (passes `agentic_app_id`, wraps in `asyncio.wait_for`) · Semantic Kernel and Azure AI Foundry (best-effort — package published, no Microsoft sample) · ⚠ LangChain / Claude SDK / CrewAI **hard-stop** (no Microsoft adapter; Claude and CrewAI samples ship a local DIY `mcp_tool_registration_service.py` scaffold — out of scope for this skill)
+
+**Supported languages for `purview-dlp-integration`:** Node.js (`@microsoft/agents-hosting`) · Python (`microsoft-agents-hosting-*`) · .NET (`Microsoft.Agents.*` — best-effort guard port). One generic env-driven guard + minimal INPUT/OUTPUT gate wiring per language; shared PowerShell scripts, DLP policy, and `[purview]` log format.
 
 **Skill dependency chain:**
 ```
@@ -42,6 +45,7 @@ make-a365-agent  →  instrument-observability  (Observability paths)
                  →  add-workiq-tools          (WorkIQ paths)
 
 a365-code-validator  (report-first; optional safe fixes after confirmation; no prerequisite)
+purview-dlp-integration  (additive DLP gate; needs a blueprint for auto-discovery; independent of observability / WorkIQ)
 test-local  (no prerequisite)
 ```
 `make-ai-teammate` is **idempotent and state-aware**. Phase 0B detects three primary skill-state flags from the project — `has_obs` (observability wired), `has_workiq` (ToolingManifest.json has a non-empty mcpServers array), `disk_blueprint_present` (blueprint already registered, from `.a365-workspace-detection.local.json` / `a365.generated.config.json`). Phase 0C routes through an **8-row state matrix** (rows 1–8 over those flags): full flow → skip-obs → skip-workiq → register-only → no-re-register variants → "everything wired" confirmation (row 8 — sub-question: re-publish or verify-only). The skill creates the hosting layer, agent class, notification handling, full `a365.config.json`. **Phase 9.7.1a is the verification gate** — disk presence (`disk_blueprint_present`) is advisory only; the user is always asked explicitly whether the disk-side blueprint is the intended one before any skip/reuse decision (handles cases where disk lies about tenant state: deleted in Entra, file from another project, agent-name mismatch). If an existing blueprint is found, the skill asks the user explicitly: **Reuse** (skip setup-all), **Re-run** (idempotent — CLI reuses the blueprint ID but refreshes permissions and project settings), or **Fresh** (`a365 cleanup` first, then re-provision — destructive). When no blueprint exists, `a365 setup all --aiteammate --m365` runs unconditionally. (`--m365` is **always passed** for AI Teammate — no user question. Never pass `--authmode` with `--aiteammate` — AI Teammate uses the Agentic User identity.) It then asks **Phase 9.7.2 Run Target** (Prod vs Local), persisted to `.a365-workspace-detection.local.json` with remember-with-confirm on re-runs. For `runTarget = "prod"`: a **Phase 9.7.2b hosting sub-question** follows — *dev tunnel* (Microsoft Dev Tunnel exposing localhost — for in-Teams testing before deploying to a cloud) or *cloud endpoint* (Azure App Service / Container Apps / Functions; AWS App Runner / Lambda + API Gateway / ECS; Google Cloud Run / App Engine / Cloud Functions). The user supplies (or the skill derives) the HTTPS messaging endpoint URL, stored as `chosenEndpoint`. Phase 9.7.2c then **always** re-asserts `chosenEndpoint` on the blueprint via `a365 setup blueprint --update-endpoint <chosenEndpoint> --m365` — run **unconditionally** for AI Teammate prod (mandatory, NOT gated on a config/endpoint diff: the disk `messagingEndpoint` can be stale — dev-tunnel URL rotation, a non-persisted Teams Graph re-registration, or a reused/copied blueprint). Skipped only for `runTarget = "local"` or an empty/placeholder `chosenEndpoint`. (`--m365` is required — without it the CLI silently skips Teams Graph re-registration.) After reconciliation: **verifies** (read-only) the Teams manifest, runs `a365 publish` (packages `manifest.zip` — does NOT upload, does NOT touch the bot endpoint), then walks the user through **two required manual steps**: (a) verify the agent in Teams Developer Portal at `https://dev.teams.microsoft.com/tools/agent-blueprint/<agentBlueprintId>/configuration` — Agent Type=API Based, Notification URL = the reconciled `chosenEndpoint`/`messagingEndpoint` (required for Teams message delivery; the Notification URL is auto-registered by `--update-endpoint --m365` via the Teams Graph proxy on supported tenants — verify it, and set it by hand only as a fallback when the CLI reports automated registration isn't available for the tenant); and (b) request an agent instance from Teams Apps and wait for admin approval at admin.cloud.microsoft. For `runTarget = "local"`: agent runs at `http://localhost:3978/api/messages` (Node.js/Python default) — all publish/Dev-Portal/MAC-upload/instance steps are skipped — the skill routes directly to AgentsPlayground for smoke testing.
@@ -50,6 +54,8 @@ test-local  (no prerequisite)
 `a365-setup` outputs a mandatory intro message, detects stack/language/CEA/`hasBlueprintConfig`, and the three skill-state flags **`has_aiteammate_structure`**, **`has_obs`**, **`has_workiq`** (the same primary flags that drive `make-ai-teammate` Phase 0C's 8-row matrix). Always updates the a365 CLI to latest (explicit exception to the ✅-skip rule), checks for an existing Azure CLI session before logging in, shows a ✅/❌ prerequisite summary and only processes ❌ missing tools. Asks the blueprint question (reuse vs fresh) then asks **capabilities first** — capability options are auto-filtered: Observability is hidden if `has_obs = true`, WorkIQ is hidden if `has_workiq = true`, the menu collapses to Register + WorkIQ when `(has_aiteammate_structure && has_obs)` (legacy "already an AI Teammate" route, computed inline — the legacy `hasAITeammateChanges` field is **derived, no longer stored**). If AI Teammate is selected, auth mode is skipped (always `agentic-user`); if non-AI Teammate, asks `obo` or `s2s`. Cache fields written: `agentStack`, `programmingLanguage`, `usesTeamsOrCopilot`, `hasBlueprintConfig`, `has_aiteammate_structure`, `has_obs`, `has_workiq`, `agentType`, `authMode`, `reuseBlueprint`, `existingBlueprintId`. Delegates: AI Teammate path → `make-ai-teammate`; all other paths → `make-a365-agent`.
 `make-a365-agent` checks for an existing blueprint config before collecting inputs — if found, asks the developer whether to reuse (skips `a365 setup all`) or create fresh. Runs `a365 setup all --authmode obo|s2s` for non-AI Teammate paths; add `--m365` for CEA agents and follow with `a365 setup permissions bot`. `Agent365.Observability.OtelWrite` is auto-granted at provisioning, but other permission grants (Graph, Bot API, custom resources) require Global Administrator consent — when the developer isn't a GA, `a365 setup all` automatically prints next-steps (typically a PowerShell script) for a GA to complete. There is no separate `setup admin` subcommand. Then conditionally invokes `instrument-observability` and `add-workiq-tools`.
 `add-workiq-tools` and `instrument-observability` read `.a365-workspace-detection.local.json` to skip re-detection and verify prerequisites. `add-workiq-tools` Phase 0B includes a **framework support guard** that hard-stops on unsupported `(programmingLanguage, agentStack)` pairs (Python LangChain / Claude / CrewAI; Node.js Semantic Kernel / Google ADK) before any CLI command runs. Phase 4 branches on the cached `agentStack` into 11 framework-specific sub-sections (§4.1 .NET Agent Framework through §4.11 Python Azure AI Foundry); the stop-hook validator (`validate-add-workiq-tools.js`) is also framework-aware and requires the framework-matching symbol (e.g., `AddToolServersToAgentAsync` for .NET SK, `add_tool_servers_to_agent` for Python). **Phase 4.5 (gated)** offers the Word `@mention` notification handler when *both* gates pass: `programmingLanguage = NodeJS && agentStack = LangChain`, AND `mcp_WordServer` is in `ToolingManifest.json`. Wires `proactive: {}`, per-user conversation index, and a `NotificationType.WpxComment` branch — best-effort because no Microsoft Node.js sample is published yet. Best-effort branches (Python SK, Python/.NET Azure AI Foundry, and the Phase 4.5 @mention handler) mark all generated lines with `// A365 WorkIQ — best-effort wiring (verify against SDK source before production)`.
+
+`purview-dlp-integration` is **additive** and independent of observability / WorkIQ. It auto-discovers the app (client) id, display name, blueprint id, and current Graph scopes from `a365.config.json` + `a365.generated.config.json`, then asks only for what's missing (DLP policy choice, sensitive info type, admin UPN, agentic auth handler name). It detects the agent language and copies ONE generic env-driven guard (`assets/purview.ts` / `purview.py` / `purview.cs` — the .NET guard is a best-effort port), then applies minimal wiring: an **INPUT gate** that calls the Graph `processContent` API before the LLM (blocks the turn → the LLM is never called) and an optional **OUTPUT gate** before the reply. The guard uses the agent's own **agentic delegated** token evaluated as `/me` (never app-only client credentials on a blueprint app), always sets `contentEntry.name`, and fails closed. It guides the delegated `Content.Process.User` scope grant (`scripts/Grant-DelegatedGraphScope.ps1` — appends, never `admin-consent` on the blueprint app) and a DLP-policy choice (new via `scripts/New-AiAppDlpPolicy.ps1`, existing via `-ListExisting`, or skip). Success is judged by the `[purview] uploadText -> BLOCKED (… errors=0)` log, not `DistributionStatus`. The stop-hook validator (`validate-purview-dlp-integration.js`) is report-first (advisory findings, never blocks) because the skill supports a legitimate "start disabled / skip policy" bring-up state.
 
 The skills are designed to be **non-destructive**, **idempotent**, and **additive**.
 They read before writing, ask before doing anything risky, and leave the codebase
@@ -91,6 +97,11 @@ plugins/agent365/
 │   │       ├── dotnet-workiq.md  # .NET MCP tool patterns
 │   │       ├── nodejs-workiq.md  # Node.js MCP tool patterns
 │   │       └── python-workiq.md  # Python MCP tool patterns
+│   ├── purview-dlp-integration/
+│   │   ├── SKILL.md              # Purview DLP guard + gate wiring (Node.js / Python / .NET)
+│   │   ├── assets/              # Guards (purview.ts/py/cs), wiring snippets, env example
+│   │   ├── references/          # Portal/tenant enablement guide + troubleshooting
+│   │   └── scripts/             # Grant-DelegatedGraphScope.ps1, New-AiAppDlpPolicy.ps1
 │   └── test-local/
 │       └── SKILL.md              # AgentsPlayground local testing
 ├── shared/
@@ -104,6 +115,7 @@ plugins/agent365/
 │       ├── validate-make-a365-agent.js   # Stop hook validator for make-a365-agent
 │       ├── validate-instrument-observability.js  # Stop hook validator — build check included
 │       ├── validate-add-workiq-tools.js  # Stop hook validator — build check included
+│       ├── validate-purview-dlp-integration.js  # Stop hook validator — report-first (advisory findings)
 │       └── validate-test-local.js
 └── AGENTS.md                     # This file
 ```
@@ -121,6 +133,8 @@ evals/
     ├── instrument-observability/
     │   └── evals.json
     ├── add-workiq-tools/
+    │   └── evals.json
+    ├── purview-dlp-integration/
     │   └── evals.json
     └── test-local/
         └── evals.json

@@ -1,0 +1,93 @@
+{
+  "skill_name": "purview-dlp-integration",
+  "eval_instructions": "Run these evals against existing A365 agent projects or minimal fixtures. This skill is additive and reversible: it copies one guard file, applies minimal handler wiring (an INPUT gate before the LLM and an optional OUTPUT gate before the reply), appends env vars, and guides the delegated Graph scope grant + DLP policy choice. Verify it uses the agent's own agentic delegated token evaluated as /me (never app-only client credentials, never admin-consent on the blueprint app), always sets contentEntry.name, fails closed by default, and picks the guard/wiring matching the detected language. It must ask which DLP policy to use (new / existing / skip) unless the user already specified it.",
+  "trigger_tests": {
+    "instructions": "Run each prompt in a fresh session with the full agent365 skill library loaded. should_trigger prompts must activate purview-dlp-integration. should_not_trigger prompts must activate the named sibling (or no skill) and must NOT activate purview-dlp-integration — they guard the DLP-vs-observability/tools boundary. Report hit rate in each direction (>=2 runs each).",
+    "should_trigger": [
+      "Add Purview DLP to my A365 agent",
+      "Block credit cards before my agent's LLM sees them",
+      "Add data loss prevention to my Node.js agent",
+      "Enforce compliance and audit on my agent's prompts and responses",
+      "Wire a DLP gate into my agent code",
+      "Block SSNs and PII in my agent turns",
+      "Call the Graph processContent API to block sensitive data in my agent",
+      "Add Purview blocking to my Python agent",
+      "Stop my agent from sending credit card numbers to the model"
+    ],
+    "should_not_trigger": [
+      { "prompt": "Instrument observability for this agent", "expected_skill": "instrument-observability" },
+      { "prompt": "Debug why MAC Activity is empty for this agent", "expected_skill": "a365-code-validator" },
+      { "prompt": "Add WorkIQ mail and calendar tools to my agent", "expected_skill": "add-workiq-tools" },
+      { "prompt": "Register this agent with Agent 365 and create a blueprint", "expected_skill": "make-a365-agent" },
+      { "prompt": "Turn my agent into an AI Teammate", "expected_skill": "make-ai-teammate" },
+      { "prompt": "Run my agent locally in AgentsPlayground", "expected_skill": "test-local" },
+      { "prompt": "Set up the A365 CLI and Azure prerequisites", "expected_skill": "a365-setup" }
+    ]
+  },
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add Purview DLP to my A365 agent and block credit card numbers before the LLM",
+      "description": "Node.js @microsoft/agents-hosting agent with a365.config.json + a365.generated.config.json present; user wants a new DLP policy.",
+      "expected_output": "The skill detects Node.js, reads the a365 config for app id/display name/blueprint id, copies assets/purview.ts next to the agent class, applies the wiring snippet (INPUT gate before the LLM, OUTPUT gate before the reply) passing this.authorization, appends PURVIEW_DLP_ENABLED=true to .env, guides Grant-DelegatedGraphScope.ps1 to append Content.Process.User, asks which policy to use and (default) runs New-AiAppDlpPolicy.ps1, then explains the [purview] BLOCKED verify log.",
+      "files": [],
+      "expectations": [
+        "Step 0: Detects Node.js/TypeScript via package.json (@microsoft/agents-hosting)",
+        "Before-you-start: Reads a365.config.json / a365.generated.config.json for app id, display name, blueprint id, and current Graph scopes",
+        "Step 2: Copies assets/purview.ts (the guard) into the agent source unchanged",
+        "Step 3: Wires the INPUT gate before the LLM call and the OUTPUT gate before the reply, passing this.authorization + turn context",
+        "Step 4: Appends PURVIEW_DLP_ENABLED=true to .env",
+        "Step 5: Runs Grant-DelegatedGraphScope.ps1 to APPEND Content.Process.User (never az ad app permission admin-consent on the blueprint app)",
+        "Step 6: Asks new / existing / skip, then runs New-AiAppDlpPolicy.ps1 for the new policy (default SIT Credit Card Number)",
+        "Constraints: Uses the agentic delegated token evaluated as /me; always sets contentEntry.name; fails closed by default",
+        "Step 8: Verifies with a Luhn-valid test value and judges success by the [purview] uploadText -> BLOCKED (errors=0) log, not DistributionStatus"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add data loss prevention to this Python agent using my existing 'Corp PII' policy",
+      "description": "Python microsoft-agents-hosting-core agent; user already has a DLP policy and does NOT want a new one.",
+      "expected_output": "The skill detects Python, copies assets/purview.py, wires evaluate_prompt/evaluate_response passing auth, auth_handler_name, and context, appends the env vars, and for the existing-policy path runs New-AiAppDlpPolicy.ps1 -ListExisting to confirm the app id is covered — creating nothing new. It does not create a new policy.",
+      "files": [],
+      "expectations": [
+        "Step 0: Detects Python via pyproject.toml / requirements.txt (microsoft-agents-hosting-*)",
+        "Step 2: Copies assets/purview.py (the guard) into the agent source",
+        "Step 3: Wires the gates in process_user_message passing auth, auth_handler_name, context (already handler parameters)",
+        "Step 6 Option B: Runs ./New-AiAppDlpPolicy.ps1 -ListExisting and checks whether the chosen policy COVERS THIS APP",
+        "Step 6 Option B: If the policy already covers the app id, creates nothing and confirms Mode=Enable + a RestrictAccess/Block rule on UploadText",
+        "Does NOT create a new DLP policy",
+        "Constraints: agentic delegated token via authorization.exchange_token(...); fail-closed default"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Wire a Purview DLP gate into my .NET agent but I'll add the policy myself later",
+      "description": ".NET Microsoft.Agents.* agent; user chooses to skip policy creation (Option C).",
+      "expected_output": "The skill detects .NET, warns the .NET guard is a best-effort port, copies assets/purview.cs, wires OnMessageAsync (PurviewGuard.Instance.EvaluatePromptAsync/EvaluateResponseAsync passing UserAuthorization + agentic handler name + turnContext), appends PURVIEW_DLP_ENABLED, and for Option C creates no policy — explaining the guard stays enabled but logs 'allowed ... 0 policyAction(s)' until the user adds a matching Applications/Managed-cloud-apps policy with a RestrictAccess=Block rule and EnforcementPlanes=Application.",
+      "files": [],
+      "expectations": [
+        "Step 0: Detects .NET via *.csproj (Microsoft.Agents.*) and flags the .NET guard as best-effort (verify ITurnContext / UserAuthorization namespaces)",
+        "Step 2: Copies assets/purview.cs into the agent source",
+        "Step 3: Wires OnMessageAsync passing UserAuthorization, the agentic auth handler name, and turnContext",
+        "Step 6 Option C: Creates no policy; explains the guard logs 'allowed ... 0 policyAction(s)' until a matching policy exists",
+        "Step 6 Option C: Lists the 6 required policy properties (Applications location, EnforcementPlanes=Application, SIT condition, RestrictAccess=Block on UploadText, Mode=Enable, optional notify)",
+        "Constraints: Never runs az ad app permission admin-consent on the blueprint app",
+        "Marks best-effort wiring with the A365 DLP best-effort comment"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Block sensitive data in my agent — it's a plain Node.js bot, not provisioned with Agent 365 yet",
+      "description": "Non-A365 project with no a365.config.json; the auto-discovery path has nothing to read.",
+      "expected_output": "The skill recognizes there is no a365 config, so it asks the customer for the Entra app (client) id, display name, and tenant id, and passes them explicitly to PURVIEW_APP_ID / PURVIEW_APP_NAME and the scripts. It still copies the guard, wires the gates, and guides the scope + policy steps.",
+      "files": [],
+      "expectations": [
+        "Before-you-start: Detects there is no a365.config.json / a365.generated.config.json",
+        "Before-you-start: Asks for app id, display name, and tenant id directly and passes them explicitly to env + scripts",
+        "Step 2: Copies the guard and Step 3 wires the gates as usual",
+        "Step 4: Sets PURVIEW_APP_ID and PURVIEW_APP_NAME explicitly (no auto-discovery available)",
+        "Does not fabricate an app id or blueprint id"
+      ]
+    }
+  ]
+}
