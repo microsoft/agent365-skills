@@ -95,15 +95,16 @@ export class PurviewS2SGuard {
     this.timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS) || 5000;
     this.debug = envBool("PURVIEW_DEBUG", false);
 
-    this.tenantId = process.env.agent365Observability__tenantId ?? "";
-    this.blueprintId = process.env.agent365Observability__clientId ?? "";
-    this.agentId = process.env.agent365Observability__agentId ?? "";
-    this.clientSecret = process.env.agent365Observability__clientSecret ?? "";
-    this.appId =
-      process.env.PURVIEW_APP_ID ?? process.env.agent365Observability__agentBlueprintId ?? this.blueprintId;
-    this.sponsorUserId =
-      process.env.PURVIEW_SPONSOR_USER_ID ?? process.env.agent365Observability__sponsorUserId ?? "";
-    this.agentName = (process.env.agent365Observability__agentName ?? "AI Agent").trim() || "AI Agent";
+    this.tenantId = process.env.agent365Observability__tenantId ?? process.env.AGENT365_TENANT_ID ?? "";
+    this.blueprintId = process.env.agent365Observability__clientId ?? process.env.AGENT365_CLIENT_ID ?? "";
+    this.agentId = process.env.agent365Observability__agentId ?? process.env.AGENT365_AGENT_ID ?? "";
+    this.clientSecret = process.env.agent365Observability__clientSecret ?? process.env.AGENT365_CLIENT_SECRET ?? "";
+
+    const blueprintIdForPolicyScope = process.env.AGENT365_BLUEPRINT_ID ?? process.env.agent365Observability__agentBlueprintId;
+    this.appId = process.env.PURVIEW_APP_ID ?? blueprintIdForPolicyScope ?? this.blueprintId;
+
+    this.sponsorUserId = process.env.PURVIEW_SPONSOR_USER_ID ?? process.env.agent365Observability__sponsorUserId ?? "";
+    this.agentName = (process.env.agent365Observability__agentName ?? process.env.AGENT365_AGENT_NAME ?? "AI Agent").trim() || "AI Agent";
 
     if (this.enabled && (!this.tenantId || !this.agentId || !this.blueprintId || !this.sponsorUserId)) {
       console.warn(
