@@ -48,6 +48,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=os.path.join(os.getcwd(), ".env"), override=False)
 
 logger = logging.getLogger(__name__)
 

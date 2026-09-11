@@ -35,19 +35,22 @@ hooks:
         covers only the items the JS validator can't inspect.
 
         Verify:
-        1. The agent language was detected and the MATCHING guard was copied
-           (Node.js → assets/purview.ts, Python → assets/purview.py,
-           .NET → assets/purview.cs) — not a cross-language mix.
+            1. The agent language was detected and the MATCHING guard was copied
+              (Node.js → assets/purview.ts, Python → assets/purview.py,
+              .NET → assets/purview.cs) — not a cross-language mix.
+              For Node.js S2S, use assets/purview-s2s.ts instead.
         2. Both gates are wired in the message handler: the INPUT gate runs
            BEFORE the LLM call and the OUTPUT gate runs before the reply is sent
            (only when PURVIEW_CHECK_OUTPUT=true).
-        3. The guard is passed the agent's own agentic auth handler + auth-handler
-           name + turn context/id — NOT app-only client credentials.
+            3. Delegated guards use the agent's own agentic auth handler + auth-handler
+              name + turn context/id. Node.js S2S uses the existing AGENT365_*
+              client-secret FMI settings, not a delegated auth handler.
         4. `PURVIEW_DLP_ENABLED` was appended to the agent's `.env` (or host app
            settings for .NET).
-        5. The DLP policy choice (new / existing / skip) was resolved with the
-           user, and the delegated `Content.Process.User` scope grant step was
-           surfaced (Grant-DelegatedGraphScope.ps1) — never
+            5. The DLP policy choice (new / existing / skip) was resolved with the
+              user, and the delegated `Content.Process.User` scope grant step was
+              surfaced (Grant-DelegatedGraphScope.ps1), or Content.Process.All via
+              Grant-ContentProcessAppRole.ps1 for S2S — never
            `az ad app permission admin-consent` on the blueprint app.
 
         Return {"ok": false, "reason": "<item>"} if any required item is
@@ -125,7 +128,13 @@ entry plus `protectedAppMetadata.applicationLocation` = the agent app id (the DL
   instead of `Grant-DelegatedGraphScope.ps1`.
 - **Wiring:** import `purviewGuard` from `./purview-s2s.js` and call `evaluatePrompt(text)` /
   `evaluateResponse(text)` directly around the LLM call (no TurnContext / Authorization args). The
-  guard reuses the `agent365Observability__*` S2S credentials already stamped by `a365 setup all`.
+  guard prefers the existing `AGENT365_TENANT_ID`, `AGENT365_AGENT_ID`, `AGENT365_CLIENT_ID`, and
+  `AGENT365_CLIENT_SECRET` credentials; `AGENT365_BLUEPRINT_ID` sets the default policy app ID.
+  Confirm these are configured: `a365 setup all` does not populate the lowercase
+  `agent365Observability__clientId` / `agent365Observability__clientSecret` credentials.
+  Use a real directory user object ID for `PURVIEW_SPONSOR_USER_ID`. Configure secrets directly
+  in the environment or secret store, never in chat. This variant requires client-secret FMI;
+  do not switch managed-identity-only agents to it.
 
 Everything else — the DLP policy (Step 6), the `[purview]` log format, fail-closed semantics — is identical.
 
@@ -165,8 +174,9 @@ project root, read `a365.config.json` and `a365.generated.config.json`:
 ## Procedure
 
 ### 0. Detect the agent language
-Pick the guard/wiring by the agent's stack (all three share the SAME env vars, PowerShell scripts,
-policy, and `[purview]` log format — only the guard file + wiring differ):
+For delegated agents, pick the guard/wiring by the agent's stack (all three share the SAME env vars,
+PowerShell scripts, policy, and `[purview]` log format). For Node.js S2S, follow the S2S variant above
+instead of the delegated guard/wiring steps below.
 
 | Language | Detect by | Guard asset | Wiring |
 |----------|-----------|-------------|--------|
@@ -204,11 +214,15 @@ handler that calls the LLM): import the guard, add the **input gate** before the
 
 ### 4. Add environment variables
 Append the keys from [`assets/purview.env.example`](./assets/purview.env.example) to the agent's
-`.env`. On an A365 project the only key you **must** set is `PURVIEW_DLP_ENABLED=true` — the guard
+`.env`. On a delegated A365 project the only key you **must** set is `PURVIEW_DLP_ENABLED=true` — the guard
 auto-reads `PURVIEW_APP_ID` / `PURVIEW_APP_NAME` / blueprint id from `a365.config.json` +
 `a365.generated.config.json`. Set them explicitly only to override or for a non-A365 project.
 
+For Node.js S2S, confirm the canonical credentials listed above instead of relying on config auto-discovery.
+
 ### 5. Grant the delegated Graph scope
+For Node.js S2S, use `Grant-ContentProcessAppRole.ps1` as described above and skip this delegated step.
+
 Run [`scripts/Grant-DelegatedGraphScope.ps1`](./scripts/Grant-DelegatedGraphScope.ps1) from the
 agent project folder (needs `az login`). `-AppId` is **auto-discovered** from
 `a365.generated.config.json` (pass `-AppId <app-id>` to override, or `-ConfigDir <path>` if the

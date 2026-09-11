@@ -19,10 +19,11 @@
 //  Grant the `Content.Process.All` (Application) Graph role to the AGENT IDENTITY service
 //  principal (NOT the blueprint) — see scripts/Grant-ContentProcessAppRole.ps1.
 //
-// ── REQUIRED ENV (auto-read from the A365 `agent365Observability__*` S2S vars) ─
+// ── REQUIRED ENV (existing canonical S2S client-secret configuration) ───────
 //   PURVIEW_DLP_ENABLED=true
-//   agent365Observability__tenantId / __clientId (blueprint) / __agentId (agent identity)
-//     / __clientSecret / __agentBlueprintId / __sponsorUserId / __agentName
+//   AGENT365_TENANT_ID / AGENT365_CLIENT_ID (blueprint) / AGENT365_AGENT_ID (agent identity)
+//   AGENT365_CLIENT_SECRET / PURVIEW_SPONSOR_USER_ID (real directory user object id)
+//   Configure these explicitly; do not assume setup-all populated client credentials.
 // ── OPTIONAL ENV ─────────────────────────────────────────────────────────────
 //   PURVIEW_APP_ID=<app id the DLP policy is scoped to>  // default: __agentBlueprintId
 //   PURVIEW_SPONSOR_USER_ID=<user object id>            // default: __sponsorUserId
@@ -95,10 +96,10 @@ export class PurviewS2SGuard {
     this.timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS) || 5000;
     this.debug = envBool("PURVIEW_DEBUG", false);
 
-    this.tenantId = process.env.agent365Observability__tenantId ?? process.env.AGENT365_TENANT_ID ?? "";
-    this.blueprintId = process.env.agent365Observability__clientId ?? process.env.AGENT365_CLIENT_ID ?? "";
-    this.agentId = process.env.agent365Observability__agentId ?? process.env.AGENT365_AGENT_ID ?? "";
-    this.clientSecret = process.env.agent365Observability__clientSecret ?? process.env.AGENT365_CLIENT_SECRET ?? "";
+    this.tenantId = process.env.AGENT365_TENANT_ID || process.env.agent365Observability__tenantId || "";
+    this.blueprintId = process.env.AGENT365_CLIENT_ID || process.env.agent365Observability__clientId || "";
+    this.agentId = process.env.AGENT365_AGENT_ID || process.env.agent365Observability__agentId || "";
+    this.clientSecret = process.env.AGENT365_CLIENT_SECRET || process.env.agent365Observability__clientSecret || "";
 
     const blueprintIdForPolicyScope = process.env.AGENT365_BLUEPRINT_ID ?? process.env.agent365Observability__agentBlueprintId;
     this.appId = process.env.PURVIEW_APP_ID ?? blueprintIdForPolicyScope ?? this.blueprintId;

@@ -43,7 +43,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Agents.Builder;          // ITurnContext — adjust to your SDK version
-using Microsoft.Agents.Builder.App;      // UserAuthorization — adjust to your SDK version
+using Microsoft.Agents.Builder.App.UserAuth;
 
 namespace Agent365.Purview;
 
