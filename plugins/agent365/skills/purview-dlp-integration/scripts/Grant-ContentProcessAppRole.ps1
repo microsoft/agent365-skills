@@ -57,16 +57,18 @@ if (-not $AgentIdentityAppId) {
 Write-Host "Agent identity app id: $AgentIdentityAppId"
 
 # ── Resolve service principal object ids ────────────────────────────────────
-$agentSpId = az ad sp show --id $AgentIdentityAppId --query id -o tsv 2>$null
-if (-not $agentSpId) { throw "No service principal found for app id $AgentIdentityAppId (is the agent identity provisioned?)." }
+$agentSpId = az ad sp show --id $AgentIdentityAppId --query id -o tsv
+if ($LASTEXITCODE -ne 0 -or -not $agentSpId) { throw "Could not resolve the service principal for app id $AgentIdentityAppId. Check the signed-in tenant." }
 $graphSpId = az ad sp show --id $GraphAppId --query id -o tsv
+if ($LASTEXITCODE -ne 0 -or -not $graphSpId) { throw "Could not resolve the Microsoft Graph service principal." }
 Write-Host "Agent identity SP objectId: $agentSpId"
 Write-Host "Microsoft Graph SP objectId: $graphSpId"
 
 # ── Idempotency: is the role already assigned? ──────────────────────────────
 $existing = az rest --method GET `
   --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$agentSpId/appRoleAssignments" `
-  --query "value[?appRoleId=='$ContentProcessAllRoleId' && resourceId=='$graphSpId'] | [0].id" -o tsv 2>$null
+  --query "value[?appRoleId=='$ContentProcessAllRoleId' && resourceId=='$graphSpId'] | [0].id" -o tsv
+if ($LASTEXITCODE -ne 0) { throw "Could not read existing application-role assignments." }
 if ($existing) {
   Write-Host "Content.Process.All already assigned (assignment id: $existing). Nothing to do."
   return
@@ -78,10 +80,16 @@ $tmp = New-TemporaryFile
   ConvertTo-Json | Set-Content -Path $tmp -Encoding utf8
 try {
   Write-Host "Granting Content.Process.All to the agent identity SP..."
-  az rest --method POST `
+  $response = az rest --method POST `
     --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$agentSpId/appRoleAssignments" `
     --headers "Content-Type=application/json" `
-    --body "@$tmp" | Out-String | Write-Host
+    --body "@$tmp" -o json
+  if ($LASTEXITCODE -ne 0) { throw "Content.Process.All assignment failed." }
+  $assignment = $response | ConvertFrom-Json
+  if (-not $assignment.id -or $assignment.principalId -ne $agentSpId -or
+      $assignment.resourceId -ne $graphSpId -or $assignment.appRoleId -ne $ContentProcessAllRoleId) {
+    throw "Graph did not return the requested Content.Process.All assignment."
+  }
   Write-Host "Done. The agent identity's FMI Graph token will now carry Content.Process.All."
 } finally {
   Remove-Item $tmp -ErrorAction SilentlyContinue

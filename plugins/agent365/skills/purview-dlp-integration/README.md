@@ -33,24 +33,25 @@ agent's conversations.
 
 Every time a user sends your agent a message, the message is checked by Microsoft Purview
 **first**. Only if it passes does the AI model get to answer. Optionally, the AI's reply is
-checked too before it's sent back.
+submitted to Purview for audit before it is sent back. The supplied Applications policy blocks
+prompts only; it does not block sensitive data generated in responses.
 
 ```mermaid
 flowchart LR
     U[User sends a message] --> IN{Purview checks<br/>the message}
     IN -- Sensitive data found --> BLK[Agent replies:<br/>blocked by policy]
     IN -- Looks fine --> LLM[AI model answers]
-    LLM --> OUT{Purview checks the reply<br/>optional}
-    OUT -- Sensitive data found --> WH[Reply withheld]
-    OUT -- Looks fine --> SEND[User receives the reply]
+    LLM --> OUT{Purview audits the reply<br/>optional}
+    OUT -- Audit error, fail-closed --> WH[Reply withheld]
+    OUT -- Audit succeeds --> SEND[User receives the reply]
     style BLK fill:#ffe0e0,stroke:#cc0000
     style WH fill:#ffe0e0,stroke:#cc0000
     style SEND fill:#e0f5e0,stroke:#22aa22
 ```
 
 > **Key point:** when a message is blocked, **the AI model is never called** — the
-> sensitive text never leaves your agent. Every checked message is also written to
-> Microsoft Purview's audit log, so you get compliance records automatically.
+> sensitive text does not reach the LLM. The checked text is sent to Microsoft Graph/Purview
+> for evaluation and audit, including when the message is ultimately blocked.
 
 ---
 

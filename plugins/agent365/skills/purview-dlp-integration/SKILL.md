@@ -2,7 +2,7 @@
 name: purview-dlp-integration
 description: >
   Integrate Microsoft Purview DLP (data loss prevention) + audit into an existing Microsoft
-  Agent 365 (A365 SDK) agent, so sensitive prompts/responses are blocked before the LLM. Use
+  Agent 365 (A365 SDK) agent, so sensitive prompts are blocked before the LLM and responses can be audited. Use
   when a user wants to add Purview DLP to an AI agent, block sensitive data (credit cards, SSNs,
   PII) in agent turns, enforce data protection/compliance on an A365 AgentApplication, call the
   Graph processContent API, or wire a DLP gate into agent code. Bundles drop-in guards for
@@ -71,10 +71,11 @@ hooks:
 
 ---
 
-Add a Purview data-loss-prevention **gate** around an existing A365 agent's LLM call: every turn's
-prompt (and optionally the response) is evaluated by Microsoft Purview via the Graph
-`processContent` API and **blocked** when a DLP policy matches. `processContent` also writes the
-Purview **audit** event. Designed for **minimal, reversible changes** to the customer's agent.
+Add a Purview data-loss-prevention **gate** before an existing A365 agent's LLM call: each prompt
+is evaluated via the Graph `processContent` API and **blocked** when an input-blocking policy
+matches. Optional response checks provide **audit**, not response blocking, for the supplied
+Applications policy. `processContent` sends the checked text to Microsoft Purview for evaluation
+and audit. Designed for **minimal, reversible changes** to the customer's agent.
 
 ## When to use
 - "Add Purview DLP / data loss prevention to my agent."
@@ -91,13 +92,18 @@ Purview **audit** event. Designed for **minimal, reversible changes** to the cus
 ## How it works
 ```
 user turn ─► [INPUT gate] processContent(uploadText, /me)  ─► block? ─► reply "blocked", STOP (LLM never called)
-                                                            └─ allow ─► LLM ─► [OUTPUT gate] processContent(downloadText) ─► block? ─► withhold
+                                                            └─ allow ─► LLM ─► optional output audit ─► reply
 ```
 - **Token:** the agent's **agentic delegated** Graph token, evaluated as **`/me`** (the agent
   identity) — acquired via the agent's own auth handler: Node.js `GetAgenticUserToken`, Python
   `authorization.exchange_token(…)`, .NET `UserAuthorization.GetTurnTokenAsync(…)`. *A365 blueprint
   apps cannot use app-only client-credentials here — Graph strips data-plane roles from that token.*
 - **Fail-closed** by default: any Purview error/timeout blocks the turn.
+- **Content limit:** delegated guards reject messages over 100,000 characters before sending
+  them to Graph, even in fail-open mode. They never approve a full message based on a prefix.
+- **Output:** `PURVIEW_CHECK_OUTPUT=true` submits responses for audit. The supplied workload
+  does not support `DownloadText` blocking; do not promise that it filters sensitive responses.
+  With fail-closed mode, a failed output audit still withholds the reply.
 - **Policy:** a dedicated Purview DLP policy scoped to the agent's **Entra app id** (portal:
   "Managed cloud apps" / `Applications` workload) with a **RestrictAccess=Block** rule.
 
@@ -150,7 +156,7 @@ project root, read `a365.config.json` and `a365.generated.config.json`:
 |-------|---------------|
 | App (client) id → `PURVIEW_APP_ID` | `a365.generated.config.json` → `agentBlueprintId` (or `botMsaAppId`) |
 | Blueprint id → `PURVIEW_BLUEPRINT_ID` | `a365.generated.config.json` → `agentBlueprintId` |
-| Agent SP object id (for the consent script) | `a365.generated.config.json` → `agentBlueprintServicePrincipalObjectId` |
+| Agent SP object id (for the consent script) | Resolved by the script for the requested app ID in the signed-in tenant; cached SP IDs are not trusted. |
 | Display name → `PURVIEW_APP_NAME` | `a365.config.json` → `agentBlueprintDisplayName` / `agentDescription` |
 | Tenant id | `a365.config.json` → `tenantId` |
 | Current Graph scopes (is `Content.Process.User` already granted?) | `a365.generated.config.json` → `resourceConsents[]` where `resourceName == "Microsoft Graph"` → `scopes` |
@@ -172,6 +178,17 @@ project root, read `a365.config.json` and `a365.generated.config.json`:
 ---
 
 ## Procedure
+
+Before Step 1, show the following checklist. In Claude Code, use `TaskCreate` and `TaskUpdate`;
+in Copilot, show and update the Markdown checkboxes. Keep one item in progress and mark it
+complete as soon as its numbered steps finish. Do not mark a permission or policy failure complete.
+
+- [ ] Locate the handler and confirm its authentication (Steps 0-1)
+- [ ] Copy the guard and wire the checks (Steps 2-3)
+- [ ] Configure and verify enablement (Step 4)
+- [ ] Grant and verify Graph permission (Step 5)
+- [ ] Resolve policy choice and tenant prerequisites (Steps 6-7)
+- [ ] Build and verify a blocked turn (Step 8)
 
 ### 0. Detect the agent language
 For delegated agents, pick the guard/wiring by the agent's stack (all three share the SAME env vars,
@@ -195,6 +212,10 @@ Find the message handler (the method that calls the LLM) and the LLM call:
 
 Confirm the A365 runtime/hosting package is present (Node.js `@microsoft/agents-a365-runtime`,
 Python `microsoft-agents-hosting-core`, .NET `Microsoft.Agents.*`) — standard for A365 agents.
+Confirm the selected handler can obtain a delegated Graph token; for .NET, its configured
+scopes must include `https://graph.microsoft.com/.default`. A plain bot without a supported
+hosting/authentication path cannot be integrated just by supplying app IDs: stop before copying
+the guard and route to `a365-setup`. Do not switch an existing S2S agent to delegated auth.
 
 ### 2. Add the guard (1 new file)
 Copy the guard for your language into the agent's source folder (next to the agent class) — it is
@@ -213,10 +234,18 @@ handler that calls the LLM): import the guard, add the **input gate** before the
 - **.NET:** [`assets/wiring-snippet.cs`](./assets/wiring-snippet.cs) — passes `UserAuthorization`, the agentic handler name, `turnContext`.
 
 ### 4. Add environment variables
-Append the keys from [`assets/purview.env.example`](./assets/purview.env.example) to the agent's
-`.env`. On a delegated A365 project the only key you **must** set is `PURVIEW_DLP_ENABLED=true` — the guard
+Use the keys from [`assets/purview.env.example`](./assets/purview.env.example), preserving
+existing values rather than appending duplicate keys:
+- **Node.js / Python:** add missing keys to `.env`, which their guards load.
+- **.NET:** set `PURVIEW_DLP_ENABLED` in the selected `Properties/launchSettings.json` profile's
+  `environmentVariables`, or in the cloud host's process environment. A `.env` file or
+  `appsettings.json` key alone is **not loaded** by this guard. For a one-session local run,
+  PowerShell can set `$env:PURVIEW_DLP_ENABLED = 'true'` before `dotnet run`.
+
+On a delegated A365 project the only required guard key is `PURVIEW_DLP_ENABLED=true` — the guard
 auto-reads `PURVIEW_APP_ID` / `PURVIEW_APP_NAME` / blueprint id from `a365.config.json` +
 `a365.generated.config.json`. Set them explicitly only to override or for a non-A365 project.
+Confirm the guard's `isEnabled` / `is_enabled` / `IsEnabled` is true in the running agent.
 
 For Node.js S2S, confirm the canonical credentials listed above instead of relying on config auto-discovery.
 
@@ -228,6 +257,8 @@ agent project folder (needs `az login`). `-AppId` is **auto-discovered** from
 `a365.generated.config.json` (pass `-AppId <app-id>` to override, or `-ConfigDir <path>` if the
 config lives elsewhere). It **appends** `Content.Process.User` to the agent's existing agentic
 consent. **Never** run `az ad app permission admin-consent` on the blueprint app.
+The scripts stop on failed CLI commands or failed verification. Surface that failure and resolve
+the tenant/admin issue before claiming permission setup is complete; do not broaden permissions.
 
 ### 6. Choose the DLP policy — new, existing, or skip
 
@@ -249,6 +280,9 @@ folder (needs the `ExchangeOnlineManagement` module). `-AppId` / `-AppName` are 
 from the a365 config; typically you only pass `-SensitiveInfoType "Credit Card Number" -NotifyUser
 <admin-upn>`. Override with `-AppId` / `-AppName` for a non-A365 project. Or follow
 [`references/purview-portal-guide.md`](./references/purview-portal-guide.md) to do it in the portal.
+The script reuses existing names only when the app, enforcement mode, and enabled input-blocking
+rule match. On a mismatch, it stops without modifying those objects. Ask the admin to review them
+or use distinct names; do not silently rewrite an existing policy.
 
 **Option B — Use an existing policy:**
 1. **List candidates** (read-only) to see which policies already cover this agent's app id:
@@ -299,8 +333,12 @@ DLP-for-AI is metered. If everything is configured but nothing blocks (with `err
 
 ### 8. Build, run, verify
 Rebuild/restart the agent so it reloads `.env` (**Node.js:** `npm run build && npm start`;
-**Python:** restart `python …`; **.NET:** `dotnet run`). Send a message containing a **Luhn-valid**
+**Python:** restart the existing Python command; **.NET:** `dotnet run` with the configured process
+environment from Step 4). Send a message containing a **Luhn-valid**
 test value, e.g. `My credit card is 4111 1111 1111 1111`. Watch the console.
+Verify that a blocked prompt never reaches the LLM call, not just that a block log appears.
+Also send an ordinary prompt and confirm it reaches the LLM. Output audit is not proof of
+response blocking for this workload.
 
 ---
 

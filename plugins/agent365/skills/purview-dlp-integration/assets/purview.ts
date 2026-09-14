@@ -135,7 +135,8 @@ export class PurviewGuard {
     // Fail-closed unless explicitly set to "open".
     this.failClosed = (process.env.PURVIEW_FAIL_MODE ?? 'closed').trim().toLowerCase() !== 'open';
     this.checkOutput = envBool('PURVIEW_CHECK_OUTPUT', true);
-    this.timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS) || 2000;
+    const timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS);
+    this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 2000;
     this.debug = envBool('PURVIEW_DEBUG', false);
 
     // The agent's Entra app (client) id. Used as the DLP applicationLocation AND as the
@@ -206,19 +207,37 @@ export class PurviewGuard {
     ctx: TurnContext,
   ): Promise<DlpVerdict> {
     if (!this.enabled) return { blocked: false, decision: 'disabled' };
+    if (text.length > MAX_CONTENT_CHARS) {
+      return { blocked: true, decision: 'error', detail: `content exceeds ${MAX_CONTENT_CHARS} characters` };
+    }
     if (!this.appId) return this.failVerdict('missing PURVIEW_APP_ID');
 
     const reqId = randomUUID();
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`timeout after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+    });
     try {
-      const token = await this.getToken(authorization, ctx);
+      const token = await Promise.race([this.getToken(authorization, ctx), deadline]);
       const body = this.buildBody(activity, sequenceNumber, text, ctx);
       // Evaluate under the AGENT identity (/me). The agentic delegated token represents the
       // agent, so /users/{other} would be unauthorized.
-      const res = await this.postWithTimeout(
+      const res = await fetch(
         `${GRAPH_BASE}/me/dataSecurityAndGovernance/processContent`,
-        token,
-        reqId,
-        body,
+        {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Client-Request-Id': reqId,
+          },
+          body: JSON.stringify(body),
+        },
       );
 
       if (!res.ok) {
@@ -226,10 +245,9 @@ export class PurviewGuard {
         console.error(`[purview] ${activity} HTTP ${res.status} reqId=${reqId}: ${errText.slice(0, 300)}`);
         return this.failVerdict(`graph ${res.status}`);
       }
-      // 202/204 => accepted, no inline decision.
-      if (res.status === 202 || res.status === 204) {
-        console.log(`[purview] ${activity} -> allowed (HTTP ${res.status}, no content) reqId=${reqId}`);
-        return { blocked: false, decision: 'allowed' };
+      if (res.status !== 200) {
+        console.error(`[purview] ${activity} -> no inline policy decision (HTTP ${res.status}) reqId=${reqId}`);
+        return this.failVerdict(`graph ${res.status}: no inline policy decision`);
       }
 
       const json = (await res.json()) as ProcessContentResponse;
@@ -257,6 +275,8 @@ export class PurviewGuard {
       const msg = (err as Error).name === 'AbortError' ? `timeout after ${this.timeoutMs}ms` : (err as Error).message;
       console.error(`[purview] ${activity} error reqId=${reqId}: ${msg}`);
       return this.failVerdict(msg);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -273,31 +293,11 @@ export class PurviewGuard {
     return token;
   }
 
-  private async postWithTimeout(url: string, token: string, reqId: string, body: unknown): Promise<Response> {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
-    try {
-      return await fetch(url, {
-        method: 'POST',
-        signal: ac.signal,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Client-Request-Id': reqId,
-        },
-        body: JSON.stringify(body),
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   private buildBody(activity: DlpActivity, sequenceNumber: number, text: string, ctx: TurnContext) {
     const recipient = ctx.activity?.recipient as Record<string, unknown> | undefined;
     const agentId = (recipient?.agenticAppId as string) ?? this.appId;
     const blueprintId = this.blueprintId || (recipient?.agenticAppBlueprintId as string) || this.appId;
 
-    const truncated = text.length > MAX_CONTENT_CHARS;
     const now = new Date().toISOString();
 
     return {
@@ -308,7 +308,7 @@ export class PurviewGuard {
             identifier: randomUUID(),
             content: {
               '@odata.type': 'microsoft.graph.textContent',
-              data: truncated ? text.slice(0, MAX_CONTENT_CHARS) : text,
+              data: text,
             },
             agents: [
               {
@@ -323,7 +323,7 @@ export class PurviewGuard {
             name: `${this.appName} message`,
             correlationId: (ctx.activity?.conversation?.id as string) ?? randomUUID(),
             sequenceNumber,
-            isTruncated: truncated,
+            isTruncated: false,
             createdDateTime: now,
             modifiedDateTime: now,
             contentCategory: 'ai',

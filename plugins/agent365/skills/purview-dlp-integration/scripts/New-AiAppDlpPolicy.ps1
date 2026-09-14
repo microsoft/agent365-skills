@@ -106,10 +106,44 @@ if ($ListExisting) {
 }
 
 # 2) Build the AI-app (Managed cloud apps / Applications) location JSON for THIS app.
-$loc = "[{`"Workload`":`"Applications`",`"Location`":`"$AppId`",`"LocationDisplayName`":`"$AppName`",`"LocationSource`":`"Entra`",`"LocationType`":`"Individual`",`"Inclusions`":[{`"Type`":`"Tenant`",`"Identity`":`"All`"}]}]"
+$loc = ConvertTo-Json -Depth 6 -Compress -InputObject @(@{
+  Workload = 'Applications'
+  Location = $AppId
+  LocationDisplayName = $AppName
+  LocationSource = 'Entra'
+  LocationType = 'Individual'
+  Inclusions = @(@{ Type = 'Tenant'; Identity = 'All' })
+})
+
+$existingPolicy = Get-DlpCompliancePolicy -Identity $PolicyName -ErrorAction SilentlyContinue
+$existingRule = Get-DlpComplianceRule -Identity $RuleName -ErrorAction SilentlyContinue
+if ($existingPolicy) {
+  $locations = @($existingPolicy.Locations | ForEach-Object {
+    if ($_ -is [string]) { $_ | ConvertFrom-Json -ErrorAction Stop } else { $_ }
+  })
+  $coversApp = @($locations | Where-Object { $_.Workload -eq 'Applications' -and $_.Location -eq $AppId }).Count -gt 0
+  if (-not $coversApp -or $existingPolicy.Mode -ne 'Enable' -or
+      $existingPolicy.EnforcementPlanes -notcontains 'Application') {
+    throw "Policy '$PolicyName' exists but does not enforce Applications DLP for app $AppId. Choose another -PolicyName or have an admin review it; no existing policy was changed."
+  }
+}
+if ($existingRule) {
+  $restrictions = @($existingRule.RestrictAccess | ForEach-Object {
+    if ($_ -is [string]) { $_ | ConvertFrom-Json -ErrorAction Stop } else { $_ }
+  })
+  $blocksInput = @($restrictions | Where-Object { $_.setting -eq 'UploadText' -and $_.value -eq 'Block' }).Count -gt 0
+  $existingTypes = @($existingRule.ContentContainsSensitiveInformation | ForEach-Object {
+    if ($_ -is [string]) { $_ | ConvertFrom-Json -ErrorAction Stop } else { $_ }
+  })
+  $missingTypes = @($SensitiveInfoType | Where-Object { $existingTypes.Name -notcontains $_ })
+  if (-not $existingPolicy -or $existingRule.ParentPolicyName -ne $PolicyName -or
+      $existingRule.Disabled -ne $false -or -not $blocksInput -or $missingTypes.Count -gt 0) {
+    throw "Rule '$RuleName' exists but does not match the requested enabled input-blocking rule and sensitive info types. Choose another -RuleName or have an admin review it; no existing rule was changed."
+  }
+}
 
 # 3) Create the policy (idempotent).
-if (Get-DlpCompliancePolicy -Identity $PolicyName -ErrorAction SilentlyContinue) {
+if ($existingPolicy) {
   Write-Host "Policy already exists: $PolicyName"
 } else {
   New-DlpCompliancePolicy -Name $PolicyName -Mode Enable -Locations $loc `
@@ -118,10 +152,8 @@ if (Get-DlpCompliancePolicy -Identity $PolicyName -ErrorAction SilentlyContinue)
   Write-Host "Created policy: $PolicyName"
 }
 
-Start-Sleep -Seconds 3
-
 # 4) Create the rule (idempotent): SIT condition + RestrictAccess block on the prompt.
-if (Get-DlpComplianceRule -Identity $RuleName -ErrorAction SilentlyContinue) {
+if ($existingRule) {
   Write-Host "Rule already exists: $RuleName"
 } else {
   $sit = @($SensitiveInfoType | ForEach-Object { @{ Name = $_ } })

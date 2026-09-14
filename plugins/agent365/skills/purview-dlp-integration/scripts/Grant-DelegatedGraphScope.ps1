@@ -20,11 +20,11 @@
 
 .PARAMETER AppId
   The agent's Entra application (client) id (the blueprint app). Auto-discovered from
-  a365.generated.config.json (agentBlueprintId) if omitted; the agent SP object id is likewise
-  read from a365.generated.config.json (agentBlueprintServicePrincipalObjectId) to skip an az lookup.
+  a365.generated.config.json (agentBlueprintId) if omitted. The service principal is resolved
+  for this app in the signed-in tenant, including when -AppId overrides the config.
 
 .EXAMPLE
-  # From an A365 project folder — app id + SP object id read from a365 config:
+  # From an A365 project folder — app id read from a365 config:
   ./Grant-DelegatedGraphScope.ps1
 
 .EXAMPLE
@@ -33,7 +33,7 @@
 [CmdletBinding()]
 param(
   [string]   $AppId,                            # auto-discovered from a365 config if omitted
-  [string[]] $Scope     = @('Content.Process.User', 'ProtectionScopes.Compute.User'),
+  [string[]] $Scope     = @('Content.Process.User'),
   [string]   $ConfigDir = '.'                    # folder containing a365.config.json / a365.generated.config.json
 )
 
@@ -55,51 +55,66 @@ function Get-A365Value {
 if (-not $AppId) { $AppId = Get-A365Value $ConfigDir @('a365.generated.config.json','a365.config.json') @('agentBlueprintId','botMsaAppId','botId') }
 if (-not $AppId) { throw "AppId not provided and not found in a365 config under '$ConfigDir'. Pass -AppId." }
 
-# Prefer the agent SP object id straight from a365.generated.config.json (saves an az lookup).
-$bpSpId    = Get-A365Value $ConfigDir @('a365.generated.config.json') @('agentBlueprintServicePrincipalObjectId')
-if (-not $bpSpId) { $bpSpId = az ad sp show --id $AppId --query id -o tsv }
+# Resolve the requested app in the signed-in tenant rather than trusting a cached SP id.
+$bpSpId = az ad sp show --id $AppId --query id -o tsv
+if ($LASTEXITCODE -ne 0 -or -not $bpSpId) { throw "Could not resolve service principal for app $AppId. Check the signed-in tenant." }
 $graphSpId = az ad sp show --id $graphAppId --query id -o tsv
-if (-not $bpSpId)    { throw "Could not resolve service principal for app $AppId. Is it provisioned in this tenant?" }
-if (-not $graphSpId) { throw "Could not resolve the Microsoft Graph service principal." }
+if ($LASTEXITCODE -ne 0 -or -not $graphSpId) { throw "Could not resolve the Microsoft Graph service principal." }
 Write-Host "Agent SP objectId : $bpSpId"
 Write-Host "Graph SP objectId : $graphSpId"
 
 # Find the existing delegated (AllPrincipals) grant to Microsoft Graph.
-$grants = (az rest --method GET --url "https://graph.microsoft.com/v1.0/servicePrincipals/$bpSpId/oauth2PermissionGrants" | ConvertFrom-Json).value
-$g = $grants | Where-Object { $_.resourceId -eq $graphSpId } | Select-Object -First 1
+function Get-GraphGrant {
+  $url = "https://graph.microsoft.com/v1.0/servicePrincipals/$bpSpId/oauth2PermissionGrants"
+  do {
+    $response = az rest --method GET --url $url -o json
+    if ($LASTEXITCODE -ne 0) { throw "Could not read the existing Graph delegated grants." }
+    $page = $response | ConvertFrom-Json
+    $grant = $page.value | Where-Object { $_.resourceId -eq $graphSpId -and $_.consentType -eq 'AllPrincipals' } | Select-Object -First 1
+    if ($grant) { return $grant }
+    $url = $page.'@odata.nextLink'
+  } while ($url)
+}
+$grant = Get-GraphGrant
+$body = $null
 
-if (-not $g) {
+if (-not $grant) {
   Write-Host "No existing Graph delegated grant found — creating a new AllPrincipals grant."
   $body = @{ clientId = $bpSpId; consentType = 'AllPrincipals'; resourceId = $graphSpId; scope = ($Scope -join ' ') } | ConvertTo-Json -Compress
-  $tmp = New-TemporaryFile; Set-Content -Path $tmp -Value $body -Encoding utf8
-  az rest --method POST --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" --headers "Content-Type=application/json" --body "@$tmp" | Out-Null
-  Remove-Item $tmp -Force
-  Write-Host "Created grant with scopes: $($Scope -join ', ')"
+  $method = 'POST'
+  $url = 'https://graph.microsoft.com/v1.0/oauth2PermissionGrants'
 } else {
-  $existing = @($g.scope -split '\s+' | Where-Object { $_ })
-  $missing  = $Scope | Where-Object { $existing -notcontains $_ }
+  $existing = @($grant.scope -split '\s+' | Where-Object { $_ })
+  $missing  = @($Scope | Where-Object { $existing -notcontains $_ })
   if ($missing.Count -eq 0) {
     Write-Host "All requested scopes already present. Nothing to do."
   } else {
     $newScope = (($existing + $missing) -join ' ').Trim()
-    Write-Host "BEFORE: $($g.scope)"
+    Write-Host "BEFORE: $($grant.scope)"
     Write-Host "ADDING: $($missing -join ', ')"
     $body = @{ scope = $newScope } | ConvertTo-Json -Compress
-    $tmp = New-TemporaryFile; Set-Content -Path $tmp -Value $body -Encoding utf8
-    az rest --method PATCH --url "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$($g.id)" --headers "Content-Type=application/json" --body "@$tmp" | Out-Null
+    $method = 'PATCH'
+    $url = "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$($grant.id)"
+  }
+}
+
+if ($body) {
+  $tmp = New-TemporaryFile
+  try {
+    Set-Content -Path $tmp -Value $body -Encoding utf8
+    az rest --method $method --url $url --headers "Content-Type=application/json" --body "@$tmp" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Graph delegated grant update failed. No successful grant was verified." }
+  } finally {
     Remove-Item $tmp -Force
-    Write-Host "AFTER : $newScope"
   }
 }
 
 # Verify.
-Start-Sleep -Seconds 2
-$after = (az rest --method GET --url "https://graph.microsoft.com/v1.0/servicePrincipals/$bpSpId/oauth2PermissionGrants" | ConvertFrom-Json).value |
-  Where-Object { $_.resourceId -eq $graphSpId } | Select-Object -First 1
+$after = Get-GraphGrant
+$missing = @($Scope | Where-Object { ($after.scope -split '\s+') -notcontains $_ })
+if (-not $after -or $missing.Count -gt 0) {
+  throw "Graph AllPrincipals grant verification failed; scopes still missing: $($missing -join ', '). Re-run after confirming the tenant and permissions."
+}
 Write-Host "`n=== VERIFY (Graph delegated scopes on agent) ==="
 Write-Host $after.scope
-foreach ($s in $Scope) {
-  $has = ($after.scope -split '\s+') -contains $s
-  Write-Host ("{0,-32} -> {1}" -f $s, ($(if ($has) { 'PRESENT' } else { 'MISSING' })))
-}
 Write-Host "`nRestart the agent so it picks up a fresh token, then test."

@@ -42,7 +42,6 @@ const TOKEN_HOST = "https://login.microsoftonline.com";
 const GRAPH_BASE = "https://graph.microsoft.com/beta";
 const FMI_SCOPE = "api://AzureADTokenExchange/.default";
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
-const TOKEN_TTL_MS = 50 * 60 * 1000; // refresh at 50 min
 
 type DlpActivity = "uploadText" | "downloadText";
 type DlpDecision = "allowed" | "blocked" | "error" | "disabled";
@@ -93,7 +92,8 @@ export class PurviewS2SGuard {
     this.enabled = envBool("PURVIEW_DLP_ENABLED", false);
     this.failClosed = (process.env.PURVIEW_FAIL_MODE ?? "closed").trim().toLowerCase() !== "open";
     this.checkOutput = envBool("PURVIEW_CHECK_OUTPUT", true);
-    this.timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS) || 5000;
+    const timeoutMs = Number(process.env.PURVIEW_TIMEOUT_MS);
+    this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000;
     this.debug = envBool("PURVIEW_DEBUG", false);
 
     this.tenantId = process.env.AGENT365_TENANT_ID || process.env.agent365Observability__tenantId || "";
@@ -136,14 +136,16 @@ export class PurviewS2SGuard {
   }
 
   // ── FMI 3-hop token (Blueprint → FMI path → Agent Identity → Graph) ─────────
-  private async getGraphToken(): Promise<string> {
+  private async getGraphToken(signal: AbortSignal): Promise<string> {
     if (this.cachedToken && Date.now() < this.tokenExpiresAt) return this.cachedToken;
     const authority = `${TOKEN_HOST}/${this.tenantId}/oauth2/v2.0/token`;
+    const requestedAt = Date.now();
 
     // Hop 1+2: Blueprint (client secret) → T1 via FMI path. MSAL doesn't serialize fmi_path,
     // so use a direct form POST (same workaround as the observability token service).
     const r12 = await fetch(authority, {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         client_id: this.blueprintId,
@@ -160,6 +162,7 @@ export class PurviewS2SGuard {
     // Hop 3: Agent Identity uses T1 as a client assertion → Graph app-only token.
     const r3 = await fetch(authority, {
       method: "POST",
+      signal,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         client_id: this.agentId,
@@ -170,11 +173,15 @@ export class PurviewS2SGuard {
       }).toString(),
     });
     if (!r3.ok) throw new Error(`FMI hop3 (Graph) failed (${r3.status}): ${await r3.text()}`);
-    const token = ((await r3.json()) as { access_token?: string }).access_token;
+    const tokenResponse = (await r3.json()) as { access_token?: string; expires_in?: number };
+    const token = tokenResponse.access_token;
     if (!token) throw new Error("FMI hop3 returned no access_token");
 
     this.cachedToken = token;
-    this.tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
+    const lifetimeSeconds = Number(tokenResponse.expires_in);
+    this.tokenExpiresAt = Number.isFinite(lifetimeSeconds)
+      ? requestedAt + Math.max(0, lifetimeSeconds - 60) * 1000
+      : 0;
     return token;
   }
 
@@ -182,16 +189,7 @@ export class PurviewS2SGuard {
     if (!this.enabled) return { blocked: false, decision: "disabled" };
     if (!text?.trim()) return { blocked: false, decision: "allowed" };
 
-    let token: string;
-    try {
-      token = await this.getGraphToken();
-    } catch (err) {
-      const detail = `token acquisition failed: ${(err as Error).message}`;
-      console.error(`[purview] ${activity} -> ${this.failClosed ? "BLOCKED" : "allowed"} (${detail})`);
-      return this.failVerdict(detail);
-    }
-
-    const now = new Date().toISOString().replace(/\.\d+Z$/, "");
+    const now = new Date().toISOString();
     const body = {
       contentToProcess: {
         contentEntries: [
@@ -202,7 +200,7 @@ export class PurviewS2SGuard {
             agents: [
               {
                 "@odata.type": "microsoft.graph.aiAgentInfo",
-                blueprintId: this.appId,
+                blueprintId: this.blueprintId,
                 identifier: this.agentId,
                 name: this.agentName,
                 version: "1.0",
@@ -233,6 +231,7 @@ export class PurviewS2SGuard {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
+      const token = await this.getGraphToken(controller.signal);
       const res = await fetch(`${GRAPH_BASE}/users/${this.sponsorUserId}/dataSecurityAndGovernance/processContent`, {
         method: "POST",
         headers: {
@@ -245,10 +244,15 @@ export class PurviewS2SGuard {
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          this.cachedToken = null;
+          this.tokenExpiresAt = 0;
+        }
         const detail = `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`;
         console.error(`[purview] ${activity} -> ${this.failClosed ? "BLOCKED" : "allowed"} (${detail})`);
         return this.failVerdict(detail);
       }
+      if (res.status !== 200) return this.failVerdict(`graph ${res.status}: no inline policy decision`);
 
       const json = (await res.json()) as ProcessContentResponse;
       if (this.debug) console.log(`[purview] ${activity} raw:`, JSON.stringify(json));

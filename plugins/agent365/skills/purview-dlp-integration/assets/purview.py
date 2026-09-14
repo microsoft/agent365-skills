@@ -40,6 +40,7 @@
 # Dependencies: httpx (already present in A365 Python agents). No azure-identity / Graph SDK.
 # ────────────────────────────────────────────────────────────────────────────
 
+import asyncio
 import json
 import logging
 import os
@@ -82,10 +83,12 @@ def _load_a365_config() -> dict:
                 j = json.load(f)
         except Exception:
             continue
-        out.setdefault("appId", j.get("agentBlueprintId") or j.get("botMsaAppId") or j.get("botId"))
-        out.setdefault("blueprintId", j.get("agentBlueprintId"))
-        out.setdefault("appName", j.get("agentBlueprintDisplayName") or j.get("agentDescription") or j.get("agentIdentityDisplayName"))
-        out.setdefault("tenantId", j.get("tenantId"))
+        if not isinstance(j, dict):
+            continue
+        out["appId"] = out.get("appId") or j.get("agentBlueprintId") or j.get("botMsaAppId") or j.get("botId")
+        out["blueprintId"] = out.get("blueprintId") or j.get("agentBlueprintId")
+        out["appName"] = out.get("appName") or j.get("agentBlueprintDisplayName") or j.get("agentDescription") or j.get("agentIdentityDisplayName")
+        out["tenantId"] = out.get("tenantId") or j.get("tenantId")
     return out
 
 
@@ -95,7 +98,12 @@ class PurviewGuard:
         # Fail-closed unless explicitly set to "open".
         self.fail_closed = (os.getenv("PURVIEW_FAIL_MODE", "closed").strip().lower() != "open")
         self.check_output = _env_bool("PURVIEW_CHECK_OUTPUT", True)
-        self.timeout_ms = int(os.getenv("PURVIEW_TIMEOUT_MS") or 2000)
+        try:
+            self.timeout_ms = int(os.getenv("PURVIEW_TIMEOUT_MS") or 2000)
+        except ValueError:
+            self.timeout_ms = 2000
+        if self.timeout_ms <= 0:
+            self.timeout_ms = 2000
         self.debug = _env_bool("PURVIEW_DEBUG", False)
 
         cfg = _load_a365_config()
@@ -152,33 +160,26 @@ class PurviewGuard:
     async def _evaluate(self, authorization, auth_handler_name, activity, sequence_number, _user_id, text, context) -> DlpVerdict:
         if not self.enabled:
             return DlpVerdict(blocked=False, decision="disabled")
+        if len(text) > MAX_CONTENT_CHARS:
+            return DlpVerdict(blocked=True, decision="error", detail=f"content exceeds {MAX_CONTENT_CHARS} characters")
         if not self.app_id:
             return self._fail("missing PURVIEW_APP_ID")
 
         req_id = str(uuid.uuid4())
         try:
-            token = await self._get_token(authorization, auth_handler_name, context)
-            body = self._build_body(activity, sequence_number, text, context)
-            async with httpx.AsyncClient(timeout=self.timeout_ms / 1000.0) as client:
-                res = await client.post(
-                    f"{GRAPH_BASE}/me/dataSecurityAndGovernance/processContent",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                        "Client-Request-Id": req_id,
-                    },
-                    json=body,
-                )
+            res = await asyncio.wait_for(
+                self._post(authorization, auth_handler_name, activity, sequence_number, text, context, req_id),
+                timeout=self.timeout_ms / 1000.0,
+            )
 
             if res.status_code >= 400:
                 err_text = (res.text or "")[:300]
                 logger.error("[purview] %s HTTP %s reqId=%s: %s", activity, res.status_code, req_id, err_text)
                 return self._fail(f"graph {res.status_code}")
 
-            # 202/204 => accepted, no inline decision.
-            if res.status_code in (202, 204):
-                logger.info("[purview] %s -> allowed (HTTP %s, no content) reqId=%s", activity, res.status_code, req_id)
-                return DlpVerdict(blocked=False, decision="allowed")
+            if res.status_code != 200:
+                logger.error("[purview] %s -> no inline policy decision (HTTP %s) reqId=%s", activity, res.status_code, req_id)
+                return self._fail(f"graph {res.status_code}: no inline policy decision")
 
             data = res.json()
             actions = data.get("policyActions") or []
@@ -202,12 +203,26 @@ class PurviewGuard:
             logger.info("[purview] %s -> allowed (%s)%s reqId=%s", activity, summary, raw, req_id)
             return DlpVerdict(blocked=False, decision="allowed")
 
-        except httpx.TimeoutException:
+        except (asyncio.TimeoutError, httpx.TimeoutException):
             logger.error("[purview] %s error reqId=%s: timeout after %sms", activity, req_id, self.timeout_ms)
             return self._fail(f"timeout after {self.timeout_ms}ms")
         except Exception as err:  # noqa: BLE001
             logger.error("[purview] %s error reqId=%s: %s", activity, req_id, err)
             return self._fail(str(err))
+
+    async def _post(self, authorization, auth_handler_name, activity, sequence_number, text, context, req_id):
+        token = await self._get_token(authorization, auth_handler_name, context)
+        body = self._build_body(activity, sequence_number, text, context)
+        async with httpx.AsyncClient(timeout=self.timeout_ms / 1000.0) as client:
+            return await client.post(
+                f"{GRAPH_BASE}/me/dataSecurityAndGovernance/processContent",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Client-Request-Id": req_id,
+                },
+                json=body,
+            )
 
     async def _get_token(self, authorization, auth_handler_name, context) -> str:
         """Agent-identity (agentic delegated) Graph token — carries the delegated
@@ -225,7 +240,6 @@ class PurviewGuard:
         agent_id = getattr(recipient, "agentic_app_id", None) or self.app_id
         blueprint_id = self.blueprint_id or getattr(recipient, "agentic_app_blueprint_id", None) or self.app_id
 
-        truncated = len(text) > MAX_CONTENT_CHARS
         now = datetime.now(timezone.utc).isoformat()
         conv = getattr(getattr(context, "activity", None), "conversation", None)
         correlation_id = getattr(conv, "id", None) or str(uuid.uuid4())
@@ -238,7 +252,7 @@ class PurviewGuard:
                         "identifier": str(uuid.uuid4()),
                         "content": {
                             "@odata.type": "microsoft.graph.textContent",
-                            "data": text[:MAX_CONTENT_CHARS] if truncated else text,
+                            "data": text,
                         },
                         "agents": [
                             {
@@ -253,7 +267,7 @@ class PurviewGuard:
                         "name": f"{self.app_name} message",
                         "correlationId": correlation_id,
                         "sequenceNumber": sequence_number,
-                        "isTruncated": truncated,
+                        "isTruncated": False,
                         "createdDateTime": now,
                         "modifiedDateTime": now,
                         "contentCategory": "ai",

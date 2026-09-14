@@ -112,16 +112,18 @@ public sealed class PurviewGuard
     private async Task<DlpVerdict> EvaluateAsync(UserAuthorization authorization, string authHandlerName, string activity, int seq, string text, ITurnContext turnContext, CancellationToken ct)
     {
         if (!_enabled) return new DlpVerdict(false, "disabled");
+        if (text.Length > MaxContentChars)
+            return new DlpVerdict(true, "error", $"content exceeds {MaxContentChars} characters");
         if (string.IsNullOrEmpty(_appId)) return Fail("missing PURVIEW_APP_ID");
 
         var reqId = Guid.NewGuid().ToString();
         try
         {
-            var token = await GetTokenAsync(authorization, authHandlerName, turnContext, ct);
-            var body = BuildBody(activity, seq, text, turnContext);
-
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(_timeoutMs);
+            var token = await GetTokenAsync(authorization, authHandlerName, turnContext, cts.Token).WaitAsync(cts.Token);
+            var body = BuildBody(activity, seq, text, turnContext);
+
             using var req = new HttpRequestMessage(HttpMethod.Post, $"{GraphBase}/me/dataSecurityAndGovernance/processContent");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.TryAddWithoutValidation("Client-Request-Id", reqId);
@@ -133,10 +135,10 @@ public sealed class PurviewGuard
                 Console.Error.WriteLine($"[purview] {activity} HTTP {(int)res.StatusCode} reqId={reqId}: {Trunc(await SafeRead(res), 300)}");
                 return Fail($"graph {(int)res.StatusCode}");
             }
-            if (res.StatusCode is HttpStatusCode.Accepted or HttpStatusCode.NoContent)
+            if (res.StatusCode != HttpStatusCode.OK)
             {
-                Console.WriteLine($"[purview] {activity} -> allowed (HTTP {(int)res.StatusCode}, no content) reqId={reqId}");
-                return new DlpVerdict(false, "allowed");
+                Console.Error.WriteLine($"[purview] {activity} -> no inline policy decision (HTTP {(int)res.StatusCode}) reqId={reqId}");
+                return Fail($"graph {(int)res.StatusCode}: no inline policy decision");
             }
 
             var json = await res.Content.ReadAsStringAsync(cts.Token);
@@ -193,9 +195,7 @@ public sealed class PurviewGuard
         // For per-instance MAC grouping resolve turnContext.Activity.GetAgenticInstanceId(); the app id is a safe default.
         var agentId = _appId;
         var convId = turnContext?.Activity?.Conversation?.Id ?? Guid.NewGuid().ToString();
-        bool truncated = text.Length > MaxContentChars;
         var nowIso = DateTime.UtcNow.ToString("o");
-        var data = truncated ? text.Substring(0, MaxContentChars) : text;
 
         // Dictionary (not anonymous type) so JSON keys can be "@odata.type".
         return new Dictionary<string, object?>
@@ -211,7 +211,7 @@ public sealed class PurviewGuard
                         ["content"] = new Dictionary<string, object?>
                         {
                             ["@odata.type"] = "microsoft.graph.textContent",
-                            ["data"] = data,
+                            ["data"] = text,
                         },
                         ["agents"] = new object[]
                         {
@@ -228,7 +228,7 @@ public sealed class PurviewGuard
                         ["name"] = $"{_appName} message",
                         ["correlationId"] = convId,
                         ["sequenceNumber"] = seq,
-                        ["isTruncated"] = truncated,
+                        ["isTruncated"] = false,
                         ["createdDateTime"] = nowIso,
                         ["modifiedDateTime"] = nowIso,
                         ["contentCategory"] = "ai",
