@@ -230,7 +230,7 @@ Apply the wiring snippet for your language to the message handler (and any notif
 handler that calls the LLM): import the guard, add the **input gate** before the LLM and the
 **output gate** before the reply is sent. Pass the agent's authorization handler + auth-handler name + turn context/id.
 - **Node.js:** [`assets/wiring-snippet.ts`](./assets/wiring-snippet.ts) — passes `this.authorization`.
-- **Python:** [`assets/wiring-snippet.py`](./assets/wiring-snippet.py) — passes `auth`, `auth_handler_name`, `context` (already parameters of `process_user_message`).
+- **Python:** [`assets/wiring-snippet.py`](./assets/wiring-snippet.py) — for response-returning `process_user_message` handlers; passes `auth`, `auth_handler_name`, `context`. The caller sends the returned text. If wiring directly into a host `on_message` callback instead, send the block/withhold message with `await context.send_activity(...)` and then return; returning a string alone does not send a reply.
 - **.NET:** [`assets/wiring-snippet.cs`](./assets/wiring-snippet.cs) — passes `UserAuthorization`, the agentic handler name, `turnContext`.
 
 ### 4. Add environment variables

@@ -288,21 +288,26 @@ change permissions, mutate Graph, or publish manifests.
 ### `purview-dlp-integration` — Block Sensitive Data with Purview DLP
 
 Adds a Microsoft Purview **data-loss-prevention gate** around your agent's LLM call. Every turn's
-prompt (and optionally the response) is evaluated via the Graph `processContent` API and **blocked**
-when a DLP policy matches — the LLM is never called on a blocked turn, and `processContent` also
-writes the Purview audit event. **Additive and reversible:** it copies one generic, env-driven guard
-(`purview.ts` / `purview.py` / `purview.cs`) next to your agent class and applies minimal INPUT/OUTPUT
-gate wiring. The guard uses the agent's own **agentic delegated** token evaluated as `/me` (never
-app-only client credentials), always sets `contentEntry.name`, and fails closed by default.
+prompt is evaluated via the Graph `processContent` API before the LLM. A matching input-blocking
+policy stops the turn, and `processContent` records the audit event. Optional response checks are
+**audit-only** for the supplied Applications policy: they do not filter sensitive responses.
+A failed output audit still withholds the reply in the default fail-closed mode.
 
-It auto-discovers the app id, display name, and blueprint id from `a365.config.json` /
-`a365.generated.config.json`, guides the delegated `Content.Process.User` scope grant (appends —
-never `admin-consent` on the blueprint app), and lets you **create a new** DLP policy, **reuse an
-existing** one, or **skip**. Works with Node.js (`@microsoft/agents-hosting`), Python
-(`microsoft-agents-hosting-*`), and .NET (`Microsoft.Agents.*`, best-effort guard port).
+**Additive and reversible:** it copies one generic, env-driven guard next to your agent class and
+applies minimal handler wiring. Delegated agents use their own **agentic delegated** token at
+`/me`, with `Content.Process.User` appended to existing consent. A separate **Node.js S2S** guard
+uses the agent identity's client-secret FMI token at `/users/{sponsor}/...` with
+`Content.Process.All`, never a blueprint app-only token or `admin-consent` on the blueprint.
 
-> **Prerequisite:** an A365 agent with a blueprint (run `a365-setup` first for auto-discovery).
-> Works standalone on a non-A365 project if you supply the app id, display name, and tenant id.
+Delegated guards auto-discover app id, display name, and blueprint id from `a365.config.json` /
+`a365.generated.config.json`. You can **create a new** DLP policy, **reuse an existing** one, or
+**skip**. Supports Node.js (`@microsoft/agents-hosting` or client-secret FMI), Python
+(`microsoft-agents-hosting-*`), and .NET (`Microsoft.Agents.*`, best-effort delegated guard).
+
+> **Prerequisite:** a supported hosting/authentication path: agentic delegated A365 hosting, or
+> Node.js client-secret FMI for S2S. Manual app IDs only replace config auto-discovery; they do not
+> provide missing authentication. Plain bots must run `a365-setup` first. The S2S guard does not
+> support managed-identity-only agents; do not switch their authentication to use it.
 
 **Trigger phrases:**
 ```

@@ -113,11 +113,15 @@ agent365-skills/
    not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
 12. **`purview-dlp-integration` is additive and report-first-validated.** It copies one generic
-   env-driven guard (`purview.ts` / `purview.py` / `purview.cs`) and wires an INPUT gate before
-   the LLM + an optional OUTPUT gate. The guard uses the agent's **agentic delegated** token
-   evaluated as `/me` (never app-only client credentials on a blueprint app), always sets
-   `contentEntry.name`, and fails closed. Never run `az ad app permission admin-consent` on the
-   blueprint app — append the `Content.Process.User` scope instead. Its validator
+   env-driven guard and wires an INPUT gate before the LLM + optional output auditing; the
+   supplied policy does not filter sensitive responses. Delegated guards (`purview.ts` /
+   `purview.py` / `purview.cs`) use the agent's token at `/me` with `Content.Process.User`.
+   Node.js client-secret FMI S2S uses `purview-s2s.ts`, the agent identity token at
+   `/users/{sponsor}/...`, and `Content.Process.All` on the agent identity SP. Never use a
+   blueprint app-only token, run `az ad app permission admin-consent` on the blueprint, or
+   switch managed-identity-only agents to client-secret authentication. Manual IDs replace
+   config discovery, not authentication; stop before editing unsupported plain bots and route
+   to `a365-setup`. Guards always set `contentEntry.name` and fail closed by default. Its validator
    (`validate-purview-dlp-integration.js`) is report-first (advisory `findings`, always
    `ok: true`) because "start disabled / skip policy" is a valid bring-up state.
 

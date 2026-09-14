@@ -192,8 +192,7 @@ public sealed class PurviewGuard
 
     private object BuildBody(string activity, int seq, string text, ITurnContext turnContext)
     {
-        // For per-instance MAC grouping resolve turnContext.Activity.GetAgenticInstanceId(); the app id is a safe default.
-        var agentId = _appId;
+        var agentId = FirstNonEmpty(turnContext?.Activity?.GetAgenticInstanceId()) ?? _appId;
         var convId = turnContext?.Activity?.Conversation?.Id ?? Guid.NewGuid().ToString();
         var nowIso = DateTime.UtcNow.ToString("o");
 

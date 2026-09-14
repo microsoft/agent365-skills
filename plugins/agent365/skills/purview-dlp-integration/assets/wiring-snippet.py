@@ -1,10 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # WIRING SNIPPET (PYTHON) — how to add the two DLP gates to an existing A365 agent.
 #
-# This is a REFERENCE, not an importable module. Apply these MINIMAL edits to your
-# agent's message handler (the method that calls the LLM — e.g. process_user_message
-# on your AgentInterface, or the on_message handler), and any notification/email
-# handler that also calls the LLM. Everything else stays the same.
+# This is a REFERENCE, not an importable module. Apply these MINIMAL edits to
+# response-returning handlers such as AgentInterface.process_user_message.
+# The caller must send the returned text, including block/withhold messages.
+# Do not paste this snippet into a host on_message callback: those callbacks must
+# send activities explicitly via context.send_activity before returning.
+# Notification/email handlers can use this pattern only if their caller sends the returned text.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 1) Import the guard at the top of your agent file:
@@ -42,10 +44,10 @@ if purview_guard.is_enabled:
 # 4) ... your existing LLM call, e.g.:
 #    reply = await self._agent.run(session_id, message)
 
-# 5) OUTPUT GATE — evaluate the model's answer BEFORE returning / sending it:
+# 5) OUTPUT GATE — evaluate the model's answer BEFORE returning it:
 if purview_guard.is_enabled and purview_guard.is_check_output:
     out_gate = await purview_guard.evaluate_response(auth, auth_handler_name, user_id, reply, context)
     if out_gate.blocked:
         return _dlp_block_message(out_gate, "output")
 
-# 6) ... your existing `return reply` (or `await context.send_activity(reply)`).
+# 6) ... your existing `return reply`; the caller sends it via context.send_activity.
