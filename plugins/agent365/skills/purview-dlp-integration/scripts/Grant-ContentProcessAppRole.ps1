@@ -66,7 +66,7 @@ Write-Host "Microsoft Graph SP objectId: $graphSpId"
 
 # ── Idempotency: is the role already assigned? ──────────────────────────────
 $existing = az rest --method GET `
-  --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$agentSpId/appRoleAssignments" `
+  --url "https://graph.microsoft.com/v1.0/servicePrincipals/$agentSpId/appRoleAssignments" `
   --query "value[?appRoleId=='$ContentProcessAllRoleId' && resourceId=='$graphSpId'] | [0].id" -o tsv
 if ($LASTEXITCODE -ne 0) { throw "Could not read existing application-role assignments." }
 if ($existing) {
