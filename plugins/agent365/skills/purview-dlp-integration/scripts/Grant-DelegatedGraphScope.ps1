@@ -33,6 +33,7 @@
 [CmdletBinding()]
 param(
   [string]   $AppId,                            # auto-discovered from a365 config if omitted
+  [ValidateSet('Content.Process.User')]
   [string[]] $Scope     = @('Content.Process.User'),
   [string]   $ConfigDir = '.'                    # folder containing a365.config.json / a365.generated.config.json
 )
