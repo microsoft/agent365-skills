@@ -14,6 +14,7 @@ Skills for instrumenting and registering Microsoft Agent 365 agents. When a user
 | `add-workiq-tools` | Wire MCP servers (Mail / Calendar / Word / etc.) into the agent | — |
 | `instrument-observability` | OTel + A365 tracing exporter wiring | — |
 | `a365-code-validator` | A365 observability/MAC Activity validation with optional guided fixes | — |
+| `purview-dlp-integration` | Add a Purview DLP gate that blocks sensitive prompts before the LLM | — |
 | `test-local` | Launch agent + AgentsPlayground for local smoke test | — |
 
 Skills are designed to be additive, idempotent, and state-aware — re-running is safe.
@@ -34,6 +35,7 @@ between phases instead of asking permission.
 - `add-workiq-tools`: MCP server selection; Word @mention offer (only when `mcp_WordServer` is selected and stack is Node.js LangChain).
 - `instrument-observability`: agent kind + auth mode (only if not in cache).
 - `a365-code-validator`: after the report, asks whether to apply safe fixes, create a fix plan, or stop.
+- `purview-dlp-integration`: DLP policy choice (new / existing / skip); agentic auth handler name and app id/display name only when not discoverable from a365 config.
 - `test-local`: confirm before launching.
 
 CLI `Allow / Skip` prompts are the chat client's permission flow — not stopping conditions.
@@ -302,6 +304,42 @@ wrapping.
 
 ---
 
+## Skill: purview-dlp-integration
+
+**Full instructions:** [plugins/agent365/skills/purview-dlp-integration/SKILL.md](../plugins/agent365/skills/purview-dlp-integration/SKILL.md)
+
+**Trigger phrases:**
+- "add purview dlp to my agent"
+- "add data loss prevention to my a365 agent"
+- "block credit cards / ssns / pii before my agent's llm sees them"
+- "enforce compliance / audit on agent prompts and responses"
+- "wire a dlp gate into my agent code"
+- "call the graph processContent api from my agent"
+- "add purview blocking to my node.js / python / .net agent"
+
+**Summary of what this skill does:**
+1. Auto-discovers app (client) id, display name, blueprint id, tenant id, and current Graph scopes from `a365.config.json` + `a365.generated.config.json`; asks the customer only for what's missing (DLP policy choice, sensitive info type, admin UPN, agentic auth handler name).
+2. Detects the language and authentication: delegated Node.js uses `assets/purview.ts`, Python uses `assets/purview.py`, and .NET uses `assets/purview.cs` (best-effort port). Node.js client-secret FMI S2S uses `assets/purview-s2s.ts`; do not switch managed-identity-only agents to it.
+3. Copies ONE generic, env-driven guard file into the agent source (no edits needed).
+4. Wires an **INPUT gate** before the LLM and optional **output auditing** before the reply. The supplied policy blocks `UploadText`, not sensitive responses; a failed audit withholds the reply in fail-closed mode. Delegated guards use the agent's own auth handler at `/me`; S2S uses the agent identity FMI token at `/users/{sponsor}/...`. Python's snippet returns text for its caller to send; host callbacks must send block/withhold activities explicitly.
+5. Adds missing env keys without duplicating existing values: Node.js/Python use `.env`; .NET uses the process environment or selected `launchSettings.json` profile. Delegated guards auto-read IDs from a365 config; S2S requires the existing canonical `AGENT365_*` credentials and `PURVIEW_SPONSOR_USER_ID`.
+6. Delegated: `scripts/Grant-DelegatedGraphScope.ps1` **appends** `Content.Process.User`. Node.js S2S: `scripts/Grant-ContentProcessAppRole.ps1` grants `Content.Process.All` to the agent identity SP. Never run `az ad app permission admin-consent` on the blueprint app.
+7. **DLP policy choice (new / existing / skip):** creates a dedicated AI-app policy via `scripts/New-AiAppDlpPolicy.ps1` (Applications / Managed-cloud-apps location, `RestrictAccess=Block` on `UploadText`, `EnforcementPlanes=Application`), reuses an existing one (`-ListExisting`), or skips (guard stays wired but logs `allowed … 0 policyAction(s)` until a matching policy exists).
+8. Verifies via the `[purview] uploadText -> BLOCKED (… errors=0)` log — not `DistributionStatus` (reads `Pending` even for live policies). Confirms tenant prerequisites (pay-as-you-go billing + DSPM-for-AI onboarding).
+
+**Non-negotiable constraints:** agentic delegated token + `/me`, or agent identity FMI token + `/users/{sponsor}/...` for Node.js S2S (never a blueprint app-only token); `contentEntry.name` always set + `processingErrors` fail-closed by default; dedicated AI-app policy; input blocking, output audit only; never `admin-consent` the blueprint app; trust the `[purview]` log, not `DistributionStatus`.
+
+**This skill does NOT:** provision the blueprint, run `a365 setup`, install SDK / MSAL / Graph packages (the guard uses the agent's own auth handler + a plain HTTPS POST), or enable tenant billing / DSPM — it surfaces those as manual admin steps.
+
+**Prerequisite:** supported agentic delegated hosting or Node.js client-secret FMI authentication. Manual IDs replace config auto-discovery, not missing authentication. Stop before editing a plain bot without a supported path and route to `a365-setup`.
+
+**Reference patterns:**
+- Guards + wiring: [plugins/agent365/skills/purview-dlp-integration/assets/purview.ts](../plugins/agent365/skills/purview-dlp-integration/assets/purview.ts) · [purview.py](../plugins/agent365/skills/purview-dlp-integration/assets/purview.py) · [purview.cs](../plugins/agent365/skills/purview-dlp-integration/assets/purview.cs) · [purview-s2s.ts](../plugins/agent365/skills/purview-dlp-integration/assets/purview-s2s.ts)
+- Portal / tenant enablement: [plugins/agent365/skills/purview-dlp-integration/references/purview-portal-guide.md](../plugins/agent365/skills/purview-dlp-integration/references/purview-portal-guide.md)
+- Troubleshooting: [plugins/agent365/skills/purview-dlp-integration/references/troubleshooting.md](../plugins/agent365/skills/purview-dlp-integration/references/troubleshooting.md)
+
+---
+
 ## Skill: test-local
 
 **Full instructions:** [plugins/agent365/skills/test-local/SKILL.md](../plugins/agent365/skills/test-local/SKILL.md)
@@ -361,6 +399,12 @@ All code added by WorkIQ wiring must be marked with the language-appropriate com
 - C# / JavaScript / TypeScript: `// A365 WorkIQ — added by add-workiq-tools skill`
 - Python: `# A365 WorkIQ — added by add-workiq-tools skill`
 
+All best-effort DLP wiring added by `purview-dlp-integration` (notably the .NET port) is marked:
+- C# / JavaScript / TypeScript: `// A365 DLP — best-effort wiring (verify against SDK source before production)`
+- Python: `# A365 DLP — best-effort wiring (verify against SDK source before production)`
+
+The Purview guard files themselves (`purview.ts` / `purview.py` / `purview.cs`) are copied in verbatim — generic and env-driven, no edits needed.
+
 Skills are **additive and idempotent** — never delete or restructure existing agent code.
 
 ## Skill Dependency Chain
@@ -374,6 +418,8 @@ make-ai-teammate  →  instrument-observability  (automatic — part of AI Teamm
 
 make-a365-agent   →  instrument-observability  (Optional — always offered)
                   →  add-workiq-tools          (Optional — skipped when authMode = s2s)
+
+purview-dlp-integration  (additive — run after the agent has a blueprint; independent of observability / WorkIQ)
 
 test-local  (no prerequisite — works after any step)
 ```

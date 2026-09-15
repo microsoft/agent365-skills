@@ -20,6 +20,8 @@ evals/
     │   └── evals.json                # 5 test cases
     ├── a365-code-validator/
     │   └── evals.json                # 10 test cases
+    ├── purview-dlp-integration/
+   │   └── evals.json                # 5 test cases
     └── test-local/
         └── evals.json                # 5 test cases
 ```
@@ -48,6 +50,9 @@ Exceptions:
 - `test-local` can run without the cache.
 - `a365-code-validator` can run without the cache because it is read-only and performs its own
   static inspection.
+- `purview-dlp-integration` can run without the cache — it reads `a365.config.json` /
+   `a365.generated.config.json` directly (or takes explicit IDs). Supported agentic delegated
+   hosting or Node.js client-secret FMI authentication is still required.
 
 ---
 
@@ -63,6 +68,7 @@ To manually test a skill against an eval:
    - `add-workiq-tools`: An agent already transformed by `make-ai-teammate` (has `.a365-workspace-detection.local.json`)
    - `instrument-observability`: An agent already transformed by `make-ai-teammate`
    - `a365-code-validator`: Any existing agent project; no setup prerequisite, read-only
+   - `purview-dlp-integration`: An agent with supported delegated hosting or Node.js client-secret FMI; use config auto-discovery or explicit IDs. Use a plain unsupported bot only for the stop/reroute eval.
    - `test-local`: Any agent with a build script or `dotnet run` / `uv run`
 
 2. **Start Claude** with the plugin loaded:

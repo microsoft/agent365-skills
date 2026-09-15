@@ -1,7 +1,7 @@
 {
   "name": "agent365",
   "version": "1.0.2",
-  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
+  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, integrate Purview DLP, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
   "author": {
     "name": "Microsoft",
     "url": "https://github.com/microsoft"
@@ -9,7 +9,7 @@
   "repository": "https://github.com/microsoft/agent365-skills/",
   "homepage": "https://github.com/microsoft/agent365-skills",
   "license": "MIT",
-  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "blueprint", "s2s", "msal", "ai-teammate"],
+  "keywords": ["agent365", "microsoft", "observability", "opentelemetry", "workiq", "mcp", "langchain", "dotnet", "python", "semantic-kernel", "google-adk", "blueprint", "s2s", "msal", "ai-teammate", "purview", "dlp"],
   "skills": "./skills/",
   "hooks": {
     "SessionStart": [
