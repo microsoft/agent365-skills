@@ -347,6 +347,386 @@ baggage = BaggageBuilder().build()
   });
 });
 
+// ── Distro: telemetry must use the S2S route with an app-only token ─────────
+
+const DOTNET_DISTRO_VALID = {
+  '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'ai-teammate', authMode: 'agentic-user' }),
+  'MyAgent.csproj': `<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>`,
+  'Program.cs': `builder.Services.AddSingleton<AgentAppTokenResolver>();
+builder.UseMicrosoftOpenTelemetry(o =>
+{
+    o.Agent365.UseS2SEndpoint = true;
+    o.Agent365.TokenResolver = (agentId, tenantId) => obsTokens?.ResolveAsync(agentId, tenantId) ?? Task.FromResult<string?>(null);
+});`,
+  'MyAgent.cs': `using IDisposable? baggageScope = new BaggageBuilder().TenantId(t).AgentId(a).Build();
+invokeScope = InvokeAgentScope.Start(request: r, scopeDetails: d, agentDetails: ad, callerDetails: cd);`,
+  'Observability/AgentAppTokenResolver.cs': `public sealed class AgentAppTokenResolver { }`,
+  'appsettings.json': DOTNET_VALID['appsettings.json'],
+};
+
+const NODEJS_DISTRO_VALID = {
+  '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'ai-teammate', authMode: 'agentic-user' }),
+  'package.json': JSON.stringify({ name: 'my-agent', dependencies: { '@microsoft/opentelemetry': '^1.4.0' } }, null, 2),
+  'src/index.ts': `
+import { useMicrosoftOpenTelemetry } from '@microsoft/opentelemetry';
+import { createAppTokenResolver } from './observability/app-token-resolver';
+const appTokenResolver = createAppTokenResolver(() => getObsConnection());
+useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });
+  `.trim(),
+  'src/agent.ts': `
+const baggageScope = BaggageBuilderUtils.fromTurnContext(new BaggageBuilder(), turnContext as any).build();
+await baggageScope.run(async () => { const scope = InvokeAgentScope.start(request, details, agentDetails, callerDetails); });
+  `.trim(),
+  'src/observability/app-token-resolver.ts': `export function createAppTokenResolver(getProvider: any) { return async () => ''; }`,
+  '.env': 'ENABLE_A365_OBSERVABILITY_EXPORTER=true',
+};
+
+const PYTHON_DISTRO_VALID = {
+  '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'system-agent', authMode: 'obo' }),
+  'pyproject.toml': '[project]\ndependencies = ["microsoft-opentelemetry"]\n',
+  'host_agent_server.py': `
+from microsoft.opentelemetry import use_microsoft_opentelemetry
+from observability.app_token_resolver import AppTokenResolver
+OBS_TOKENS = AppTokenResolver()
+use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)
+
+class GenericAgentHost:
+    def __init__(self):
+        self.connection_manager = MsalConnectionManager(**agents_sdk_config)
+        self.adapter = CloudAdapter(connection_manager=self.connection_manager)
+
+    async def _setup_observability_token(self, context, tenant_id, agent_id):
+        await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)
+
+with BaggageBuilder().tenant_id(t).agent_id(a).build():
+    with InvokeAgentScope.start(request, details, agent_details, caller_details):
+        pass
+  `.trim(),
+  'observability/app_token_resolver.py': 'class AppTokenResolver:\n    pass\n',
+  '.env': 'ENABLE_A365_OBSERVABILITY_EXPORTER=true',
+};
+
+describe('validate-observability — S2S route with app-only token (distro, every auth mode)', () => {
+  test('.NET distro with UseS2SEndpoint and AgentAppTokenResolver → ok', () => {
+    const dir = createFixture(DOTNET_DISTRO_VALID);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET distro without UseS2SEndpoint = true → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': DOTNET_DISTRO_VALID['Program.cs'].replace('o.Agent365.UseS2SEndpoint = true;', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*UseS2SEndpoint = true/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET per-turn RegisterObservability with AgenticTokenStruct → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'MyAgent.cs': `${DOTNET_DISTRO_VALID['MyAgent.cs']}
+_agentTokenCache?.RegisterObservability(agentId, tenantId,
+    new AgenticTokenStruct(userAuthorization: UserAuthorization, turnContext: turnContext, authHandlerName: name),
+    EnvironmentUtils.GetObservabilityAuthenticationScope());`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /RegisterObservability.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET S2S scaffold RegisterObservability(agentId, tenantId, token, scopes) is not flagged', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Observability/ObservabilityTokenService.cs': `_tokenCache.RegisterObservability(_agentId, _tenantId, obsResult.AccessToken, ObservabilityScopes);`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js distro with useS2SEndpoint and app-only resolver → ok', () => {
+    const dir = createFixture(NODEJS_DISTRO_VALID);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js distro without useS2SEndpoint: true → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(' useS2SEndpoint: true,', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*useS2SEndpoint: true/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js refreshObservabilityToken(..., authorization) → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}
+await AgenticTokenCacheInstance.refreshObservabilityToken(
+  agentId, tenantId, turnContext as any, this.authorization as any);`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /refreshObservabilityToken.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js comment mentioning refreshObservabilityToken is not flagged', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}
+// Do NOT call AgenticTokenCacheInstance.refreshObservabilityToken in any auth mode (authorization is for workload calls).`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro with a365_use_s2s_endpoint=True and app-only resolver → ok', () => {
+    const dir = createFixture(PYTHON_DISTRO_VALID);
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro without a365_use_s2s_endpoint → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(' a365_use_s2s_endpoint=True,', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*a365_use_s2s_endpoint=True/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro relying on A365_USE_S2S_ENDPOINT=true in .env → ok', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(' a365_use_s2s_endpoint=True,', ''),
+      '.env': 'ENABLE_A365_OBSERVABILITY_EXPORTER=true\nA365_USE_S2S_ENDPOINT=true\n',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python exchange_token with the observability scope → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': `${PYTHON_DISTRO_VALID['host_agent_server.py']}
+
+async def _legacy(self, context):
+    token = await self.agent_app.auth.exchange_token(
+        context, scopes=get_observability_authentication_scope(), auth_handler_id=self.auth_handler_name)`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /exchange_token.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python workload exchange_token for MCP scopes is not flagged', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'mcp_tools.py': `token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d7c7565c1/.default"], auth_handler_id=handler)`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET AgenticTokenStruct built in a variable (A365OtelWrapper shape) → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'A365OtelWrapper.cs': `var agenticToken = new AgenticTokenStruct(userAuthorization: auth, turnContext: turnContext, authHandlerName: name);
+agentTokenCache?.RegisterObservability(agentId, tenantId, agenticToken, scopes);`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /RegisterObservability.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET IExporterTokenCache<AgenticTokenStruct> constructor dependency → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'MyAgent.cs': `${DOTNET_DISTRO_VALID['MyAgent.cs']}
+public MyAgent(AgentApplicationOptions options, IExporterTokenCache<AgenticTokenStruct> agentTokenCache) : base(options) { }`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js tokenResolver reading AgenticTokenCacheInstance.getObservabilityToken → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace('tokenResolver: appTokenResolver',
+        "tokenResolver: (agentId, tenantId) => AgenticTokenCacheInstance.getObservabilityToken(agentId, tenantId) ?? ''"),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /getObservabilityToken.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python cache_agentic_token + get_cached_agentic_token resolver (no inline scope) → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py']
+        .replace('a365_token_resolver=OBS_TOKENS.resolve', 'a365_token_resolver=get_cached_agentic_token')
+        .replace('await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)',
+          'token = await self.agent_app.auth.exchange_token(context, auth_handler_id=self.auth_handler_name)\n        cache_agentic_token(tenant_id, agent_id, token.token)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /cache_agentic_token.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python leftover legacy token_cache.py definition alone is not flagged', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'token_cache.py': 'def cache_agentic_token(tenant_id, agent_id, token):\n    _cache[(tenant_id, agent_id)] = token\n',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python leftover per-turn cache_agentic_token(...) beside an app-only resolver → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': `${PYTHON_DISTRO_VALID['host_agent_server.py']}
+
+async def _legacy_cache(self, context, tenant_id, agent_id):
+    token = await self.agent_app.auth.exchange_token(context, auth_handler_id=self.auth_handler_name)
+    cache_agentic_token(tenant_id, agent_id, token.token)`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /cache_agentic_token.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python lambda a365_token_resolver over get_cached_agentic_token → reports delegated telemetry token', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace('a365_token_resolver=OBS_TOKENS.resolve',
+        'a365_token_resolver=lambda agent_id, tenant_id: get_cached_agentic_token(tenant_id, agent_id)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /delegated a365_token_resolver.*delegated \(OBO\) telemetry token/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python lambda a365_token_resolver over the app-only resolver is not flagged', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace('a365_token_resolver=OBS_TOKENS.resolve',
+        'a365_token_resolver=lambda agent_id, tenant_id: OBS_TOKENS.resolve(agent_id, tenant_id)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python prefetch(self.connection_manager) without storing it on the host → reports missing connection manager', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py']
+        .replace('self.connection_manager = MsalConnectionManager(**agents_sdk_config)', 'connection_manager = MsalConnectionManager(**agents_sdk_config)')
+        .replace('CloudAdapter(connection_manager=self.connection_manager)', 'CloudAdapter(connection_manager=connection_manager)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no file assigns self\.connection_manager/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET distro without o.Agent365.TokenResolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': DOTNET_DISTRO_VALID['Program.cs'].replace(/\n\s*o\.Agent365\.TokenResolver = [^\n]*/, ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /without o\.Agent365\.TokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js distro without tokenResolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(', tokenResolver: appTokenResolver', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro with a365_use_s2s_endpoint=True but no a365_token_resolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(', a365_token_resolver=OBS_TOKENS.resolve', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365_token_resolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro passing the resolver through a kwargs dict → ok', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(', a365_token_resolver=OBS_TOKENS.resolve)',
+        ', **{"a365_token_resolver": OBS_TOKENS.resolve})'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+});
+
 // ── Unknown project ───────────────────────────────────────────────────────────
 
 describe('validate-observability — unknown project', () => {

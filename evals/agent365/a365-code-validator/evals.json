@@ -93,12 +93,12 @@
       "id": 5,
       "prompt": "Validate A365 code for this S2S Python agent",
       "description": "Python S2S agent mints the observability token with a bare ClientSecretCredential / DefaultAzureCredential against the observability resource instead of the 3-hop FMI exchange",
-      "expected_output": "The skill flags the token shape: a plain client-credentials or bare managed-identity token has the app/MI as its principal, not the runtime Agent Identity, so the backend rejects it. It explains the failure signatures and recommends the 3-hop FMI exchange (blueprint creds + fmi_path=<agentId> -> agent-identity assertion -> OtelWrite token). Read-only; prints no internal endpoints.",
+      "expected_output": "The skill flags the token shape: a plain client-credentials or bare managed-identity token has the app/MI as its principal, not the runtime Agent Identity, so the backend rejects it. It explains the failure signatures and recommends the FMI exchange (blueprint creds + fmi_path=<agentId> -> agent-identity assertion -> app-only Observability API token without scp). Read-only; prints no internal endpoints.",
       "files": [],
       "expectations": [
         "Phase 3.5: Flags token shape — a bare ClientSecretCredential/DefaultAzureCredential yields an app/MI principal, not the runtime Agent Identity",
         "Phase 3.5: Explains the failure signatures: 403 (principal != gen_ai.agent.id) and 400 TenantIdInvalid when no valid token is bound",
-        "Phase 3.5: Recommends the 3-hop FMI exchange (blueprint creds + fmi_path=<agentIdentityAppId> -> agent-identity assertion -> Observability API token with roles containing OtelWrite)",
+        "Phase 3.5: Recommends the FMI exchange (blueprint creds + fmi_path=<agentIdentityAppId> -> agent-identity assertion -> app-only Observability API token with no scp claim; roles may be empty for a registered agent instance)",
         "Phase 3: References validation-checklist section 5 (token shape) for the exchange detail",
         "Phase 5: Does not print internal cluster names, private endpoints, tenant IDs, real agent IDs, or correlation IDs",
         "Phase 6: Does not generate a full token service silently — offers a plan and asks for a second confirmation"
@@ -108,11 +108,11 @@
       "id": 6,
       "prompt": "Check A365 exporter flags for this S2S agent",
       "description": "S2S agent selects the endpoint only via A365_USE_S2S_ENDPOINT=true in env; the use_microsoft_opentelemetry(...) call does not pass a365_use_s2s_endpoint=True",
-      "expected_output": "The skill flags reliance on the env var for S2S endpoint selection and recommends setting the transport flag in code (a365_use_s2s_endpoint=True / useS2SEndpoint:true / UseS2SEndpoint), so the S2S token is not posted to the OBO route. It notes this mirrors passing the exporter-enable flag in code rather than depending on env parity.",
+      "expected_output": "The skill flags reliance on the env var for S2S endpoint selection and recommends setting the transport flag in code (a365_use_s2s_endpoint=True / useS2SEndpoint:true / UseS2SEndpoint), so the app-only token is not posted to the legacy delegated route. It notes that every auth mode uses the S2S route, and that this mirrors passing the exporter-enable flag in code rather than depending on env parity.",
       "files": [],
       "expectations": [
         "Phase 3.5: Reports that the S2S endpoint is selected via env only, not the a365_use_s2s_endpoint / useS2SEndpoint / UseS2SEndpoint code option",
-        "Phase 3.5: Explains that an S2S token posted to the OBO endpoint is rejected — token type must match the route",
+        "Phase 3.5: Explains that an app-only token posted to the legacy delegated route is rejected, and that every auth mode must select the S2S route",
         "Phase 3.5: Recommends setting the S2S transport flag in code because env-only selection is more fragile",
         "Phase 5: Concise report that separates export success from Activity eligibility",
         "Phase 6: Offers the endpoint/exporter flag as a deterministic safe fix after confirmation"
@@ -181,17 +181,31 @@
     {
       "id": 11,
       "prompt": "Validate A365 code and check the Blueprint permissions",
-      "description": "Project has a local Blueprint ID and an existing target-tenant login; the Blueprint inheritance policy is allAllowed but the Blueprint service principal is missing the required observability grant",
-      "expected_output": "The skill runs the read-only a365 query-entra Blueprint diagnostics, distinguishes actual service-principal grants from inheritable policy, and reports the missing auth-mode-specific Agent365.Observability.OtelWrite permission as a blocker. It does not run setup permissions, mutate Graph, grant consent, or rewrite IDs.",
+      "description": "Project has a local Blueprint ID and an existing target-tenant login; the Blueprint inheritance policy is allAllowed but the Blueprint service principal has no Observability API grant, and a365.generated.config.json has no agentRegistrationId",
+      "expected_output": "The skill runs the read-only a365 query-entra Blueprint diagnostics, distinguishes actual service-principal grants from inheritable policy, and explains that the S2S route authorizes a registered agent instance without Agent365.Observability.OtelWrite. It reports the missing registration (not the missing OtelWrite grant) as the likely 403 cause and recommends a365 setup all --agent-registration-only. It does not run setup permissions, mutate Graph, grant consent, or rewrite IDs.",
       "files": [],
       "expectations": [
         "Phase 4: Runs `a365 query-entra blueprint-scopes` to inspect delegated and application grants actually present on the Blueprint service principal",
         "Phase 4: Runs `a365 query-entra inheritance` and interprets `Effective inheritance: OK`, `NONE`, or `BROKEN` plus its exit code",
-        "Phase 4: For obo/agentic-user requires delegated Agent365.Observability.OtelWrite; for s2s requires the application role",
+        "Phase 4: Does not treat a missing Agent365.Observability.OtelWrite grant as a blocker for a registered blueprint agent; flags a missing registration (or missing OtelWrite application role) as high and recommends a365 setup all --agent-registration-only",
         "Phase 4: Compares the live resolved Blueprint with the local agentBlueprintId without printing real IDs in the report",
         "Phase 4: Treats Graph 401/403 as a skipped authorization gap rather than proof that permissions are absent",
         "Phase 5: Includes a concise Blueprint permissions section with live-ID, grants, and effective-inheritance status",
         "Phase 6: Does not run a365 setup permissions, mutate Graph, grant consent, or rewrite the Blueprint ID as a safe fix"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Validate A365 code for this AI Teammate Node.js agent",
+      "description": "AI Teammate agent calls AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization) every turn and useMicrosoftOpenTelemetry(...) does not set useS2SEndpoint: true",
+      "expected_output": "The skill reports delegated telemetry as a high finding. The exporter receives an Agentic User (OBO) token on the legacy delegated route, which needs admin consent, while the S2S route rejects tokens with scp. It recommends the app-only token resolver from the instrument-observability references plus useS2SEndpoint: true, keeping OBO only for workload (MCP / Graph) calls. It does not recommend granting Agent365.Observability.OtelWrite or running a consent flow as the fix.",
+      "files": [],
+      "expectations": [
+        "Phase 2: The static validator reports node-obs-delegated-token and node-obs-delegated-route",
+        "Phase 3.5: Explains that every auth mode, including AI Teammate / agentic-user, exports over the S2S route with an app-only token",
+        "Phase 3.5: Recommends the app-only tokenResolver (hosting connection FMI helper + agent identity client_credentials) and useS2SEndpoint: true",
+        "Phase 3.5: Does not recommend an OtelWrite grant or admin consent as the fix",
+        "Phase 6: Treats the resolver swap as a fix that needs a second explicit confirmation, not a silent safe fix"
       ]
     }
   ]

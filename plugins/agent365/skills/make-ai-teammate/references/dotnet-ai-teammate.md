@@ -272,10 +272,8 @@ namespace YourNamespace.Agent
         private readonly IChatClient? _chatClient;
         private readonly IMcpToolRegistrationService _toolService;
         private readonly IConfiguration? _configuration;
-        // Auto-registered by the Microsoft.OpenTelemetry distro. Held here so the
-        // observability skill can wire RegisterObservability(...) per turn without
-        // having to reopen the constructor.
-        private readonly IExporterTokenCache<AgenticTokenStruct>? _agentTokenCache;
+        // A365 observability needs nothing injected here: instrument-observability wires an
+        // app-only token resolver in Program.cs (S2S route), not a per-turn token registration.
         private readonly ILogger<MyAgent>? _logger;
         private readonly string? AgenticAuthHandlerName;
         private readonly string? OboAuthHandlerName;
@@ -288,16 +286,11 @@ namespace YourNamespace.Agent
             AgentApplicationOptions options,
             IChatClient chatClient,
             IConfiguration configuration,
-            IExporterTokenCache<AgenticTokenStruct> agentTokenCache,
             IMcpToolRegistrationService toolService,
             ILogger<MyAgent> logger) : base(options)
         {
             _chatClient = chatClient;
             _configuration = configuration;
-            // Auto-registered by the Microsoft.OpenTelemetry distro — used by instrument-observability
-            // for per-turn RegisterObservability(...) calls. Inject up-front so the constructor doesn't
-            // need to be reopened when the observability skill runs later.
-            _agentTokenCache = agentTokenCache;
             _toolService = toolService;
             _logger = logger;
 

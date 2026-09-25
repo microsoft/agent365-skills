@@ -164,26 +164,62 @@ function validatePython() {
     );
   }
 
-  if (hasDistroCall && hasS2SIntent && hasExplicitS2SFalse) {
+  // Every auth mode exports over the S2S route; the legacy delegated route rejects app-only
+  // tokens and needs admin consent. Contextual/agent-identity resolvers imply S2S intent too.
+  const expectsS2S = hasDistroCall && (hasEnableA365 || hasS2SIntent);
+  if (expectsS2S && hasExplicitS2SFalse) {
     add(
       'critical',
       'python-s2s-endpoint-disabled',
-      'Python appears to use S2S/Agent Identity export but passes a365_use_s2s_endpoint=False. S2S agents must use service-to-service endpoint mode.',
+      'Python passes a365_use_s2s_endpoint=False. A365 export must use the S2S route in every auth mode; the delegated route rejects app-only tokens and needs admin consent.',
       pyFiles.find(f => /a365_use_s2s_endpoint\s*=\s*False\b/.test(read(f)))
     );
-  } else if (hasDistroCall && hasS2SIntent && !hasExplicitS2S && hasS2SEnv) {
+  } else if (expectsS2S && !hasExplicitS2S && hasS2SEnv) {
     add(
       'medium',
       'python-s2s-endpoint-env-dependent',
-      'Python appears to use S2S/Agent Identity export but depends on A365_USE_S2S_ENDPOINT=true in env. Prefer passing a365_use_s2s_endpoint=True in code.',
+      'Python depends on A365_USE_S2S_ENDPOINT=true in env to select the S2S route. Prefer passing a365_use_s2s_endpoint=True in code.',
       pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
     );
-  } else if (hasDistroCall && hasS2SIntent && !hasExplicitS2S && !hasS2SEnv) {
+  } else if (expectsS2S && !hasExplicitS2S && !hasS2SEnv) {
     add(
       'high',
       'python-s2s-endpoint-not-set',
-      'Python appears to use S2S/Agent Identity export but does not set a365_use_s2s_endpoint=True or A365_USE_S2S_ENDPOINT=true.',
+      'Python does not set a365_use_s2s_endpoint=True (or A365_USE_S2S_ENDPOINT=true), so export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only token.',
       pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
+    );
+  }
+
+  if (expectsS2S && !hasExplicitExporterFalse && !anyFileMatches(pyFiles, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+    add(
+      'high',
+      'python-obs-token-resolver-missing',
+      'use_microsoft_opentelemetry() has no a365_token_resolver (or a365_contextual_token_resolver), so the S2S route gets no app-only token and the exporter drops spans. Pass an app-only resolver (instrument-observability app_token_resolver.py for obo / agentic-user, or the S2S token-service cache).',
+      pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
+    );
+  }
+
+  for (const file of pyFiles) {
+    const content = read(file);
+    const delegated = findCallBlocks(content, 'exchange_token').some(block => /observability/i.test(block)) ||
+      /(?<!\bdef\s+)\bcache_agentic_token\s*\(/.test(content) ||
+      /\ba365_token_resolver\s*=\s*(?:lambda\b[^:\n]*:\s*)?[^,)\n]*\b(get_cached_agentic_token|AgenticTokenCache|get_observability_token)\b/.test(content);
+    if (delegated) {
+      add(
+        'high',
+        'python-obs-delegated-token',
+        'Telemetry uses a delegated (OBO) token (exchange_token for the observability scope, cache_agentic_token, or an AgenticTokenCache / get_cached_agentic_token resolver). The S2S route rejects delegated tokens; acquire an app-only token for the agent identity instead (instrument-observability app-only resolver).',
+        file
+      );
+    }
+  }
+  const prefetchFile = pyFiles.find(f => findCallBlocks(read(f), 'prefetch').some(block => /self\.connection_manager/.test(block)));
+  if (prefetchFile && !anyFileMatches(pyFiles, /\bself\.connection_manager\s*=/)) {
+    add(
+      'high',
+      'python-obs-prefetch-connection-missing',
+      'The app-only token prefetch uses self.connection_manager, but no file assigns it. CloudAdapter does not expose its connection manager, so every prefetch fails and no spans export. Store the MsalConnectionManager passed to CloudAdapter on the host.',
+      prefetchFile
     );
   }
 
@@ -299,6 +335,38 @@ function validateNode() {
     );
   }
 
+  // Every auth mode exports over the S2S route with an app-only token.
+  if (hasDistroCall && hasA365Enabled && !anyFileMatches(tsFiles, /\buseS2SEndpoint\s*:\s*true\b/)) {
+    add(
+      'high',
+      'node-obs-delegated-route',
+      'Node code does not set useS2SEndpoint: true, so A365 export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only tokenResolver.',
+      tsFiles.find(f => fileContains(f, 'useMicrosoftOpenTelemetry'))
+    );
+  }
+  if (hasDistroCall && hasA365Enabled && !hasExporterFalse && !anyFileMatches(tsFiles, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+    add(
+      'high',
+      'node-obs-token-resolver-missing',
+      'useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token. Pass an app-only tokenResolver (instrument-observability app-token-resolver.ts for obo / agentic-user, or the S2S token service).',
+      tsFiles.find(f => fileContains(f, 'useMicrosoftOpenTelemetry'))
+    );
+  }
+  for (const file of tsFiles) {
+    const content = read(file);
+    const delegatedRefresh = ['refreshObservabilityToken', 'RefreshObservabilityToken']
+      .some(name => findCallBlocks(content, name).some(block => /authorization/i.test(block))) ||
+      /AgenticTokenCacheInstance\s*\.\s*getObservabilityToken\s*\(/.test(content);
+    if (delegatedRefresh) {
+      add(
+        'high',
+        'node-obs-delegated-token',
+        'Telemetry uses a delegated (OBO) token (refreshObservabilityToken(..., authorization) or AgenticTokenCacheInstance.getObservabilityToken). The S2S route rejects delegated tokens; use an app-only tokenResolver for the agent identity instead.',
+        file
+      );
+    }
+  }
+
   const hasSemanticSpans = anyFileContains(tsFiles, 'InvokeAgentScope') ||
     anyFileContains(tsFiles, 'InferenceScope') ||
     anyFileContains(tsFiles, 'ExecuteToolScope') ||
@@ -357,6 +425,37 @@ function validateDotnet() {
       'No InvokeAgentScope found. MAC Activity needs invoke_agent parent spans to anchor chat/tool/inference activity.'
     );
   }
+
+  // Every auth mode exports over the S2S route with an app-only token.
+  const csFiles = allFiles.filter(f => f.endsWith('.cs'));
+  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !anyFileMatches(csFiles, /\bUseS2SEndpoint\s*=\s*true\b/)) {
+    add(
+      'high',
+      'dotnet-obs-delegated-route',
+      'UseMicrosoftOpenTelemetry is wired without UseS2SEndpoint = true, so A365 export uses the legacy delegated route. Set o.Agent365.UseS2SEndpoint = true (o.Agent365.Exporter.UseS2SEndpoint on Microsoft.OpenTelemetry 1.0.2 and earlier) with an app-only TokenResolver in every auth mode.',
+      csFiles.find(f => fileContains(f, 'UseMicrosoftOpenTelemetry'))
+    );
+  }
+  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !anyFileMatches(csFiles, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+    add(
+      'high',
+      'dotnet-obs-token-resolver-missing',
+      'UseMicrosoftOpenTelemetry is wired without o.Agent365.TokenResolver, so the S2S route gets no app-only token (the distro default token cache holds delegated tokens). Set TokenResolver to an app-only resolver (instrument-observability AgentAppTokenResolver for obo / agentic-user, or the ServiceTokenCache from ObservabilityTokenService for s2s).',
+      csFiles.find(f => fileContains(f, 'UseMicrosoftOpenTelemetry'))
+    );
+  }
+  for (const file of csFiles) {
+    const content = read(file);
+    if (findCallBlocks(content, 'RegisterObservability').some(block => block.includes('AgenticTokenStruct')) ||
+        /\bnew\s+AgenticTokenStruct\s*[({]|IExporterTokenCache\s*<\s*AgenticTokenStruct\s*>\s*\??\s+[A-Za-z_]\w*/.test(content)) {
+      add(
+        'high',
+        'dotnet-obs-delegated-token',
+        'Telemetry uses a delegated (OBO) token (RegisterObservability with AgenticTokenStruct, new AgenticTokenStruct(...), or an IExporterTokenCache<AgenticTokenStruct> dependency). The S2S route rejects delegated tokens; wire an app-only TokenResolver for the agent identity instead.',
+        file
+      );
+    }
+  }
 }
 
 function validateSetupArtifacts() {
@@ -375,6 +474,15 @@ function validateSetupArtifacts() {
         'critical',
         'blueprint-id-used-as-agent-id',
         'a365.generated.config.json has identical blueprint and agentic app IDs. Verify runtime gen_ai.agent.id uses the agent instance/source agent ID, not the blueprint ID.',
+        path.join(cwd, 'a365.generated.config.json')
+      );
+    }
+    const staticConfig = readJson(path.join(cwd, 'a365.config.json'));
+    if (staticConfig && staticConfig.aiTeammate === false && generated.agenticAppId && !generated.agentRegistrationId) {
+      add(
+        'medium',
+        'agent-registration-not-recorded',
+        'a365.generated.config.json has an agent identity but no agentRegistrationId. The S2S route authorizes registered agent instances without an OtelWrite grant; an unregistered instance gets 403 insufficient_scope. Run a365 setup all --agent-registration-only (idempotent).',
         path.join(cwd, 'a365.generated.config.json')
       );
     }

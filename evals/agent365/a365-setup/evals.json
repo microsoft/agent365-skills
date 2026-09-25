@@ -196,7 +196,7 @@
         "make-ai-teammate Phase 9: a365 setup all --aiteammate is run — NOT just a365 setup all (the --aiteammate flag is required for AI Teammate blueprint type)",
         "make-ai-teammate Phase 9: Setup Summary table shown verbatim from CLI output",
         "make-ai-teammate Phase 9: Blueprint ID and AGENTIC_APP_ID are read from a365.generated.config.json after setup all completes",
-        "make-ai-teammate Phase 9: If CLI output includes Permission Grants action item or 403 errors, the printed PowerShell script is displayed verbatim for a Global Administrator to run — required whenever the developer isn't a GA (OtelWrite is auto-granted, but Graph / Bot API / custom permission grants still need GA consent)",
+        "make-ai-teammate Phase 9: If CLI output includes an Observability API S2S app role item, another Permission Grants action item, or 403 errors, the printed PowerShell script is displayed verbatim for a Global Administrator to run (telemetry uses the S2S route with an app-only token, which the OtelWrite application role authorizes; Graph / Bot API / custom permission grants still need GA consent)",
         "a365 setup all without --aiteammate is NOT used for the AI Teammate path",
         "a365 publish is NOT run by a365-setup"
       ]
