@@ -323,6 +323,8 @@ legacy delegated route needs admin consent. Signals are:
   telemetry token cache, `cache_agentic_token(...)`, or an `a365_token_resolver` backed by
   `AgenticTokenCache` / `get_cached_agentic_token`.
 - A distro call without the S2S transport flag.
+- A distro call with no token resolver (`tokenResolver`, `a365_token_resolver`, or
+  `o.Agent365.TokenResolver`). The S2S route then has no app-only token to export with.
 
 For Python, also flag (`high`) an app-only `prefetch(self.connection_manager, ...)` when nothing
 assigns `self.connection_manager`. `CloudAdapter` does not expose its connection manager, so

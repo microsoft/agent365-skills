@@ -146,6 +146,9 @@ function validatePython() {
   } else if (expectsS2S && !s2sTrue && !s2sEnv) {
     add('high', 'python-s2s-endpoint-not-set', 'Python does not set a365_use_s2s_endpoint=True (or A365_USE_S2S_ENDPOINT=true), so export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only token.', py.find(f => read(f).includes('use_microsoft_opentelemetry')));
   }
+  if (expectsS2S && !exporterFalse && !anyMatches(py, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+    add('high', 'python-obs-token-resolver-missing', 'use_microsoft_opentelemetry() has no a365_token_resolver (or a365_contextual_token_resolver), so the S2S route gets no app-only token and the exporter drops spans. Pass an app-only resolver (instrument-observability app_token_resolver.py for obo / agentic-user, or the S2S token-service cache).', py.find(f => read(f).includes('use_microsoft_opentelemetry')));
+  }
   for (const file of py) {
     const content = read(file);
     const delegated = callBlocks(content, 'exchange_token').some(block => /observability/i.test(block)) ||
@@ -232,6 +235,9 @@ function validateNode() {
   if (hasDistro && hasEnabled && !anyMatches(ts, /\buseS2SEndpoint\s*:\s*true\b/)) {
     add('high', 'node-obs-delegated-route', 'Node code does not set useS2SEndpoint: true, so A365 export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only tokenResolver.', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
+  if (hasDistro && hasEnabled && !exporterFalse && !anyMatches(ts, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+    add('high', 'node-obs-token-resolver-missing', 'useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token. Pass an app-only tokenResolver (instrument-observability app-token-resolver.ts for obo / agentic-user, or the S2S token service).', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
+  }
   for (const file of ts) {
     const content = read(file);
     if (['refreshObservabilityToken', 'RefreshObservabilityToken'].some(name => callBlocks(content, name).some(block => /authorization/i.test(block))) ||
@@ -271,6 +277,9 @@ function validateDotnet() {
   // Every auth mode exports over the S2S route with an app-only token.
   if (anyContains(cs, 'UseMicrosoftOpenTelemetry') && !anyMatches(cs, /\bUseS2SEndpoint\s*=\s*true\b/)) {
     add('high', 'dotnet-obs-delegated-route', 'UseMicrosoftOpenTelemetry is wired without UseS2SEndpoint = true, so A365 export uses the legacy delegated route. Set o.Agent365.UseS2SEndpoint = true (o.Agent365.Exporter.UseS2SEndpoint on Microsoft.OpenTelemetry 1.0.2 and earlier) with an app-only TokenResolver in every auth mode.', cs.find(f => read(f).includes('UseMicrosoftOpenTelemetry')));
+  }
+  if (anyContains(cs, 'UseMicrosoftOpenTelemetry') && !anyMatches(cs, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+    add('high', 'dotnet-obs-token-resolver-missing', 'UseMicrosoftOpenTelemetry is wired without o.Agent365.TokenResolver, so the S2S route gets no app-only token (the distro default token cache holds delegated tokens). Set TokenResolver to an app-only resolver (instrument-observability AgentAppTokenResolver for obo / agentic-user, or the ServiceTokenCache from ObservabilityTokenService for s2s).', cs.find(f => read(f).includes('UseMicrosoftOpenTelemetry')));
   }
   for (const file of cs) {
     const content = read(file);

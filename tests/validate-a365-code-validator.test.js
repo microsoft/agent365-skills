@@ -499,6 +499,7 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       assert.deepEqual(standalone, hook);
       assert.deepEqual(hook, [
         'dotnet-obs-delegated-token',
+        'dotnet-obs-token-resolver-missing',
         'node-obs-delegated-token',
         'python-obs-delegated-token',
         'python-obs-prefetch-connection-missing',
@@ -525,6 +526,29 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     } finally {
       cleanup(delegated);
       cleanup(appOnly);
+    }
+  });
+
+  test('route-only distro configs without a token resolver are flagged in every language by both scanners', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX.replace(', tokenResolver: appTokenResolver', ''),
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True)',
+    });
+    const resolverIds = ids => ids.filter(id => /token-resolver-missing/.test(id)).sort();
+    try {
+      const hook = resolverIds(findingIds(runValidator(VALIDATOR, dir)));
+      assert.deepEqual(hook, [
+        'dotnet-obs-token-resolver-missing',
+        'node-obs-token-resolver-missing',
+        'python-obs-token-resolver-missing',
+      ]);
+      assert.deepEqual(resolverIds(findingIds(runValidator(STANDALONE, dir))), hook);
+    } finally {
+      cleanup(dir);
     }
   });
 

@@ -677,6 +677,54 @@ async def _legacy_cache(self, context, tenant_id, agent_id):
       assert.match(r.reason, /no file assigns self\.connection_manager/);
     } finally { cleanup(dir); }
   });
+
+  test('.NET distro without o.Agent365.TokenResolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': DOTNET_DISTRO_VALID['Program.cs'].replace(/\n\s*o\.Agent365\.TokenResolver = [^\n]*/, ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /without o\.Agent365\.TokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js distro without tokenResolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(', tokenResolver: appTokenResolver', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro with a365_use_s2s_endpoint=True but no a365_token_resolver → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(', a365_token_resolver=OBS_TOKENS.resolve', ''),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365_token_resolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python distro passing the resolver through a kwargs dict → ok', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(', a365_token_resolver=OBS_TOKENS.resolve)',
+        ', **{"a365_token_resolver": OBS_TOKENS.resolve})'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
 });
 
 // ── Unknown project ───────────────────────────────────────────────────────────

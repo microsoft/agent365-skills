@@ -169,6 +169,9 @@ if (isDotnet) {
   if (hasDistroWired && !anyFileMatches(csFiles, /\bUseS2SEndpoint\s*=\s*true\b/)) {
     issues.push('Observability export must use the S2S route in every auth mode: set o.Agent365.UseS2SEndpoint = true in UseMicrosoftOpenTelemetry (o.Agent365.Exporter.UseS2SEndpoint on Microsoft.OpenTelemetry 1.0.2 and earlier) and wire an app-only token resolver (AgentAppTokenResolver, or ObservabilityTokenService for s2s)');
   }
+  if (hasDistroWired && !anyFileMatches(csFiles, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+    issues.push('UseMicrosoftOpenTelemetry is wired without o.Agent365.TokenResolver, so the S2S route gets no app-only token (the distro default token cache holds delegated tokens, which the S2S route rejects) — set o.Agent365.TokenResolver to AgentAppTokenResolver.ResolveAsync (obo / agentic-user) or to the ServiceTokenCache fed by ObservabilityTokenService (s2s) (see dotnet-observability.md)');
+  }
   if (anyCallMatches(csFiles, 'RegisterObservability', /AgenticTokenStruct/) ||
       anyFileMatches(csFiles, /\bnew\s+AgenticTokenStruct\s*[({]|IExporterTokenCache\s*<\s*AgenticTokenStruct\s*>\s*\??\s+[A-Za-z_]\w*/)) {
     issues.push('RegisterObservability(..., AgenticTokenStruct), new AgenticTokenStruct(...), or an IExporterTokenCache<AgenticTokenStruct> dependency wires a delegated (OBO) telemetry token, which the S2S route rejects — remove the per-turn registration and use AgentAppTokenResolver as o.Agent365.TokenResolver (see dotnet-observability.md)');
@@ -236,14 +239,22 @@ if (isNodejs) {
     }
   }
 
-  // 4. Token caching wired (tokenResolver, AgenticTokenCacheInstance, preloadObservabilityToken helper, or S2S token service)
-  const hasTokenCache = anyFileContains(tsFiles, 'tokenResolver') ||
-                        anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
-                        anyFileContains(tsFiles, 'RefreshObservabilityToken') ||
-                        anyFileContains(tsFiles, 'preloadObservabilityToken') ||
-                        anyFileContains(tsFiles, 'getS2SObservabilityToken');
-  if (!hasTokenCache) {
-    issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
+  // 4. Token resolver wired. With the distro, the a365 tokenResolver is the only export credential
+  // for the S2S route, so it must be set. Legacy ObservabilityManager wiring may still use the
+  // older token-cache helpers.
+  if (usesDistro) {
+    if (!anyFileMatches(tsFiles, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+      issues.push('useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token and export fails — pass tokenResolver: appTokenResolver from observability/app-token-resolver.ts (obo / agentic-user) or the observability-token-service resolver (s2s) (see nodejs-observability.md)');
+    }
+  } else {
+    const hasTokenCache = anyFileContains(tsFiles, 'tokenResolver') ||
+                          anyFileContains(tsFiles, 'AgenticTokenCacheInstance') ||
+                          anyFileContains(tsFiles, 'RefreshObservabilityToken') ||
+                          anyFileContains(tsFiles, 'preloadObservabilityToken') ||
+                          anyFileContains(tsFiles, 'getS2SObservabilityToken');
+    if (!hasTokenCache) {
+      issues.push('No TypeScript/JS file wires a token resolver — observability exports will fail');
+    }
   }
 
   // 4a. S2S scaffold: token service file must exist when authMode is s2s
@@ -332,19 +343,23 @@ if (isPython) {
     }
   }
 
-  // 4. Token cache wired
-  // OBO path: cache_agentic_token (new pattern) or AgenticTokenCache (legacy) or exchange_token helper
-  // S2S path: get_s2s_observability_token or token_resolver
-  // Distro path: use_microsoft_opentelemetry handles it internally
-  const hasTokenCache = anyFileContains(pyFiles, 'cache_agentic_token') ||
-                        anyFileContains(pyFiles, 'exchange_token') ||
-                        anyFileContains(pyFiles, 'AgenticTokenCache') ||
-                        anyFileContains(pyFiles, 'token_resolver') ||
-                        anyFileContains(pyFiles, 'get_observability_authentication_scope') ||
-                        anyFileContains(pyFiles, 'get_s2s_observability_token') ||
-                        anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
-  if (!hasTokenCache) {
-    issues.push('No Python file wires a token resolver — observability exports will fail');
+  // 4. Token resolver wired. With the distro, a365_token_resolver (or a365_contextual_token_resolver)
+  // is the only export credential for the S2S route; without it the exporter drops every span.
+  // Legacy configure() wiring may still use the older token-cache helpers.
+  if (usesDistroPy) {
+    if (!anyFileMatches(pyFiles, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+      issues.push('use_microsoft_opentelemetry() has no a365_token_resolver, so the S2S route gets no app-only token and the exporter drops every span — pass a365_token_resolver=OBS_TOKENS.resolve from observability/app_token_resolver.py (obo / agentic-user) or the observability_token_service cache (s2s) (see python-observability.md)');
+    }
+  } else {
+    const hasTokenCache = anyFileContains(pyFiles, 'cache_agentic_token') ||
+                          anyFileContains(pyFiles, 'exchange_token') ||
+                          anyFileContains(pyFiles, 'AgenticTokenCache') ||
+                          anyFileContains(pyFiles, 'token_resolver') ||
+                          anyFileContains(pyFiles, 'get_observability_authentication_scope') ||
+                          anyFileContains(pyFiles, 'get_s2s_observability_token');
+    if (!hasTokenCache) {
+      issues.push('No Python file wires a token resolver — observability exports will fail');
+    }
   }
 
   // 4a. S2S scaffold: token service file must exist when authMode is s2s

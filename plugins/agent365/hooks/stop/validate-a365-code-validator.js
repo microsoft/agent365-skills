@@ -190,6 +190,15 @@ function validatePython() {
     );
   }
 
+  if (expectsS2S && !hasExplicitExporterFalse && !anyFileMatches(pyFiles, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+    add(
+      'high',
+      'python-obs-token-resolver-missing',
+      'use_microsoft_opentelemetry() has no a365_token_resolver (or a365_contextual_token_resolver), so the S2S route gets no app-only token and the exporter drops spans. Pass an app-only resolver (instrument-observability app_token_resolver.py for obo / agentic-user, or the S2S token-service cache).',
+      pyFiles.find(f => fileContains(f, 'use_microsoft_opentelemetry'))
+    );
+  }
+
   for (const file of pyFiles) {
     const content = read(file);
     const delegated = findCallBlocks(content, 'exchange_token').some(block => /observability/i.test(block)) ||
@@ -335,6 +344,14 @@ function validateNode() {
       tsFiles.find(f => fileContains(f, 'useMicrosoftOpenTelemetry'))
     );
   }
+  if (hasDistroCall && hasA365Enabled && !hasExporterFalse && !anyFileMatches(tsFiles, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+    add(
+      'high',
+      'node-obs-token-resolver-missing',
+      'useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token. Pass an app-only tokenResolver (instrument-observability app-token-resolver.ts for obo / agentic-user, or the S2S token service).',
+      tsFiles.find(f => fileContains(f, 'useMicrosoftOpenTelemetry'))
+    );
+  }
   for (const file of tsFiles) {
     const content = read(file);
     const delegatedRefresh = ['refreshObservabilityToken', 'RefreshObservabilityToken']
@@ -416,6 +433,14 @@ function validateDotnet() {
       'high',
       'dotnet-obs-delegated-route',
       'UseMicrosoftOpenTelemetry is wired without UseS2SEndpoint = true, so A365 export uses the legacy delegated route. Set o.Agent365.UseS2SEndpoint = true (o.Agent365.Exporter.UseS2SEndpoint on Microsoft.OpenTelemetry 1.0.2 and earlier) with an app-only TokenResolver in every auth mode.',
+      csFiles.find(f => fileContains(f, 'UseMicrosoftOpenTelemetry'))
+    );
+  }
+  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !anyFileMatches(csFiles, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+    add(
+      'high',
+      'dotnet-obs-token-resolver-missing',
+      'UseMicrosoftOpenTelemetry is wired without o.Agent365.TokenResolver, so the S2S route gets no app-only token (the distro default token cache holds delegated tokens). Set TokenResolver to an app-only resolver (instrument-observability AgentAppTokenResolver for obo / agentic-user, or the ServiceTokenCache from ObservabilityTokenService for s2s).',
       csFiles.find(f => fileContains(f, 'UseMicrosoftOpenTelemetry'))
     );
   }
