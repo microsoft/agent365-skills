@@ -316,6 +316,8 @@ class GenericAgentHost:
             ChannelId(channel="agents", sub_channel="*")
         )
         async def on_notification(context, state, notification):
+            # instrument-observability adds its per-turn app-only token prefetch here too
+            # (await self._setup_observability_token(...)) — notification turns emit spans.
             notification_type = getattr(context.activity, "name", None)
             reply = await self._agent.handle_agent_notification_activity(
                 notification_type,
@@ -333,9 +335,11 @@ class GenericAgentHost:
         # MsalConnectionManager reads all CONNECTIONS__* / AGENTAPPLICATION__* env vars
         # and resolves the right token issuer per service URL. Do NOT pass raw
         # client_id / client_secret / tenant_id to the adapter — the connection
-        # manager owns that.
-        connection_manager = MsalConnectionManager.from_environment()
-        self._adapter = CloudAdapter(connection_manager=connection_manager)
+        # manager owns that. Kept on the host (self.connection_manager) because
+        # instrument-observability mints app-only telemetry tokens from the same
+        # connection; CloudAdapter does not expose it publicly.
+        self.connection_manager = MsalConnectionManager.from_environment()
+        self._adapter = CloudAdapter(connection_manager=self.connection_manager)
         self._setup_handlers()
 
         self._app = web.Application()

@@ -288,7 +288,7 @@ Monitor output carefully:
 After `a365 setup all` completes, show the user:
 
 1. **The Setup Summary table** from CLI output — verbatim.
-2. **`Agent365.Observability.OtelWrite` is automatically granted** to the agent identity by `a365 setup all` — no GA consent step required for newly provisioned agents. If the CLI output includes a "Permission Grants" action item (upgrade scenario for pre-1.1 agents), display the PowerShell script verbatim so the user can hand it to a Global Admin.
+2. **No Observability API permission is needed.** Recent `a365 setup all` versions no longer request `Agent365.Observability.OtelWrite` (or its admin consent) for blueprint agents. Telemetry is exported over the S2S route with an app-only token, and the route authorizes the registered agent instance. These versions also fail setup (exit code 1) when agent registration fails or cannot be verified. If that happens, show the error and have the user re-run `a365 setup all --agent-registration-only` after fixing it. Older CLI versions may still grant OtelWrite, which is harmless. If the CLI output includes an action item for other permissions (Graph, Bot API, custom resources), display the printed PowerShell script verbatim so the user can hand it to a Global Admin.
 3. **Skip the client secret action item entirely.** Do not show or mention it.
 
 Mark Todo 1 as completed.

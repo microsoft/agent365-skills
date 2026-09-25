@@ -38,7 +38,8 @@ useMicrosoftOpenTelemetry({
   a365: {
     enabled: true,
     enableObservabilityExporter: true,
-    tokenResolver,
+    useS2SEndpoint: true,
+    tokenResolver, // app-only token for the exporting agent identity
   },
 });
 ```
@@ -146,37 +147,55 @@ blank or incomplete.
 
 ## 5. Endpoint Selection
 
+Every auth mode exports over the service-to-service (S2S) route with an **app-only** token for
+the runtime Agent Identity. `authMode` only changes how that token is sourced:
+
 | Auth mode | Structural transport expectation |
 |---|---|
-| S2S / application | Service-to-service export mode; token principal is the runtime Agent Identity |
-| OBO / delegated / agentic-user | Delegated export mode; delegated token carries observability write scope |
+| S2S / application | S2S export mode; app-only token from the FMI chain for the configured Agent Identity |
+| OBO / delegated / agentic-user (incl. AI Teammate) | S2S export mode; app-only token for the turn's Agent Identity from the hosting connection's blueprint credential. OBO / Agentic User tokens are for workload calls only |
 
-S2S also requires an Observability API token with:
-
-```text
-roles contains Agent365.Observability.OtelWrite
-```
-
-OBO / agentic-user uses:
+The S2S route requires an Observability API token with:
 
 ```text
-scp contains Agent365.Observability.OtelWrite
+no scp claim (any delegated token is rejected)
+azp/appid == the exporting Agent Identity == /agents/{agentId}
+roles may be absent or empty for a registered agent instance; roles containing
+Agent365.Observability.OtelWrite are also accepted
 ```
 
-For Python S2S, prefer setting `a365_use_s2s_endpoint=True` in code. Depending on
-`A365_USE_S2S_ENDPOINT=true` in environment is more fragile and should be called out.
+Select the transport in code: `useS2SEndpoint: true` (Node.js), `a365_use_s2s_endpoint=True`
+(Python), `o.Agent365.UseS2SEndpoint = true` (.NET 1.0.3+; `o.Agent365.Exporter.UseS2SEndpoint`
+on 1.0.2 and earlier). Depending on `A365_USE_S2S_ENDPOINT=true` in the environment is more
+fragile and should be called out.
+
+**Delegated telemetry is a finding (`high`).** Look for any of these:
+
+- Node.js `refreshObservabilityToken(..., authorization)` or a `preloadObservabilityToken` helper, or
+  a `tokenResolver` reading `AgenticTokenCacheInstance.getObservabilityToken(...)`.
+- .NET `RegisterObservability(..., new AgenticTokenStruct(...), ...)`, any `new AgenticTokenStruct(...)`,
+  or an `IExporterTokenCache<AgenticTokenStruct>` dependency.
+- Python `exchange_token(..., scopes=get_observability_authentication_scope(), ...)` feeding a
+  telemetry token cache, `cache_agentic_token(...)`, or an `AgenticTokenCache` /
+  `get_cached_agentic_token` resolver.
+- A distro call without the S2S transport flag.
+
+Each sends a delegated token (rejected by the S2S route) or uses the legacy delegated route, which
+needs admin consent. Replace it with the app-only resolver from the `instrument-observability`
+references.
 
 ### How the S2S token is minted (the right shape)
 
 A plain client-credentials call for the observability scope does not produce the required
-runtime Agent Identity principal. The token must come from the **3-hop FMI exchange**, so its
+runtime Agent Identity principal. The token must come from the **FMI exchange**, so its
 principal equals the runtime Agent Identity:
 
 ```text
-leg 1: blueprint creds (secret, or MI assertion on Azure) + fmi_path=<agentIdentityAppId>
+leg 1: blueprint creds (secret, certificate, or MI assertion on Azure — for interactive agents,
+       the hosting connection's getAgenticApplicationToken helper) + fmi_path=<agentIdentityAppId>
         -> assertion T1   (scope api://AzureADTokenExchange/.default)
-leg 3: authenticate AS the agent identity using T1 as the client assertion
-        -> Observability API token (scope api://9b975845-.../.default), azp == agent id, roles:[OtelWrite]
+leg 2: authenticate AS the agent identity using T1 as the client assertion
+        -> Observability API token (scope api://9b975845-.../.default), azp == agent id, no scp
 ```
 
 Flag S2S code that mints the obs token with a bare `ClientSecretCredential` /
@@ -228,10 +247,15 @@ Compare the live ID printed by the command with the local `agentBlueprintId`. A 
 Blueprint or a local ID that no longer resolves is a configuration blocker; do not rewrite the
 ID automatically.
 
-For observability, verify the grant that matches the auth mode:
-
-- `obo` / `agentic-user`: delegated `Agent365.Observability.OtelWrite`
-- `s2s`: application role `Agent365.Observability.OtelWrite`
+For observability, the S2S route (every auth mode) authorizes a **registered agent instance**
+without `Agent365.Observability.OtelWrite` (subject to service policy); the application role
+`Agent365.Observability.OtelWrite` on the Blueprint is accepted as well. The Agent 365 CLI no
+longer requests Observability API permissions for blueprint agents, so a missing OtelWrite grant
+is **not** a blocker when the instance is registered (`agentRegistrationId` in
+`a365.generated.config.json`). If neither registration nor the application role is evident,
+report `high` and recommend `a365 setup all --agent-registration-only` for blueprint agents. For AI Teammates, recommend the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. A delegated
+`Agent365.Observability.OtelWrite` scope matters only to legacy delegated-route exporters — flag
+that code for migration (§5) instead.
 
 If Graph returns 401/403, report the check as unavailable due to caller authorization rather
 than claiming the Blueprint has no permissions. The list API's least-privileged Graph permission
@@ -283,7 +307,9 @@ database, endpoint, or correlation details into the validator report.
 |---|---|
 | Export accepted (200/`sent`) but nothing in MAC | Confirm the target tenant and user satisfy current Agent 365 licensing and enrollment prerequisites |
 | Token fails `AADSTS500011` (resource principal not found) | Observability resource SP isn't in the tenant — Agent 365/observability onboarding, not a code fix |
-| S2S token via bare `ClientSecretCredential` → 403 | Mint via the 3-hop FMI exchange so the principal == runtime Agent Identity (see §5) |
+| S2S token via bare `ClientSecretCredential` → 403 | Mint via the FMI exchange so the principal == runtime Agent Identity (see §5) |
+| S2S export → 403 `insufficient_scope` with a valid app-only token | Instance not registered and no OtelWrite application role. Blueprint agents: run `a365 setup all --agent-registration-only` (a grant is not the expected fix). AI Teammates: complete the application-role step `a365 setup all --aiteammate` prints |
+| Exporter fed an OBO / Agentic User token (per-turn refresh or `AgenticTokenStruct` registration) | Replace with the app-only resolver and set the S2S transport flag (see §5) |
 | Python only passes `enable_a365=True` | Also pass `a365_enable_observability_exporter=True` or set exporter env true |
 | Queue/background job calls baggage helper with only `blueprint_id` | Pass the runtime `agent_id` explicitly |
 | Testbench works but app does not | Testbench manually emits supported spans; app may only emit generic spans |
@@ -309,7 +335,7 @@ Default report should be short and action-oriented:
 3. **Semantic spans missing** — generic HTTP spans may not populate Activity.
    Fix: add/confirm `invoke_agent`, `chat`, `execute_tool`, `output_messages`.
 
-**Fix order:** token/identity → exporter flag → S2S/OBO mode → semantic spans → backend verification.
+**Fix order:** token/identity → exporter flag → S2S route (every auth mode) → semantic spans → backend verification.
 ```
 
 Only add detailed evidence when needed. Keep concrete file/function names and redact per the

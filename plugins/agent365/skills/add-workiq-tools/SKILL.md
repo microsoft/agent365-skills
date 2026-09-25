@@ -363,8 +363,8 @@ For every branch:
 
 1. **Grep the target file for the observability anchor symbols:**
    - **.NET** (`AgentApplication` subclass): `BaggageBuilder`, `InvokeAgentScope`, `InferenceScope`, `Agent365ObservabilityContext`
-   - **Node.js** (`src/agent.ts` and `src/client.ts`): `BaggageBuilder`, `BaggageBuilderUtils`, `InvokeAgentScope`, `InferenceScope`, `AgenticTokenCacheInstance`, `preloadObservabilityToken`
-   - **Python** (`agent.py`): `BaggageBuilder`, `populate_baggage`, `InvokeAgentScope`, `with builder.build()`, `AgenticTokenCache`
+   - **Node.js** (`src/agent.ts` and `src/client.ts`): `BaggageBuilder`, `BaggageBuilderUtils`, `InvokeAgentScope`, `InferenceScope` (and in the entry point: `useS2SEndpoint`, `createAppTokenResolver`)
+   - **Python** (`agent.py` / `host_agent_server.py`): `BaggageBuilder`, `populate_baggage`, `InvokeAgentScope`, `with builder.build()`, `_setup_observability_token` / `OBS_TOKENS.prefetch`
 
 2. **If any of those symbols are present**, scope your `Edit` `old_string` **as narrowly as possible** — anchor on the **single statement immediately before/after** the new line, never a multi-statement block, never the method signature alone, never the full method body. Examples:
    - ✅ Good: anchor on the `var response = await chatClient.GetResponseAsync(...)` line and insert `GetMcpToolsAsync` immediately above it.

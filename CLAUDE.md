@@ -107,8 +107,8 @@ agent365-skills/
    them with URL + action and continue.
 
 11. **`a365-code-validator` is report-first.** It diagnoses exporter activation, agent-id
-   binding, semantic span coverage, S2S/OBO endpoint mismatches, and live Blueprint grants /
-   effective inheritance through read-only `a365 query-entra` checks when login is already
+   binding, semantic span coverage, delegated (OBO-route) telemetry or a missing S2S route flag,
+   and live Blueprint grants / effective inheritance through read-only `a365 query-entra` checks when login is already
    available. It then asks whether to apply safe fixes, create a fix plan, or stop. It must
    not provision, install packages, mutate Graph, grant permissions, or run `a365 publish`.
 
@@ -124,6 +124,22 @@ agent365-skills/
    to `a365-setup`. Guards always set `contentEntry.name` and fail closed by default. Its validator
    (`validate-purview-dlp-integration.js`) is report-first (advisory `findings`, always
    `ok: true`) because "start disabled / skip policy" is a valid bring-up state.
+
+13. **Telemetry always uses the S2S route with an app-only token, in every `authMode`.** The
+   S2S route rejects delegated (`scp`) tokens, so OBO / Agentic User tokens are only for workload
+   calls (MCP / Graph). `obo` / `agentic-user` agents get an app-only resolver that reuses the
+   hosting connection's blueprint credential (`AgentAppTokenResolver.cs` /
+   `app-token-resolver.ts` / `app_token_resolver.py`); `s2s` agents get the FMI token-service
+   scaffold. Always set the S2S route flag (`o.Agent365.UseS2SEndpoint = true`,
+   `useS2SEndpoint: true`, `a365_use_s2s_endpoint=True`). Never generate a per-turn delegated
+   telemetry token (`RegisterObservability(..., AgenticTokenStruct)`,
+   `refreshObservabilityToken(..., authorization)`, `exchange_token(...)` for the observability
+   scope), and never add the delegated `OtelWrite` scope for telemetry. Registered blueprint agent
+   instances need no `Agent365.Observability.OtelWrite` permission or admin consent, so never make
+   an OBS grant a required step for them. For blueprint agents, a 403 `insufficient_scope` means
+   the instance isn't registered: `a365 setup all --agent-registration-only`. AI Teammates complete
+   the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. The application
+   role is always an accepted fallback on the S2S route.
 
 ---
 

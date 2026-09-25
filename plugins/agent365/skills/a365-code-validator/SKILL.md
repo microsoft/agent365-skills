@@ -8,7 +8,8 @@ description: >
   before shipping. Diagnoses and fixes existing instrumentation; do NOT use it to add
   observability from scratch — use instrument-observability for that.
   Checks exporter activation, runtime agent-identity binding (vs blueprint id),
-  the S2S FMI / OBO token shape, S2S vs OBO endpoint selection, the required semantic spans
+  the app-only S2S token shape (and any leftover delegated OBO telemetry token), S2S endpoint
+  selection in every auth mode, the required semantic spans
   (invoke_agent/chat/execute_tool/output_messages), Activity attributes, and live blueprint grants
   and inheritance through read-only a365 Microsoft Graph diagnostics. Read-only by default; asks
   before applying safe fixes. Python, Node.js, and .NET.
@@ -35,7 +36,7 @@ hooks:
         1. exporter activation status;
         2. identity binding status (agent id vs blueprint id);
         3. semantic span coverage (invoke_agent/chat/execute_tool/output_messages);
-        4. endpoint/token mode (S2S vs OBO);
+        4. endpoint/token mode (S2S route with an app-only token in every auth mode, or leftover delegated telemetry);
         5. live blueprint grant and effective-inheritance status, or why the check was skipped;
         6. concrete next debug commands;
         7. if blockers were found, the user was asked whether to fix now, create a fix plan, or stop.
@@ -72,9 +73,9 @@ silent or confusing A365 Activity failures:
 1. Exporter configured but not actually enabled.
 2. `gen_ai.agent.id` set to a Blueprint ID instead of the runtime Agent Identity / Source Agent ID.
 3. Generic HTTP/OpenAI spans emitted without A365 semantic operations.
-4. S2S/OBO endpoint mismatch.
+4. Delegated (OBO-route) telemetry: the S2S route flag is missing, or an OBO / Agentic User token is fed to the exporter.
 5. Missing token resolver or wrong S2S token shape.
-6. Stale local Blueprint ID or missing Blueprint permissions in the target tenant.
+6. Stale local Blueprint ID, missing Blueprint permissions, or an unregistered agent instance in the target tenant.
 7. Inheritable permission policy configured without grants on the Blueprint service principal.
 8. MAC reporting expectations confused with raw ingest success.
 
@@ -134,7 +135,7 @@ Detect:
 | `Microsoft.OpenTelemetry` | .NET A365 distro present |
 | `agentBlueprintId` / `agenticAppId` | Distinguish Blueprint ID from runtime Agent Identity |
 | `ENABLE_A365_OBSERVABILITY_EXPORTER` / `EnableAgent365Exporter` | Runtime exporter gate |
-| `authMode` | Drives S2S vs OBO path expectations |
+| `authMode` | Selects how the app-only telemetry token is sourced (export is S2S in every mode) and which workload auth applies |
 
 **Mark task complete.**
 
@@ -293,22 +294,46 @@ this agent" reporting. If it is missing or set to the agent identity / agent use
 of the human caller object ID, export can succeed while caller/user Activity remains blank
 or incomplete.
 
-### 3.5 S2S vs OBO transport mode
+### 3.5 S2S transport mode (every auth mode)
 
 Do not expose or require internal service URLs in the report. Validate only the structural
-intent:
+intent. Telemetry export uses the service-to-service (S2S) route with an **app-only** token for
+the runtime Agent Identity in **every** auth mode. `authMode` only changes how that token is
+sourced:
 
 | Auth mode | Structural expectation |
 |---|---|
-| S2S / application | Uses service-to-service export mode and a token for the runtime Agent Identity |
-| OBO / agentic-user | Uses delegated export mode and a token whose delegated scope includes observability write |
+| S2S / application | S2S export mode; app-only token from the FMI chain for the configured Agent Identity |
+| OBO / agentic-user (incl. AI Teammate) | S2S export mode; app-only token for the turn's Agent Identity from the hosting connection's blueprint credential. OBO / Agentic User tokens are for workload calls (MCP / Graph) only |
 
-Report whether the code appears to select the correct transport mode (`useS2SEndpoint` /
-`a365_use_s2s_endpoint` / `UseS2SEndpoint`) for S2S, without printing backend route templates.
-For Python S2S, prefer `a365_use_s2s_endpoint=True` in code rather than relying only on
-`A365_USE_S2S_ENDPOINT=true` in runtime environment. Also check the **token shape**: the S2S
-observability token must come from the 3-hop FMI exchange (principal == runtime Agent Identity),
-not a bare client-credentials call — see checklist §5 for the failure signatures.
+Report whether the code selects the S2S transport mode (`useS2SEndpoint: true` /
+`a365_use_s2s_endpoint=True` / `o.Agent365.UseS2SEndpoint = true`) in every auth mode, without
+printing backend route templates. For Python, prefer `a365_use_s2s_endpoint=True` in code rather
+than relying only on `A365_USE_S2S_ENDPOINT=true` in the runtime environment.
+
+Flag **delegated telemetry** as `high`: the S2S route rejects any token carrying `scp`, and the
+legacy delegated route needs admin consent. Signals are:
+
+- Node.js `AgenticTokenCacheInstance.refreshObservabilityToken(..., authorization)` (often wrapped
+  in a `preloadObservabilityToken` helper), or a `tokenResolver` that reads
+  `AgenticTokenCacheInstance.getObservabilityToken(...)`.
+- .NET `RegisterObservability(..., new AgenticTokenStruct(...), ...)`, any `new AgenticTokenStruct(...)`
+  (for example an `A365OtelWrapper` helper), or an `IExporterTokenCache<AgenticTokenStruct>` dependency.
+- Python `exchange_token(..., scopes=get_observability_authentication_scope(), ...)` feeding a
+  telemetry token cache, `cache_agentic_token(...)`, or an `a365_token_resolver` backed by
+  `AgenticTokenCache` / `get_cached_agentic_token`.
+- A distro call without the S2S transport flag.
+
+For Python, also flag (`high`) an app-only `prefetch(self.connection_manager, ...)` when nothing
+assigns `self.connection_manager`. `CloudAdapter` does not expose its connection manager, so
+every prefetch fails.
+
+The fix is the app-only resolver from the `instrument-observability` references, not an OBS
+permission grant.
+
+Also check the **token shape**: the S2S observability token must come from the FMI exchange
+(principal == runtime Agent Identity, no `scp`), not a bare client-credentials call — see
+checklist §5 for the failure signatures.
 
 ### 3.6 Blueprint permission inheritance wording
 
@@ -372,23 +397,28 @@ do not print either real ID in the support-safe report:
 | Neither lookup resolves a Blueprint | `high` tenant/setup gap |
 | Graph returns 401/403 or the caller lacks the required Entra role | `not checked` authentication/authorization gap, not proof that the Blueprint is broken |
 
-Interpret permissions in the context of `authMode`:
+Interpret observability authorization for the S2S route, which every auth mode uses:
 
-| Auth mode | Required observability grant |
+| Tenant state | Classification |
 |---|---|
-| `obo` / `agentic-user` | Delegated `Agent365.Observability.OtelWrite` |
-| `s2s` | Application role `Agent365.Observability.OtelWrite` |
-| Unknown / mixed | Report which delegated scopes and app roles exist; do not assume the intended side |
+| Agent instance registered (`agentRegistrationId` present in `a365.generated.config.json`, or registration confirmed by `a365 setup all`) | OK — registered instances are authorized without `Agent365.Observability.OtelWrite` (subject to service policy) |
+| Application role `Agent365.Observability.OtelWrite` granted on the Blueprint (inherited by agent identities) | OK — the S2S route also accepts it |
+| Neither registration nor the application role is evident | `high` — export will likely return 403 `insufficient_scope`. Blueprint agents: `a365 setup all --agent-registration-only`. AI Teammates: complete the `OtelWrite` application-role step `a365 setup all --aiteammate` prints |
+| Only the delegated `Agent365.Observability.OtelWrite` scope is granted | Informational — it only matters to legacy delegated-route exporters; flag the code for migration instead (§3.5) |
 
-Treat a missing required OtelWrite grant as `critical`. Treat a non-zero `inheritance` result
-for another required resource as `high`. Permission names and resource display names are safe
-to summarize, but redact tenant, Blueprint, application, service-principal, and agent IDs.
+Do **not** treat a missing `OtelWrite` grant as a blocker for a registered blueprint agent: the
+Agent 365 CLI no longer requests Observability API permissions for blueprint agents. Treat a
+non-zero `inheritance` result for another required resource as `high`. Permission names and
+resource display names are safe to summarize, but redact tenant, Blueprint, application,
+service-principal, and agent IDs.
 
 For remediation, report the CLI guidance without applying it:
 
 - Run `a365 setup requirements` when the output points to a missing `wids` claim or CLI consent.
-- Run the relevant `a365 setup permissions ...` flow as a Global Administrator to reconcile
-  grants and inheritance.
+- Run `a365 setup all --agent-registration-only` (idempotent) when a blueprint agent instance is
+  not registered. For AI Teammates, point to the `OtelWrite` application-role step that
+  `a365 setup all --aiteammate` prints (the registration-only flag does not apply to them). Run the relevant `a365 setup permissions ...` flow as a Global Administrator to
+  reconcile other grants and inheritance.
 - For a stale Blueprint ID, hand off to `a365-setup` so the developer can explicitly choose the
   correct reuse/re-run/fresh path. Do not rewrite the ID automatically.
 
@@ -460,6 +490,11 @@ When the code checks above pass, have the user confirm, in the *target* tenant:
 - **Observability resource SP present** — `az ad sp show --id 9b975845-388f-4429-889e-eab1ef63949c`
   returns a service principal in the tenant. A `404` / `AADSTS500011` ("resource principal … not
   found") means the observability app isn't provisioned there — an onboarding step, not a code fix.
+- **Agent instance registration** — a 403 `insufficient_scope` from the S2S route with a valid
+  app-only token means the instance is not registered (and has no `OtelWrite` application role).
+  For blueprint agents, registration is the expected fix, not a permission grant:
+  `a365 setup all --agent-registration-only`. For AI Teammates, complete the `OtelWrite`
+  application-role step that `a365 setup all --aiteammate` prints.
 - **Ingestion lag** — Defender `CloudAppEvents` populates before the admin center; give it ~5 min.
 
 **Mark task complete: "Check live blueprint permissions and runtime state".**
@@ -581,8 +616,12 @@ Only apply these automatically when the user chooses `apply_safe_fixes`:
      ```text
      ENABLE_A365_OBSERVABILITY_EXPORTER=true
      ```
-   - For S2S mode, add the version-appropriate S2S transport setting only if the code/reference for
-     that project already names it. Do not invent a setting name.
+   - Add the S2S transport setting (required in every auth mode) only if the code/reference for
+     that project already names it **and** the scan reported no delegated-token finding
+     (`*-obs-delegated-token`), i.e. the exporter already gets an app-only token. Moving an
+     exporter that still sends a delegated token to the S2S route breaks export, because the S2S
+     route rejects `scp` tokens. In that case, bundle the flag with the resolver swap below, which
+     needs a second confirmation. Do not invent a setting name.
 
 3. **Config field scaffolding for runtime agent identity**
    - If the project already has a settings/config class, add a clearly named optional field such as
@@ -601,6 +640,11 @@ Ask a focused follow-up before editing:
 2. **Token resolver wiring**
    - If the project already has a token provider with the required exchange flow, ask whether to
      wire an observability token resolver to it.
+   - If the exporter is fed a delegated (OBO / Agentic User) token, propose replacing it with the
+     app-only resolver scaffold from the `instrument-observability` references (hosting-connection
+     resolver for `obo` / `agentic-user`, FMI token service for `s2s`), together with the S2S
+     transport flag. Change both at once, never the flag alone. Do not request an OBS
+     permission grant as the fix.
    - If no such provider exists, do not generate a full token service silently. Provide a plan and
      ask the user to confirm a follow-up implementation.
 

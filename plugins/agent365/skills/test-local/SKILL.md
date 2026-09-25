@@ -336,10 +336,11 @@ Tell the user:
 >   [Agent365Exporter] Partitioned into K identity groups (X spans skipped)
 >   Agent365ExporterCore: Obtained token for agent <agentId> tenant <tenantId>.
 >   Agent365ExporterCore: Sending chunk 1 of 1 (J spans, B bytes)
->       to https://agent365.svc.cloud.microsoft/observability/tenants/<tenant>/otlp/agents/<agent>/traces?api-version=1.
+>       to https://agent365.svc.cloud.microsoft/observabilityService/tenants/<tenant>/otlp/agents/<agent>/traces?api-version=1.
 >   Agent365ExporterCore: HTTP 200 exporting spans. 'x-ms-correlation-id': '<guid>'.
 >   ```
 >   The `HTTP 200 exporting spans` line is the definitive confirmation that traces reached the A365 backend.
+>   The URL must contain `/observabilityService/` (the S2S route every auth mode uses). `/observability/` means the S2S route flag is missing (`useS2SEndpoint: true` / `a365_use_s2s_endpoint=True` / `o.Agent365.UseS2SEndpoint = true`). A 403 `insufficient_scope` from the S2S route with an app-only token means the instance isn't registered and has no `OtelWrite` application role. For blueprint agents, run `a365 setup all --agent-registration-only`. For AI Teammates, complete the app-role step that `a365 setup all --aiteammate` prints.
 >   `Partitioned into K identity groups` should show `K >= 1` for at least one batch after a Teams turn — if it's always `0`, the agent/tenant ID is missing from baggage (likely the `Guid.Empty` fallback bug — verify `instrument-observability` was followed correctly).
 >   To see these logs you need `Microsoft.Agents.A365.Observability: Debug` (or lower) in `appsettings.json`'s `Logging:LogLevel`.
 >

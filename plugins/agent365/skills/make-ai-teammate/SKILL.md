@@ -327,11 +327,12 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `CloudAdapter` in `src/**/*.ts` → `hasHosting`
 - `onAgentNotification` in `src/**/*.ts` → `hasNotifications`
 - `ToolingManifest.json` exists → `hasManifest`
-- **Observability composite** — compute three sub-signals, then combine:
+- **Observability composite** — compute four sub-signals, then combine:
   - `obs_entry`     = `useMicrosoftOpenTelemetry` in any `src/**/*.ts`
-  - `obs_token`     = `tokenResolver` OR `AgenticTokenCacheInstance` in any `src/**/*.ts` (S2S also accepts `getS2SObservabilityToken` / `startTokenService`)
+  - `obs_token`     = `tokenResolver` in any `src/**/*.ts` (the app-only resolver `observability/app-token-resolver.ts` for obo / agentic-user; S2S also accepts `getS2SObservabilityToken` / `startTokenService`), AND no `refreshObservabilityToken(..., authorization)` call or `AgenticTokenCacheInstance.getObservabilityToken` resolver (either means the telemetry token is delegated)
+  - `obs_route`     = `useS2SEndpoint: true` in any `src/**/*.ts` (telemetry uses the S2S route in every auth mode)
   - `obs_handler`   = `BaggageBuilder` OR `BaggageBuilderUtils` OR `InvokeAgentScope` in any `src/**/*.ts`
-  - `has_obs_complete` = `obs_entry && obs_token && obs_handler`
+  - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`
   - `has_obs_partial`  = `obs_entry && !has_obs_complete`
   - `has_obs`          = `has_obs_complete` *(only "true" when the wiring is end-to-end)*
 
@@ -342,9 +343,10 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite:**
   - `obs_entry`   = `UseMicrosoftOpenTelemetry` in `Program.cs` (or legacy `AddA365Tracing`)
-  - `obs_token`   = OBO: distro auto-registers `IExporterTokenCache<AgenticTokenStruct>` so accept `UseMicrosoftOpenTelemetry` itself; S2S: `ObservabilityTokenService` / `AddAgent365Observability`
+  - `obs_token`   = `AgentAppTokenResolver` (obo / agentic-user) or `ObservabilityTokenService` / `AddAgent365Observability` (S2S), AND no `AgenticTokenStruct` usage (`RegisterObservability(..., new AgenticTokenStruct(...))`, `new AgenticTokenStruct(...)`, or an `IExporterTokenCache<AgenticTokenStruct>` dependency — all register a delegated telemetry token)
+  - `obs_route`   = `UseS2SEndpoint = true` in any `**/*.cs` (telemetry uses the S2S route in every auth mode)
   - `obs_handler` = `BaggageBuilder` OR `BaggageTurnMiddleware` OR `InvokeAgentScope.Start` in `**/*.cs`
-  - `has_obs_complete` = `obs_entry && obs_token && obs_handler`
+  - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`
   - `has_obs_partial`  = `obs_entry && !has_obs_complete`
   - `has_obs`          = `has_obs_complete`
 
@@ -355,11 +357,17 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite:**
   - `obs_entry`   = `use_microsoft_opentelemetry` in any `**/*.py`
-  - `obs_token`   = `token_resolver` OR `AgenticTokenCache` OR `cache_agentic_token` OR S2S: `run_token_service` / `get_s2s_observability_token`
+  - `obs_token`   = `token_resolver` (the app-only `AppTokenResolver` / `OBS_TOKENS` for obo / agentic-user; S2S: `run_token_service` / `get_s2s_observability_token`), AND no `exchange_token(...)` for the observability scope, `cache_agentic_token(...)`, or `AgenticTokenCache` / `get_cached_agentic_token` resolver (all are delegated telemetry tokens)
+  - `obs_route`   = `a365_use_s2s_endpoint=True` in any `**/*.py` (or `A365_USE_S2S_ENDPOINT=true` in `.env`) — telemetry uses the S2S route in every auth mode
   - `obs_handler` = `BaggageBuilder` OR `populate_baggage` OR `InvokeAgentScope` in any `**/*.py`
-  - `has_obs_complete` = `obs_entry && obs_token && obs_handler`
+  - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`
   - `has_obs_partial`  = `obs_entry && !has_obs_complete`
   - `has_obs`          = `has_obs_complete`
+
+> **Legacy delegated telemetry is partial, not complete.** A project whose exporter still uses the
+> delegated route or a per-turn delegated token (missing `obs_route`, or a delegated refresh that
+> fails `obs_token`) is `has_obs_partial`. Phase 9.5 re-enters `instrument-observability`, which
+> migrates it to the S2S route with an app-only token ("Migrating delegated telemetry" in its Phase 3).
 
 **Skill-state signals** (language-agnostic):
 
@@ -829,7 +837,7 @@ Do NOT revert changes on build failure — fix forward.
 **Three-way gate** — branch on the composite signal computed in Phase 0A.3:
 
 - **If `has_obs_complete = true`** (rows 2, 4, 6, 8 *with* full end-to-end wiring): tell the user verbatim *"Observability already wired end-to-end (entry-point + token resolver + handler-side baggage / scopes) — skipping. Run `/agent365:instrument-observability` to reconfigure."* and mark the task complete. Do NOT invoke the sub-skill.
-- **If `has_obs_partial = true`** (any signal of obs in the project but at least one of entry / token / handler is missing): **do not skip — recover.** Tell the user verbatim *"Found partial observability wiring (entry-point present, but token resolver and/or message-handler scopes are missing). Completing the wiring now — re-entering `/agent365:instrument-observability` to finish what was left half-done."* Then proceed to the same steps as the `has_obs = false` branch below. The sub-skill is idempotent and additive, so partial-recovery is safe.
+- **If `has_obs_partial = true`** (any signal of obs in the project, but the entry, token, route, or handler anchor is missing or delegated): **do not skip — recover.** Tell the user verbatim *"Found partial observability wiring (entry-point present, but token resolver, S2S route, and/or message-handler scopes are missing or still use delegated tokens). Completing the wiring now — re-entering `/agent365:instrument-observability` to finish what was left half-done."* Then proceed to the same steps as the `has_obs = false` branch below. The sub-skill is safe for partial recovery: it adds only missing pieces and migrates delegated telemetry to the app-only S2S path (its Idempotency rule does not skip delegated wiring).
 - **If `has_obs_complete = false && has_obs_partial = false`** (rows 1, 3, 5, 7 — no obs at all): proceed to the steps below.
 
 **Steps (for partial-recovery and fresh-wire paths):**
