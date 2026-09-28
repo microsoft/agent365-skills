@@ -39,10 +39,12 @@ function anyFileMatches(files, regex) {
 }
 
 // Distro-call checks shared verbatim by both stop hooks and the standalone scanner. An option counts
-// only when the distro call's own arguments pass it: an explicit or shorthand property (Node.js), a
-// keyword or `**{...}` key (Python), or an assignment in the options callback (.NET). A variable passed
-// to the call is followed one level to its initializer in the same file. Comments are ignored, so a
-// commented-out option, an unused import, or an unrelated object elsewhere does not count.
+// only where the SDK reads it: in the `a365` options object passed to useMicrosoftOpenTelemetry
+// (Node.js), as a keyword argument of use_microsoft_opentelemetry (Python), or on `.Agent365` in the
+// UseMicrosoftOpenTelemetry options callback (.NET). A variable is followed one level to its
+// initializer in the same file. Comments are ignored, so a commented-out option, an unused import, or
+// an unrelated object does not count. When the options cannot be located statically (a method group,
+// a factory call, or a callback that never touches Agent365), the file as a whole is checked instead.
 const DISTRO_CALLS = {
   node: { call: 'useMicrosoftOpenTelemetry', comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm },
   python: { call: 'use_microsoft_opentelemetry', comments: /(^|\s)#[^\n]*/gm },
@@ -52,13 +54,13 @@ const DISTRO_CALLS = {
 const TOKEN_RESOLVER_OPTION = {
   node: /[{,]\s*tokenResolver\s*(?=[,}])|\btokenResolver\s*:/,
   python: /\ba365_(?:contextual_)?token_resolver\s*=(?!=)|['"]a365_(?:contextual_)?token_resolver['"]\s*:/,
-  dotnet: /\b(?:Contextual)?TokenResolver\s*=(?!=)/,
+  dotnet: /\.\s*Agent365\s*\.\s*(?:Exporter\s*\.\s*)?(?:Contextual)?TokenResolver\s*=(?!=)/,
 };
 
 const S2S_ROUTE_OPTION = {
   node: /\buseS2SEndpoint\s*:\s*true\b/,
   python: /\ba365_use_s2s_endpoint\s*=\s*True\b|['"]a365_use_s2s_endpoint['"]\s*:\s*True\b/,
-  dotnet: /\bUseS2SEndpoint\s*=\s*true\b/,
+  dotnet: /\.\s*Agent365\s*\.\s*(?:Exporter\s*\.\s*)?UseS2SEndpoint\s*=\s*true\b/,
 };
 
 function stripComments(content, language) {
@@ -67,7 +69,7 @@ function stripComments(content, language) {
 
 // Returns the text from the bracket at `open` through its matching close bracket.
 function bracketBlock(content, open) {
-  const close = { '(': ')', '{': '}' }[content[open]];
+  const close = { '(': ')', '{': '}', '[': ']' }[content[open]];
   let depth = 0;
   for (let i = open; close && i < content.length; i++) {
     if (content[i] === content[open]) depth++;
@@ -85,32 +87,102 @@ function callArguments(content, name) {
   return calls;
 }
 
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// The `{...}` or `(...)` initializers assigned to `name` in `content`.
+function initializerBlocks(content, name) {
+  const initializer = new RegExp(`(?:^|[^\\w$])${escapeRegExp(name)}\\s*(?::[^=\\n]*)?=\\s*(?:dict\\s*)?([({])`, 'gm');
+  const blocks = [];
+  for (let m = initializer.exec(content); m; m = initializer.exec(content)) {
+    blocks.push(bracketBlock(content, m.index + m[0].length - 1));
+  }
+  return blocks;
+}
+
+// Initializers of the variables `text` references, plus Python `name["key"] = value` entries.
+function referencedInitializers(content, text, language) {
+  const blocks = [];
+  for (const name of new Set(text.match(/[A-Za-z_$][\w$]*/g) || [])) {
+    blocks.push(...initializerBlocks(content, name));
+    if (language === 'python') {
+      const keyAssignment = new RegExp(`\\b${escapeRegExp(name)}\\s*\\[\\s*(['"][^'"\\n]+['"])\\s*\\]\\s*=(?!=)\\s*([^\\n]*)`, 'g');
+      for (let m = keyAssignment.exec(content); m; m = keyAssignment.exec(content)) blocks.push(`${m[1]}: ${m[2]}`);
+    }
+  }
+  return blocks;
+}
+
+// Python: the call's own keyword arguments. Nested calls and literals are dropped, except `**{...}`
+// and `**dict(...)` spreads, whose entries are keyword arguments too.
+function pythonKeywordArguments(args) {
+  let keywords = '';
+  for (let i = 1; i < args.length - 1; i++) {
+    const group = '([{'.includes(args[i]) ? bracketBlock(args, i) : '';
+    if (group) {
+      if (/\*\*\s*(?:dict\s*)?$/.test(args.slice(1, i))) keywords += group;
+      i += group.length - 1;
+    } else {
+      keywords += args[i];
+    }
+  }
+  return keywords;
+}
+
+// Node.js: the `a365` options objects in `text`, inline (`a365: {...}`), by variable (`a365: options`),
+// or shorthand (`{ a365 }`). Null when a value is a call that cannot be read statically.
+function a365Objects(content, text) {
+  const objects = [];
+  const property = /(?:^|[{,\s])a365\s*:\s*/g;
+  for (let m = property.exec(text); m; m = property.exec(text)) {
+    const at = m.index + m[0].length;
+    if (text[at] === '{') {
+      objects.push(bracketBlock(text, at));
+      continue;
+    }
+    const value = text.slice(at).match(/^[A-Za-z_$][\w$.]*(\s*\()?/);
+    if (!value || value[1]) return null;
+    objects.push(...initializerBlocks(content, value[0]));
+  }
+  if (/[{,]\s*a365\s*(?=[,}])/.test(text)) objects.push(...initializerBlocks(content, 'a365'));
+  return objects;
+}
+
 // True when a distro call in `files` passes an option matching `option`.
 function distroCallMatches(files, language, option) {
   const { call } = DISTRO_CALLS[language];
   return files.some(file => {
     const content = stripComments(read(file), language);
-    return callArguments(content, call).some(args => {
-      if (option.test(args)) return true;
-      // .NET: a method group instead of an inline lambda configures the options elsewhere in the file.
-      if (language === 'dotnet' && !args.includes('=>')) return option.test(content);
-      for (const name of new Set(args.match(/[A-Za-z_$][\w$]*/g) || [])) {
-        const escaped = name.replace(/\$/g, '\\$');
-        const initializer = new RegExp(`(?:^|[^\\w$])${escaped}\\s*(?::[^=\\n]*)?=\\s*(?:dict\\s*)?([({])`, 'gm');
-        for (let m = initializer.exec(content); m; m = initializer.exec(content)) {
-          if (option.test(bracketBlock(content, m.index + m[0].length - 1))) return true;
-        }
-        if (language === 'python') {
-          // `kwargs["key"] = value` is read as the dict entry it adds.
-          const keyAssignment = new RegExp(`\\b${escaped}\\s*\\[\\s*(['"][^'"\\n]+['"])\\s*\\]\\s*=(?!=)\\s*([^\\n]*)`, 'g');
-          for (let m = keyAssignment.exec(content); m; m = keyAssignment.exec(content)) {
-            if (option.test(`${m[1]}: ${m[2]}`)) return true;
-          }
-        }
-      }
-      return false;
-    });
+    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
+      const open = index + call.length;
+      const args = bracketBlock(content, open);
+      // Variables are initialized outside the call. Hiding the call keeps Python keyword arguments,
+      // which look like assignments, from being read as initializers.
+      const outside = content.slice(0, open) + ' '.repeat(args.length) + content.slice(open + args.length);
+      if (callPassesOption(content, outside, args, language, option)) return true;
+    }
+    return false;
   });
+}
+
+function callPassesOption(content, outside, args, language, option) {
+  if (language === 'dotnet') {
+    // A method group, or a callback that never touches Agent365, configures the options elsewhere.
+    if (!args.includes('=>') || !/\bAgent365\b/.test(args)) return option.test(content);
+    return [args, ...referencedInitializers(outside, args, language)].some(text => option.test(text));
+  }
+  const texts = [language === 'python' ? pythonKeywordArguments(args) : args, ...referencedInitializers(outside, args, language)];
+  if (language === 'python') return texts.some(text => option.test(text));
+  const objects = [];
+  for (const text of texts) {
+    const found = a365Objects(outside, text);
+    if (found === null) return option.test(content);
+    objects.push(...found);
+  }
+  if (objects.length === 0) return option.test(content);
+  return objects.some(object =>
+    option.test(object) || referencedInitializers(outside, object, language).some(init => option.test(init)));
 }
 
 function distroCallHasResolver(files, language) {

@@ -663,6 +663,33 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     }
   });
 
+  test('route and resolver options count only where the SDK reads them, in both scanners', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const misplaced = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "useMicrosoftOpenTelemetry({\n  a365: { enabled: true, enableObservabilityExporter: true },\n  instrumentationOptions: { custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } },\n});",
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { workloadOptions.UseS2SEndpoint = true; workloadOptions.TokenResolver = r; });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, instrumentation_options=dict(a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve))',
+    });
+    const ids = list => list.filter(id => /obs-delegated-route|s2s-endpoint-not-set|token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(ids(findingIds(runValidator(scanner, misplaced))), [
+          'dotnet-obs-delegated-route',
+          'dotnet-obs-token-resolver-missing',
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+          'python-obs-token-resolver-missing',
+          'python-s2s-endpoint-not-set',
+        ], scanner);
+      }
+    } finally {
+      cleanup(misplaced);
+    }
+  });
+
   test('app-only S2S wiring in all three languages produces no delegated-telemetry findings in either scanner', () => {
     const dir = createFixture({
       'package.json': NODE_PKG,

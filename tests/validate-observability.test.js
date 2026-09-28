@@ -892,6 +892,83 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
+  test('Node.js route and resolver on another options section → reports both requirements', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        '{ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } }',
+        '{ a365: { enabled: true, enableObservabilityExporter: true }, instrumentationOptions: { custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } } }'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js shorthand a365 options built with a spread → ok', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+        'const baseA365 = { useS2SEndpoint: true, tokenResolver: appTokenResolver };\nconst a365 = { ...baseA365, enabled: true, enableObservabilityExporter: true };\nuseMicrosoftOpenTelemetry({ a365 });'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js options built by a factory call → checks the file', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+        'useMicrosoftOpenTelemetry(buildOtelOptions());\nfunction buildOtelOptions() {\n  return { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };\n}'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET route and resolver set on other options inside the callback → reports both requirements', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': 'builder.Services.AddSingleton<AgentAppTokenResolver>();\nbuilder.UseMicrosoftOpenTelemetry(o =>\n{\n    workloadOptions.UseS2SEndpoint = true;\n    workloadOptions.TokenResolver = workloadTokens.ResolveAsync;\n});',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /without o\.Agent365\.TokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET options configured by a method the callback calls → ok', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => ConfigureTelemetry(o));\nstatic void ConfigureTelemetry(MicrosoftOpenTelemetryOptions o)\n{\n    o.Agent365.UseS2SEndpoint = true;\n    o.Agent365.TokenResolver = (agentId, tenantId) => obsTokens?.ResolveAsync(agentId, tenantId) ?? Task.FromResult<string?>(null);\n}',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python route keyword inside a nested argument → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(' a365_use_s2s_endpoint=True,', ' instrumentation_options=dict(a365_use_s2s_endpoint=True),'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*a365_use_s2s_endpoint=True/);
+    } finally { cleanup(dir); }
+  });
+
   test('Python distro passing the resolver through a kwargs dict → ok', () => {
     const dir = createFixture({
       ...PYTHON_DISTRO_VALID,
