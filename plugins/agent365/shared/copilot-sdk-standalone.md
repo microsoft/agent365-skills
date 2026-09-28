@@ -100,8 +100,15 @@ az version
 Use **exact published stable release versions** from the verified sample/CLI
 contract. Record the installed versions and any mismatch; never use `latest`,
 floating ranges, prerelease packages, workspace tarballs, or local SDK builds.
-Preserve a committed lockfile and use `npm ci` for the sample. Do not automatically
-update the global a365 CLI to latest (an explicit exception to generic setup).
+The companion sample does not commit `package-lock.json`; its generated lockfile
+remains local/ignored. Fresh-checkout bootstrap is `npm install`, only with install
+approval and the user's approved npm configuration. Direct dependency pins remain
+exact; transitive resolutions can vary, so this is not a fully locked dependency
+tree. Subsequent local `npm ci` is allowed only after a matching local lockfile
+exists. Preserve an existing agent's lockfile and package-manager conventions.
+Do not override registry policy or retry against an unapproved registry.
+Do not automatically update the global a365 CLI to latest (an explicit exception
+to generic setup).
 Missing/mismatched tools require install/change approval; without a verified CLI
 pin, stop at the prerequisite report rather than guessing one.
 
@@ -354,8 +361,10 @@ Partial wiring produces standalone missing-provider/exporter findings, not a
 generic distro-initializer repair. An absent exporter may be intentional for
 local-only telemetry; do not turn export on to silence a report.
 
-Use the verified sample's `npm ci`, `npm run build`, `npm test`, and
-`npm run smoke` only when its contract confirms smoke is deterministic/offline.
+Dependency bootstrap follows the approval-gated `npm install` procedure above;
+it is not an offline check. Once dependencies are installed, use the companion
+sample's `npm run build`, `npm test`, and `npm run smoke` only when its contract
+confirms smoke is deterministic/offline.
 For an existing agent use its actual scripts; do not invent them. Running a real
 Copilot prompt or enabling export is an explicit operator step, not a static check.
 `test-local` must not install or launch AgentsPlayground for a standalone SDK app.

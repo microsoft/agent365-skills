@@ -359,6 +359,19 @@ test('standalone reference preserves approval, pinning, auth, and evidence bound
   assert.doesNotMatch(reference, /a365 setup all --agent-name/);
 });
 
+test('standalone sample bootstrap does not require a committed lockfile or fresh-checkout npm ci', () => {
+  const reference = fs.readFileSync(path.join(PLUGIN, 'shared', 'copilot-sdk-standalone.md'), 'utf8');
+  assert.match(reference, /sample does not commit `package-lock\.json`/);
+  assert.match(reference, /generated lockfile[\s\S]*remains local\/ignored/);
+  assert.match(reference, /Fresh-checkout bootstrap is `npm install`, only with install[\s\S]*approval and the user's approved npm configuration/);
+  assert.match(reference, /Direct dependency pins remain[\s\S]*exact; transitive resolutions can vary/);
+  assert.match(reference, /`npm ci` is allowed only after a matching local lockfile[\s\S]*exists/);
+  assert.match(reference, /Preserve an existing agent's lockfile and package-manager conventions/);
+  assert.match(reference, /Do not override registry policy or retry against an unapproved registry/);
+  assert.match(reference, /Dependency bootstrap[\s\S]*is not an offline check/);
+  assert.doesNotMatch(reference, /Preserve a committed lockfile|sample's `npm ci`/);
+});
+
 test('setup standalone branch dominates generic phases, prerequisites, and completion', () => {
   const setup = fs.readFileSync(path.join(PLUGIN, 'skills', 'a365-setup', 'SKILL.md'), 'utf8');
   const routeStart = setup.indexOf('## Exclusive route selection');
