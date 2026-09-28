@@ -603,10 +603,7 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
         'useMicrosoftOpenTelemetry(otelOptions);',
       ].join('\n'),
       'Agent.csproj': csproj,
-      'Program.cs': [
-        'builder.UseMicrosoftOpenTelemetry(ConfigureTelemetry);',
-        'static void ConfigureTelemetry(MicrosoftOpenTelemetryOptions o) { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); }',
-      ].join('\n'),
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
       'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
       'host.py': [
         'OTEL_KWARGS = dict(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
@@ -626,6 +623,48 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     } finally {
       cleanup(unwired);
       cleanup(byVariable);
+    }
+  });
+
+  test('Node a365 direct properties and resolved identifiers pass; nested or unresolvable options fail in both scanners', () => {
+    const direct = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+    });
+    const resolved = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const a365Options = { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver };',
+        'useMicrosoftOpenTelemetry({ a365: a365Options });',
+      ].join('\n'),
+    });
+    const nested = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } } });',
+    });
+    const unresolvable = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: buildA365Options() });\nfunction buildA365Options() { return { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver }; }',
+    });
+    const ids = result => findingIds(result).filter(id => /node-obs-delegated-route|node-obs-token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(ids(runValidator(scanner, direct)), [], scanner);
+        assert.deepEqual(ids(runValidator(scanner, resolved)), [], scanner);
+        assert.deepEqual(ids(runValidator(scanner, nested)), [
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+        ], scanner);
+        assert.deepEqual(ids(runValidator(scanner, unresolvable)), [
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+        ], scanner);
+      }
+    } finally {
+      cleanup(direct);
+      cleanup(resolved);
+      cleanup(nested);
+      cleanup(unresolvable);
     }
   });
 

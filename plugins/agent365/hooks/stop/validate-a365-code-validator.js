@@ -201,8 +201,80 @@ function pythonKeywordArguments(args) {
   return keywords;
 }
 
+function stripOuterGroup(text) {
+  const trimmed = text.trim();
+  if (!'({['.includes(trimmed[0] || '')) return trimmed;
+  const block = bracketBlock(trimmed, 0);
+  return block && block.length === trimmed.length ? trimmed.slice(1, -1) : trimmed;
+}
+
+function splitTopLevel(text) {
+  const fields = [];
+  const inner = stripOuterGroup(text);
+  let start = 0;
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (ch === ',' && depth === 0) {
+      fields.push(inner.slice(start, i));
+      start = i + 1;
+    }
+  }
+  fields.push(inner.slice(start));
+  return fields.map(field => field.trim()).filter(Boolean);
+}
+
+function directOptionMatches(field, language, option) {
+  const direct = field.trim();
+  if (language === 'node') {
+    if (option === S2S_ROUTE_OPTION.node) {
+      return /^(?:useS2SEndpoint|['"]useS2SEndpoint['"])\s*:\s*true\b/.test(direct);
+    }
+    if (option === TOKEN_RESOLVER_OPTION.node) {
+      return /^(?:tokenResolver|['"]tokenResolver['"])\s*(?::|$)/.test(direct);
+    }
+    return false;
+  }
+  if (language === 'python') {
+    const match = direct.match(/^(?:['"])?(a365_(?:contextual_)?token_resolver|a365_use_s2s_endpoint)(?:['"])?\s*(=|:)\s*([\s\S]*)$/);
+    if (!match) return false;
+    return option.test(`${match[1]}=${match[3]}`) || option.test(`"${match[1]}": ${match[3]}`);
+  }
+  return option.test(direct);
+}
+
+function objectPassesOption(content, text, language, option, seen = new Set()) {
+  return splitTopLevel(text).some(field => {
+    const spread = field.match(/^(?:\.\.\.|\*\*)\s*([A-Za-z_$][\w$]*)$/);
+    if (spread && !seen.has(spread[1])) {
+      seen.add(spread[1]);
+      return initializerBlocks(content, spread[1]).some(init => objectPassesOption(content, init, language, option, seen));
+    }
+    const inlineSpread = field.match(/^\*\*\s*(?:dict\s*)?([({])/);
+    if (inlineSpread) {
+      const block = bracketBlock(field, inlineSpread.index + inlineSpread[0].length - 1);
+      return block ? objectPassesOption(content, block, language, option, seen) : false;
+    }
+    return directOptionMatches(field, language, option);
+  });
+}
+
 // Node.js: the `a365` options objects in `text`, inline (`a365: {...}`), by variable (`a365: options`),
-// or shorthand (`{ a365 }`). Null when a value is a call that cannot be read statically.
+// or shorthand (`{ a365 }`). Unresolvable values are treated as unwired.
 function a365Objects(content, text) {
   const objects = [];
   const property = /(?:^|[{,\s])a365\s*:\s*/g;
@@ -213,7 +285,7 @@ function a365Objects(content, text) {
       continue;
     }
     const value = text.slice(at).match(/^[A-Za-z_$][\w$.]*(\s*\()?/);
-    if (!value || value[1]) return null;
+    if (!value || value[1]) continue;
     objects.push(...initializerBlocks(content, value[0]));
   }
   if (/[{,]\s*a365\s*(?=[,}])/.test(text)) objects.push(...initializerBlocks(content, 'a365'));
@@ -239,21 +311,16 @@ function distroCallMatches(files, language, option) {
 
 function callPassesOption(content, outside, args, language, option) {
   if (language === 'dotnet') {
-    // A method group, or a callback that never touches Agent365, configures the options elsewhere.
-    if (!args.includes('=>') || !/\bAgent365\b/.test(args)) return option.test(content);
+    if (!args.includes('=>') || !/\bAgent365\b/.test(args)) return false;
     return [args, ...referencedInitializers(outside, args, language)].some(text => option.test(text));
   }
   const texts = [language === 'python' ? pythonKeywordArguments(args) : args, ...referencedInitializers(outside, args, language)];
-  if (language === 'python') return texts.some(text => option.test(text));
+  if (language === 'python') return texts.some(text => objectPassesOption(outside, text, language, option));
   const objects = [];
   for (const text of texts) {
-    const found = a365Objects(outside, text);
-    if (found === null) return option.test(content);
-    objects.push(...found);
+    objects.push(...a365Objects(outside, text));
   }
-  if (objects.length === 0) return option.test(content);
-  return objects.some(object =>
-    option.test(object) || referencedInitializers(outside, object, language).some(init => option.test(init)));
+  return objects.some(object => objectPassesOption(outside, object, language, option));
 }
 
 function distroCallHasResolver(files, language) {

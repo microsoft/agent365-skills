@@ -210,14 +210,12 @@ const a365TokenResolver = (agentId: string, tenantId: string) =>
 
 useMicrosoftOpenTelemetry({
   resource: resourceFromAttributes({ 'service.name': AGENT_NAME }),
-  a365: A365_ENABLED
-    ? {
-        enabled: true,
-        enableObservabilityExporter: true,
-        useS2SEndpoint: true,         // ← first-class option, no workaround needed
-        tokenResolver: a365TokenResolver,
-      }
-    : undefined,
+  a365: {
+    enabled: A365_ENABLED,
+    enableObservabilityExporter: A365_ENABLED,
+    useS2SEndpoint: true,         // ← first-class option, no workaround needed
+    tokenResolver: a365TokenResolver,
+  },
 });
 
 // ... import app modules AFTER observability init ...

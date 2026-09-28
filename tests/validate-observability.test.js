@@ -929,6 +929,49 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
+  test('Node.js route and resolver nested under an unrelated a365 child object → reports both requirements', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        '{ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } }',
+        '{ a365: { enabled: true, enableObservabilityExporter: true, custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } } }'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js a365 identifier resolved to an object literal → ok', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+        'const a365Options = { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver };\nuseMicrosoftOpenTelemetry({ a365: a365Options });'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js unresolvable a365 identifier → reports both requirements', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+        'useMicrosoftOpenTelemetry({ a365: buildA365Options() });'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
   test('Node.js shorthand a365 options built with a spread → ok', () => {
     const dir = createFixture({
       ...NODEJS_DISTRO_VALID,
@@ -942,7 +985,7 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
-  test('Node.js options built by a factory call → checks the file', () => {
+  test('Node.js options built by a factory call → reports both requirements', () => {
     const dir = createFixture({
       ...NODEJS_DISTRO_VALID,
       'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
@@ -951,7 +994,9 @@ useMicrosoftOpenTelemetry(otelOptions);
     });
     try {
       const r = runValidator(VALIDATOR, dir);
-      assert.equal(r.ok, true, r.reason);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /no a365 tokenResolver/);
     } finally { cleanup(dir); }
   });
 
@@ -968,14 +1013,16 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
-  test('.NET options configured by a method the callback calls → ok', () => {
+  test('.NET options configured by a method the callback calls → reports both requirements', () => {
     const dir = createFixture({
       ...DOTNET_DISTRO_VALID,
       'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => ConfigureTelemetry(o));\nstatic void ConfigureTelemetry(MicrosoftOpenTelemetryOptions o)\n{\n    o.Agent365.UseS2SEndpoint = true;\n    o.Agent365.TokenResolver = (agentId, tenantId) => obsTokens?.ResolveAsync(agentId, tenantId) ?? Task.FromResult<string?>(null);\n}',
     });
     try {
       const r = runValidator(VALIDATOR, dir);
-      assert.equal(r.ok, true, r.reason);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode/);
+      assert.match(r.reason, /without o\.Agent365\.TokenResolver/);
     } finally { cleanup(dir); }
   });
 
