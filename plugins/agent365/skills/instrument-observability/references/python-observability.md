@@ -256,9 +256,11 @@ This differs from the Agent365-Samples design for the same reason as the Node sc
 skill reuses the hosting connection (`get_agentic_application_token`) so one deployment can serve
 several agent instances/tenants and inherit certificate, federated-identity, or managed-identity
 credentials; the samples use a dedicated single-identity OBS credential to isolate telemetry auth.
-After a restart, the sync resolver returns `None` for identities that have not handled a turn and
-prefetched yet, so replayed records for idle identities can age out (default max record age: 2 days).
-That is acceptable during migration because offline storage is disabled.
+
+Offline storage caveat: after a restart, `resolve` returns `None` for an identity until it handles
+a turn and prefetches a token. If offline storage is enabled, records replayed for identities that
+stay idle can therefore age out (default maximum record age: 2 days). The migration below disables
+offline storage, so this matters only if you turn it back on.
 
 ```python
 # observability/app_token_resolver.py
@@ -618,9 +620,15 @@ class GenericAgentHost:
             await self._setup_observability_token(context, tenant_id, agent_id)
 
             # ObservabilityHostingManager (registered at startup) already populated baggage
-            # from TurnContext. Your handler logic can run directly:
-            response = await self._agent.process_user_message(context.activity.text or "")
-            await context.send_activity(response)
+            # from TurnContext. Continue with the existing handler logic, for example the
+            # AgentInterface call that make-ai-teammate generates:
+            reply = await self._agent.process_user_message(
+                context.activity.text or "",
+                self._adapter.authorization,
+                AUTH_HANDLER_NAME or None,
+                context,
+            )
+            await context.send_activity(reply)
 ```
 
 > **`self.connection_manager`** is the `MsalConnectionManager` the host passes to its
@@ -638,10 +646,8 @@ class GenericAgentHost:
 > route rejects its token. Also switch `a365_token_resolver` from `AgenticTokenCache` /
 > `get_cached_agentic_token` to `OBS_TOKENS.resolve` and set `a365_use_s2s_endpoint=True`.
 > Also set `a365_exporter_disable_offline_storage=True` until the installed release enforces
-> S2S for both live and replayed exports, or clear the offline storage directory. After a
-> restart, the sync resolver returns `None` for identities that have not handled a turn and
-> prefetched yet, so replayed records for idle identities can age out (default max record age:
-> 2 days). This is acceptable during migration because offline storage is disabled.
+> S2S for both live and replayed exports, or clear the offline storage directory (see the
+> offline storage caveat under the app-only resolver scaffold).
 
 #### Canonical: manual per-turn baggage construction (matches AF sample)
 

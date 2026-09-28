@@ -682,10 +682,10 @@ builder.AddA365Tracing();                        // from Microsoft.Agents.A365.O
 These are subsumed by `UseMicrosoftOpenTelemetry()` and the distro package — mixing the
 two causes CS0433 duplicate-type errors. Pick one wiring style per project. The legacy
 `AddAgenticTracingExporter()` wiring exports over the delegated route with OBO tokens; migrate
-it to the distro with `o.Agent365.UseS2SEndpoint = true` and `AgentAppTokenResolver`. If offline
-storage is enabled, set `o.Agent365.DisableOfflineStorage = true` (Microsoft.OpenTelemetry 1.1.0+)
-until the installed release enforces S2S for both live and replayed exports, or clear the storage
-directory.
+it to the distro with `o.Agent365.UseS2SEndpoint = true` and `AgentAppTokenResolver`. Offline
+storage is on by default in Microsoft.OpenTelemetry 1.1.0+, so set
+`o.Agent365.DisableOfflineStorage = true` until the installed release enforces S2S for both live
+and replayed exports, or clear the storage directory.
 
 ---
 
