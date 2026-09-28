@@ -92,6 +92,14 @@ TaskCreate: "Guide local test"
 
 ## Phase 1 — Detect Agent Type
 
+**Standalone Copilot SDK guard:** Read the selected project's `package.json` before
+using cached routing. For `@github/copilot-sdk` or cached
+`agentStack = "GitHub Copilot SDK"`, read
+`${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md` **section 4** instead of
+the generic phases below. Use only the verified existing offline build/test/smoke
+scripts; no AgentsPlayground install/launch, `/api/messages`, hosting, tunnel, or
+automatic real Copilot prompt/export. Live runs require explicit operator approval.
+
 **Mark task in progress: "Detect agent type and verify build tools"**
 
 1. **Read** `${CLAUDE_PLUGIN_ROOT}/shared/agent-detection.md` for detection heuristics.

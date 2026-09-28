@@ -28,6 +28,16 @@ hooks:
       timeout: 30000
     - type: prompt
       prompt: |
+        Select exactly one branch.
+        IF GitHub Copilot SDK is detected:
+          Use shared/copilot-sdk-standalone.md sections 3-4 only. Require recorded
+          scope/S2S and source-contract/diff approvals, confirmed capability, explicit
+          provider/exporter/scopes, opt-in, and flush/shutdown with the local build.
+          Missing approvals/config or verified source blocks edits and completion;
+          return {"ok": false, "reason": "<missing gate>"}.
+          Otherwise return {"ok": true} for local wiring only, not live export.
+          STOP; do not evaluate the generic hosting/token-service criteria below.
+        ELSE:
         Packages, entry-point wiring, baggage, token resolver, config files,
         and build are validated by validate-instrument-observability.js.
         This prompt covers only the items the JS validator can't inspect.
@@ -91,6 +101,15 @@ All changes are **additive** and **idempotent** — rerunning the skill is safe.
 ---
 
 ## Phase 0: Load Detection Cache and Validate
+
+**GitHub Copilot SDK route (before generic triage or installs):** Read the selected
+project's `package.json` for `@github/copilot-sdk`, even if the cache is fresh.
+If present or `agentStack = "GitHub Copilot SDK"`, **read**
+`${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md` and follow **sections 3-4**
+instead of the generic phases below; missing cache/prerequisites first use its
+`a365-setup` section. No hosting/TurnContext scaffold, invented token recipe, assumed
+auto-instrumentation, model-based telemetry, or automatic live smoke test. Obtain
+the verified sample contract before edits; report pending work rather than success.
 
 > **Task-list display (applies throughout this skill).** This skill creates tasks **inline** via `**TaskCreate** — "..."` markers at the start of each phase, and marks them complete at phase end. The user must see this progress visibly. Each `TaskCreate` line corresponds to one checklist item; exactly one item in_progress at a time.
 > - **Claude Code:** `TaskCreate` is in `allowed-tools` — calling it renders a native checklist UI; subsequent `TaskUpdate` calls flip statuses.

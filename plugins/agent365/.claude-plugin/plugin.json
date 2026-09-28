@@ -1,7 +1,7 @@
 {
   "name": "agent365",
   "version": "1.0.2",
-  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, integrate Purview DLP, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK).",
+  "description": "Skills for Microsoft Agent 365 — transform agents into AI Teammates, register blueprints, add WorkIQ MCP servers, instrument observability, integrate Purview DLP, and test locally. Supports .NET (AgentFramework, Semantic Kernel) and Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK) and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK). Includes a guarded TypeScript GitHub Copilot SDK standalone registration/basic-observability spike without changing runtime or hosting.",
   "author": {
     "name": "Microsoft",
     "url": "https://github.com/microsoft"

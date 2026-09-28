@@ -7,6 +7,8 @@
  * Stop hook validator for the make-a365-agent skill.
  * Checks that a365 setup all completed successfully — the primary artifact
  * is a365.generated.config.json with a valid agentBlueprintId.
+ * Standalone Copilot SDK instead checks explicit decisions and local blueprint
+ * config without invoking the CLI or claiming live registration.
  *
  * Exit codes:
  *   0  → ok: true  (session may end)
@@ -16,9 +18,22 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { getCopilotSdkProject, getCopilotSdkRegistrationIssues } = require('../lib/copilot-sdk');
 
 const issues = [];
 const cwd = process.cwd();
+const copilotSdk = getCopilotSdkProject(cwd);
+if (copilotSdk) {
+  const standaloneIssues = getCopilotSdkRegistrationIssues(cwd, copilotSdk);
+  process.stdout.write(JSON.stringify({
+    ok: standaloneIssues.length === 0,
+    status: standaloneIssues.length ? 'blocked' : 'local-config-validated',
+    operationAllowed: false,
+    ...(standaloneIssues.length ? { reason: standaloneIssues.join('; ') } : {}),
+    note: 'Standalone blueprint config checks only; separate Agent 365 registry registration, S2S grants, and telemetry ingestion are not verified. No CLI or live operations were run',
+  }));
+  process.exit(standaloneIssues.length ? 1 : 0);
+}
 
 function fileExists(filePath) {
   try { fs.accessSync(filePath); return true; } catch { return false; }

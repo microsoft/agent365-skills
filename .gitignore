@@ -9,8 +9,12 @@ BUGBASH.md
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Local Copilot runtime state and trace output (never source fixtures)
+.copilot-local/
+.copilot-traces/
 
 # ASP.NET Core app settings with secrets
 appsettings.Production.json
@@ -38,4 +42,3 @@ Thumbs.db
 
 # Claude Code session state — local only, not repo config
 .claude/
-

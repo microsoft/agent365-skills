@@ -25,6 +25,7 @@ const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { scanProject, filterByName, fileContains, anyFileContains } = require('../lib/project-scan');
+const { getCopilotSdkProject } = require('../lib/copilot-sdk');
 
 function runCmd(cmd) {
   try { return execSync(cmd, { encoding: 'utf8', timeout: 8000 }); } catch { return ''; }
@@ -42,6 +43,13 @@ function normalizeLanguage(s) {
 
 const cwd  = process.cwd();
 const issues = [];
+if (getCopilotSdkProject(cwd)) {
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    reason: 'GitHub Copilot SDK standalone spike does not support WorkIQ or notifications; no MCP wiring is expected or offered',
+  }));
+  process.exit(1);
+}
 
 // ── Read detection cache for agentStack + programmingLanguage ────────────────
 

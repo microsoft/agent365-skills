@@ -3,6 +3,18 @@
 This file documents conventions for contributors working on the `agent365` plugin skills.
 Read this before making any changes to skill files.
 
+**Standalone GitHub Copilot SDK spike:** TypeScript projects declaring
+`@github/copilot-sdk` use [the standalone route](plugins/agent365/shared/copilot-sdk-standalone.md)
+through existing setup/registration/observability skills. Re-check the dependency
+before cached routing; never infer Microsoft 365 Copilot/AI Teammate intent.
+This route overrides generic hosting, latest-version installs, and completion rules:
+published pins, scope/S2S confirmation, blueprint reuse/preview approval, verified
+sample contract and diff approval before instrumentation, and explicit local/live
+evidence separation. No teammate/Teams/WorkIQ/agentic-user/licensing, runtime rewrite,
+model-based telemetry, or cloud operations during the local spike.
+The shared route records explicit scope/S2S and operation approvals; report-only
+hook completion never authorizes registration or instrumentation.
+
 ---
 
 ## Plugin Purpose
