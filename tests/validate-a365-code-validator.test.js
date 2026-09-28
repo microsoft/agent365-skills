@@ -411,17 +411,50 @@ await AgenticTokenCacheInstance.refreshObservabilityToken(
       'package.json': NODE_PKG,
       'index.ts': 'const enabled = true;\nuseMicrosoftOpenTelemetry({ a365: { enabled, enableObservabilityExporter: true, tokenResolver: appTokenResolver } });',
     });
+    const expressionActive = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "useMicrosoftOpenTelemetry({ a365: { enabled: false || process.env.X === 'true', enableObservabilityExporter: true, tokenResolver: appTokenResolver } });",
+    });
     const nodeA365Ids = result => findingIds(result).filter(id => /^node-(?:obs-|exporter|missing-identity|no-explicit)/.test(id)).sort();
     try {
       for (const scanner of [VALIDATOR, STANDALONE]) {
         assert.deepEqual(nodeA365Ids(runValidator(scanner, disabled)), [], scanner);
         assert.deepEqual(nodeA365Ids(runValidator(scanner, absent)), [], scanner);
         assert.ok(nodeA365Ids(runValidator(scanner, shorthandActive)).includes('node-obs-delegated-route'), scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, expressionActive)).includes('node-obs-delegated-route'), scanner);
       }
     } finally {
       cleanup(disabled);
       cleanup(absent);
       cleanup(shorthandActive);
+      cleanup(expressionActive);
+    }
+  });
+
+  test('Node calls with no visible A365 options stay inactive, but unreadable options are active', () => {
+    const emptyCall = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry();',
+    });
+    const azureMonitorOnly = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ azureMonitor: { connectionString } });',
+    });
+    const factory = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry(buildOtelOptions());\nfunction buildOtelOptions() { return { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } }; }',
+    });
+    const nodeA365Ids = result => findingIds(result).filter(id => /^node-(?:obs-|exporter|missing-identity|no-explicit)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, emptyCall)), [], scanner);
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, azureMonitorOnly)), [], scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, factory)).includes('node-obs-delegated-route'), scanner);
+      }
+    } finally {
+      cleanup(emptyCall);
+      cleanup(azureMonitorOnly);
+      cleanup(factory);
     }
   });
 
@@ -531,11 +564,11 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       const finding = runValidator(VALIDATOR, systemAgent).findings.find(f => f.id === 'agent-registration-not-recorded');
       assert.ok(finding, 'expected agent-registration-not-recorded');
       assert.equal(finding.severity, 'medium');
-      assert.ok(!findingIds(runValidator(VALIDATOR, registered)).includes('agent-registration-not-recorded'));
-      assert.ok(!findingIds(runValidator(VALIDATOR, aiTeammate)).includes('agent-registration-not-recorded'));
       for (const scanner of [VALIDATOR, STANDALONE]) {
         assert.ok(findingIds(runValidator(scanner, systemAgent)).includes('agent-registration-not-recorded'), scanner);
         assert.ok(findingIds(runValidator(scanner, fallback)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, registered)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, aiTeammate)).includes('agent-registration-not-recorded'), scanner);
         assert.ok(!findingIds(runValidator(scanner, noBlueprint)).includes('agent-registration-not-recorded'),
           `${scanner}: without a blueprint ID there is no blueprint agent instance to register`);
       }

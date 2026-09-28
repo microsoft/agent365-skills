@@ -290,8 +290,9 @@ function objectPropertyValues(content, text, propertyName, seen = new Set()) {
 
 function booleanLiteral(value) {
   if (value === null) return 'dynamic';
-  if (/^true\b/.test(value)) return 'true';
-  if (/^false\b/.test(value)) return 'false';
+  const trimmed = value.trim();
+  if (/^true$/.test(trimmed)) return 'true';
+  if (/^false$/.test(trimmed)) return 'false';
   return 'dynamic';
 }
 
@@ -312,9 +313,11 @@ function objectPassesOption(content, text, language, option, seen = new Set()) {
 }
 
 // Node.js: the `a365` options objects in `text`, inline (`a365: {...}`), by variable (`a365: options`),
-// or shorthand (`{ a365 }`). Unresolvable values are treated as unwired.
+// or shorthand (`{ a365 }`). `readable` means the options object was visible; unreadable values
+// are conservatively active, while readable options with no `a365` key are inactive.
 function a365Objects(content, text) {
   const objects = [];
+  let unreadable = false;
   const property = /(?:^|[{,\s])a365\s*:\s*/g;
   for (let m = property.exec(text); m; m = property.exec(text)) {
     const at = m.index + m[0].length;
@@ -323,11 +326,34 @@ function a365Objects(content, text) {
       continue;
     }
     const value = text.slice(at).match(/^[A-Za-z_$][\w$.]*(\s*\()?/);
-    if (!value || value[1]) continue;
-    objects.push(...initializerBlocks(content, value[0]));
+    if (!value || value[1]) {
+      unreadable = true;
+      continue;
+    }
+    const initializers = initializerBlocks(content, value[0]);
+    if (initializers.length === 0) unreadable = true;
+    objects.push(...initializers);
   }
-  if (/[{,]\s*a365\s*(?=[,}])/.test(text)) objects.push(...initializerBlocks(content, 'a365'));
-  return objects;
+  if (/[{,]\s*a365\s*(?=[,}])/.test(text)) {
+    const initializers = initializerBlocks(content, 'a365');
+    if (initializers.length === 0) unreadable = true;
+    objects.push(...initializers);
+  }
+  return { objects, readable: !unreadable };
+}
+
+function nodeOptionsTexts(outside, args) {
+  const values = splitTopLevel(args);
+  if (values.length === 0) return { texts: [], unreadable: false };
+  const first = values[0].trim();
+  if (!first) return { texts: [], unreadable: false };
+  if (first[0] === '{') return { texts: [first], unreadable: false };
+  const identifier = first.match(/^[A-Za-z_$][\w$]*$/);
+  if (identifier) {
+    const initializers = initializerBlocks(outside, identifier[0]);
+    return initializers.length ? { texts: initializers, unreadable: false } : { texts: [], unreadable: true };
+  }
+  return { texts: [], unreadable: true };
 }
 
 // True when a distro call in `files` passes an option matching `option`.
@@ -355,8 +381,8 @@ function callPassesOption(content, outside, args, language, option) {
   const texts = [language === 'python' ? pythonKeywordArguments(args) : args, ...referencedInitializers(outside, args, language)];
   if (language === 'python') return texts.some(text => objectPassesOption(outside, text, language, option));
   const objects = [];
-  for (const text of texts) {
-    objects.push(...a365Objects(outside, text));
+  for (const text of nodeOptionsTexts(outside, args).texts) {
+    objects.push(...a365Objects(outside, text).objects);
   }
   return objects.some(object => objectPassesOption(outside, object, language, option));
 }
@@ -370,10 +396,12 @@ function nodeDistroCallStates(files) {
       const open = index + call.length;
       const args = bracketBlock(content, open);
       const outside = content.slice(0, open) + ' '.repeat(args.length) + content.slice(open + args.length);
-      const texts = [args, ...referencedInitializers(outside, args, 'node')];
-      const objects = texts.flatMap(text => a365Objects(outside, text));
+      const options = nodeOptionsTexts(outside, args);
+      const texts = options.texts;
+      const resolved = texts.map(text => a365Objects(outside, text));
+      const objects = resolved.flatMap(result => result.objects);
       if (objects.length === 0) {
-        states.push({ file, active: true, exporter: 'dynamic', hasRoute: false, hasResolver: false });
+        states.push({ file, active: options.unreadable || resolved.some(result => !result.readable), exporter: 'dynamic', hasRoute: false, hasResolver: false });
         continue;
       }
       for (const object of objects) {
