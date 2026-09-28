@@ -112,8 +112,8 @@ function callBlocks(content, name) {
 // (Node.js), as a keyword argument of use_microsoft_opentelemetry (Python), or on `.Agent365` in the
 // UseMicrosoftOpenTelemetry options callback (.NET). A variable is followed one level to its
 // initializer in the same file. Comments are ignored, so a commented-out option, an unused import, or
-// an unrelated object does not count. When the options cannot be located statically (a method group,
-// a factory call, or a callback that never touches Agent365), the file as a whole is checked instead.
+// an unrelated object does not count. Unresolvable options are treated as unwired; there is no
+// whole-file fallback.
 const DISTRO_CALLS = {
   node: { call: 'useMicrosoftOpenTelemetry', comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm },
   python: { call: 'use_microsoft_opentelemetry', comments: /(^|\s)#[^\n]*/gm },
@@ -255,6 +255,44 @@ function directOptionMatches(field, language, option) {
   return option.test(direct);
 }
 
+function directPropertyValue(field, propertyName) {
+  const direct = field.trim();
+  const quoted = `(?:${escapeRegExp(propertyName)}|['"]${escapeRegExp(propertyName)}['"])`;
+  const match = direct.match(new RegExp(`^${quoted}\\s*(?::\\s*([\\s\\S]*))?$`));
+  if (!match) return { present: false, value: '' };
+  return { present: true, value: match[1] === undefined ? null : match[1].trim() };
+}
+
+function objectPropertyValues(content, text, propertyName, seen = new Set()) {
+  const values = [];
+  for (const field of splitTopLevel(text)) {
+    const spread = field.match(/^(?:\.\.\.|\*\*)\s*([A-Za-z_$][\w$]*)$/);
+    if (spread && !seen.has(spread[1])) {
+      seen.add(spread[1]);
+      for (const init of initializerBlocks(content, spread[1])) {
+        values.push(...objectPropertyValues(content, init, propertyName, seen));
+      }
+      continue;
+    }
+    const inlineSpread = field.match(/^\*\*\s*(?:dict\s*)?([({])/);
+    if (inlineSpread) {
+      const block = bracketBlock(field, inlineSpread.index + inlineSpread[0].length - 1);
+      if (block) values.push(...objectPropertyValues(content, block, propertyName, seen));
+      continue;
+    }
+    const property = directPropertyValue(field, propertyName);
+    if (property.present) values.push(property.value);
+  }
+  return values;
+}
+
+function booleanLiteral(value) {
+  if (value === null) return 'dynamic';
+  if (/^true\b/.test(value)) return 'true';
+  if (/^false\b/.test(value)) return 'false';
+  return 'dynamic';
+}
+
 function objectPassesOption(content, text, language, option, seen = new Set()) {
   return splitTopLevel(text).some(field => {
     const spread = field.match(/^(?:\.\.\.|\*\*)\s*([A-Za-z_$][\w$]*)$/);
@@ -319,6 +357,39 @@ function callPassesOption(content, outside, args, language, option) {
     objects.push(...a365Objects(outside, text));
   }
   return objects.some(object => objectPassesOption(outside, object, language, option));
+}
+
+function nodeDistroCallStates(files) {
+  const states = [];
+  const { call } = DISTRO_CALLS.node;
+  for (const file of files) {
+    const content = stripComments(read(file), 'node');
+    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
+      const open = index + call.length;
+      const args = bracketBlock(content, open);
+      const outside = content.slice(0, open) + ' '.repeat(args.length) + content.slice(open + args.length);
+      const texts = [args, ...referencedInitializers(outside, args, 'node')];
+      const objects = texts.flatMap(text => a365Objects(outside, text));
+      if (objects.length === 0) {
+        states.push({ file, active: true, exporter: 'dynamic', hasRoute: false, hasResolver: false });
+        continue;
+      }
+      for (const object of objects) {
+        const enabledValues = objectPropertyValues(outside, object, 'enabled');
+        const enabled = enabledValues.length ? booleanLiteral(enabledValues.at(-1)) : 'false';
+        const exporterValues = objectPropertyValues(outside, object, 'enableObservabilityExporter');
+        const exporter = exporterValues.length ? booleanLiteral(exporterValues.at(-1)) : 'absent';
+        states.push({
+          file,
+          active: enabled !== 'false',
+          exporter,
+          hasRoute: objectPassesOption(outside, object, 'node', S2S_ROUTE_OPTION.node),
+          hasResolver: objectPassesOption(outside, object, 'node', TOKEN_RESOLVER_OPTION.node),
+        });
+      }
+    }
+  }
+  return states;
 }
 
 function distroCallHasResolver(files, language) {
@@ -475,28 +546,29 @@ function validatePython() {
 function validateNode() {
   const hasPackage = pkg.some(f => read(f).includes('@microsoft/opentelemetry'));
   const hasDistro = anyContains(ts, 'useMicrosoftOpenTelemetry');
-  const hasEnabled = anyMatches(ts, /\benabled\s*:\s*true\b/);
-  const exporterTrue = anyMatches(ts, /\benableObservabilityExporter\s*:\s*true\b/);
-  const exporterFalse = anyMatches(ts, /\benableObservabilityExporter\s*:\s*false\b/);
+  const nodeStates = nodeDistroCallStates(ts);
+  const hasEnabled = nodeStates.some(state => state.active);
+  const exporterTrue = nodeStates.some(state => state.active && (state.exporter === 'true' || state.exporter === 'dynamic'));
+  const exporterFalse = nodeStates.some(state => state.active && state.exporter === 'false');
   const exporterEnv = envTrue('ENABLE_A365_OBSERVABILITY_EXPORTER');
 
   if (hasPackage && !hasDistro) {
     add('high', 'node-missing-distro-init', '@microsoft/opentelemetry is installed but no useMicrosoftOpenTelemetry() call was found.', pkg.find(f => read(f).includes('@microsoft/opentelemetry')));
   }
   if (hasDistro && hasEnabled && exporterFalse) {
-    add('critical', 'node-exporter-explicitly-disabled', 'Node code sets enableObservabilityExporter:false; A365 backend export is disabled.', ts.find(f => /enableObservabilityExporter\s*:\s*false\b/.test(read(f))));
+    add('critical', 'node-exporter-explicitly-disabled', 'Node code sets enableObservabilityExporter:false; A365 backend export is disabled.', (nodeStates.find(state => state.active && state.exporter === 'false') || {}).file);
   } else if (hasDistro && hasEnabled && !exporterTrue && !exporterEnv) {
     add('critical', 'node-exporter-not-enabled', 'Node code enables A365 but does not enable the exporter and no truthy exporter env was found.', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
   const hasIdentity = anyContains(ts, 'BaggageBuilder') || anyContains(ts, 'InvokeAgentScope') || anyContains(ts, 'configureA365Hosting');
-  if (hasDistro && !hasIdentity) {
+  if (hasDistro && hasEnabled && !hasIdentity) {
     add('high', 'node-missing-identity-scope', 'No BaggageBuilder/InvokeAgentScope/configureA365Hosting usage found; spans may lack agent identity.');
   }
   // Every auth mode exports over the S2S route with an app-only token.
-  if (hasDistro && hasEnabled && !distroCallUsesS2SRoute(ts, 'node')) {
+  if (hasDistro && hasEnabled && !nodeStates.some(state => state.active && state.hasRoute)) {
     add('high', 'node-obs-delegated-route', 'Node code does not set useS2SEndpoint: true, so A365 export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only tokenResolver.', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
-  if (hasDistro && hasEnabled && !exporterFalse && !distroCallHasResolver(ts, 'node')) {
+  if (hasDistro && hasEnabled && !exporterFalse && !nodeStates.some(state => state.active && state.hasResolver)) {
     add('high', 'node-obs-token-resolver-missing', 'useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token. Pass an app-only tokenResolver (instrument-observability app-token-resolver.ts for obo / agentic-user, or the S2S token service).', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
   for (const file of ts) {
@@ -514,7 +586,7 @@ function validateNode() {
     anyContains(ts, 'invoke_agent') ||
     anyContains(ts, 'execute_tool') ||
     anyContains(ts, 'output_messages');
-  if (hasDistro && !hasSemantic) {
+  if (hasDistro && hasEnabled && !hasSemantic) {
     add('medium', 'node-no-explicit-a365-semantic-spans', 'No explicit supported A365 semantic spans found; baggage alone is not enough for MAC Activity.');
   }
 }
@@ -562,7 +634,10 @@ function validateSetupArtifacts() {
     add('critical', 'blueprint-id-used-as-agent-id', 'a365.generated.config.json has identical blueprint and agentic app IDs. Verify runtime gen_ai.agent.id uses the agent instance/source agent ID, not the blueprint ID.', path.join(cwd, 'a365.generated.config.json'));
   }
   const staticConfig = readJsonSafe(path.join(cwd, 'a365.config.json'));
-  if (staticConfig && staticConfig.aiTeammate === false && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
+  const detection = readJsonSafe(path.join(cwd, '.a365-workspace-detection.local.json')) || {};
+  const agentType = String(detection.agentType || '').toLowerCase();
+  const isSystemAgent = agentType === 'system-agent' || (!agentType && staticConfig && staticConfig.aiTeammate === false);
+  if (isSystemAgent && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
     add('medium', 'agent-registration-not-recorded', 'a365.generated.config.json has an agent identity but no agentRegistrationId. The S2S route authorizes registered agent instances without an OtelWrite grant; an unregistered instance gets 403 insufficient_scope. Run a365 setup all --agent-registration-only (idempotent).', path.join(cwd, 'a365.generated.config.json'));
   }
 }

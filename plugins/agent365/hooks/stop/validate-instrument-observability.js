@@ -43,8 +43,8 @@ function anyFileMatches(files, regex) {
 // (Node.js), as a keyword argument of use_microsoft_opentelemetry (Python), or on `.Agent365` in the
 // UseMicrosoftOpenTelemetry options callback (.NET). A variable is followed one level to its
 // initializer in the same file. Comments are ignored, so a commented-out option, an unused import, or
-// an unrelated object does not count. When the options cannot be located statically (a method group,
-// a factory call, or a callback that never touches Agent365), the file as a whole is checked instead.
+// an unrelated object does not count. Unresolvable options are treated as unwired; there is no
+// whole-file fallback.
 const DISTRO_CALLS = {
   node: { call: 'useMicrosoftOpenTelemetry', comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm },
   python: { call: 'use_microsoft_opentelemetry', comments: /(^|\s)#[^\n]*/gm },
@@ -186,6 +186,44 @@ function directOptionMatches(field, language, option) {
   return option.test(direct);
 }
 
+function directPropertyValue(field, propertyName) {
+  const direct = field.trim();
+  const quoted = `(?:${escapeRegExp(propertyName)}|['"]${escapeRegExp(propertyName)}['"])`;
+  const match = direct.match(new RegExp(`^${quoted}\\s*(?::\\s*([\\s\\S]*))?$`));
+  if (!match) return { present: false, value: '' };
+  return { present: true, value: match[1] === undefined ? null : match[1].trim() };
+}
+
+function objectPropertyValues(content, text, propertyName, seen = new Set()) {
+  const values = [];
+  for (const field of splitTopLevel(text)) {
+    const spread = field.match(/^(?:\.\.\.|\*\*)\s*([A-Za-z_$][\w$]*)$/);
+    if (spread && !seen.has(spread[1])) {
+      seen.add(spread[1]);
+      for (const init of initializerBlocks(content, spread[1])) {
+        values.push(...objectPropertyValues(content, init, propertyName, seen));
+      }
+      continue;
+    }
+    const inlineSpread = field.match(/^\*\*\s*(?:dict\s*)?([({])/);
+    if (inlineSpread) {
+      const block = bracketBlock(field, inlineSpread.index + inlineSpread[0].length - 1);
+      if (block) values.push(...objectPropertyValues(content, block, propertyName, seen));
+      continue;
+    }
+    const property = directPropertyValue(field, propertyName);
+    if (property.present) values.push(property.value);
+  }
+  return values;
+}
+
+function booleanLiteral(value) {
+  if (value === null) return 'dynamic';
+  if (/^true\b/.test(value)) return 'true';
+  if (/^false\b/.test(value)) return 'false';
+  return 'dynamic';
+}
+
 function objectPassesOption(content, text, language, option, seen = new Set()) {
   return splitTopLevel(text).some(field => {
     const spread = field.match(/^(?:\.\.\.|\*\*)\s*([A-Za-z_$][\w$]*)$/);
@@ -250,6 +288,39 @@ function callPassesOption(content, outside, args, language, option) {
     objects.push(...a365Objects(outside, text));
   }
   return objects.some(object => objectPassesOption(outside, object, language, option));
+}
+
+function nodeDistroCallStates(files) {
+  const states = [];
+  const { call } = DISTRO_CALLS.node;
+  for (const file of files) {
+    const content = stripComments(read(file), 'node');
+    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
+      const open = index + call.length;
+      const args = bracketBlock(content, open);
+      const outside = content.slice(0, open) + ' '.repeat(args.length) + content.slice(open + args.length);
+      const texts = [args, ...referencedInitializers(outside, args, 'node')];
+      const objects = texts.flatMap(text => a365Objects(outside, text));
+      if (objects.length === 0) {
+        states.push({ file, active: true, exporter: 'dynamic', hasRoute: false, hasResolver: false });
+        continue;
+      }
+      for (const object of objects) {
+        const enabledValues = objectPropertyValues(outside, object, 'enabled');
+        const enabled = enabledValues.length ? booleanLiteral(enabledValues.at(-1)) : 'false';
+        const exporterValues = objectPropertyValues(outside, object, 'enableObservabilityExporter');
+        const exporter = exporterValues.length ? booleanLiteral(exporterValues.at(-1)) : 'absent';
+        states.push({
+          file,
+          active: enabled !== 'false',
+          exporter,
+          hasRoute: objectPassesOption(outside, object, 'node', S2S_ROUTE_OPTION.node),
+          hasResolver: objectPassesOption(outside, object, 'node', TOKEN_RESOLVER_OPTION.node),
+        });
+      }
+    }
+  }
+  return states;
 }
 
 function distroCallHasResolver(files, language) {

@@ -363,6 +363,68 @@ await AgenticTokenCacheInstance.refreshObservabilityToken(
     }
   });
 
+  test('Node dynamic enabled is active; dynamic exporter with route and resolver is accepted by both scanners', () => {
+    const missingRoute = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const enabled = process.env.A365_ENABLED === "true";',
+        'useMicrosoftOpenTelemetry({ a365: { enabled, enableObservabilityExporter: true, tokenResolver: appTokenResolver } });',
+      ].join('\n'),
+    });
+    const docShape = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const A365_ENABLED = process.env.ENABLE_A365_OBSERVABILITY_EXPORTER === "true";',
+        'useMicrosoftOpenTelemetry({',
+        '  a365: {',
+        '    enabled: A365_ENABLED,',
+        '    enableObservabilityExporter: A365_ENABLED,',
+        '    useS2SEndpoint: true,',
+        '    tokenResolver: appTokenResolver,',
+        '  },',
+        '});',
+        'InvokeAgentScope.start(request, details, agentDetails, callerDetails);',
+      ].join('\n'),
+    });
+    const ids = result => findingIds(result).filter(id => /node-(obs-delegated-route|obs-token-resolver-missing|exporter)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(ids(runValidator(scanner, missingRoute)).includes('node-obs-delegated-route'), scanner);
+        assert.deepEqual(ids(runValidator(scanner, docShape)), [], scanner);
+      }
+    } finally {
+      cleanup(missingRoute);
+      cleanup(docShape);
+    }
+  });
+
+  test('Node literal false or absent enabled stays inactive; shorthand enabled variable is active', () => {
+    const disabled = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enabled: false, enableObservabilityExporter: true } });',
+    });
+    const absent = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+    });
+    const shorthandActive = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const enabled = true;\nuseMicrosoftOpenTelemetry({ a365: { enabled, enableObservabilityExporter: true, tokenResolver: appTokenResolver } });',
+    });
+    const nodeA365Ids = result => findingIds(result).filter(id => /^node-(?:obs-|exporter|missing-identity|no-explicit)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, disabled)), [], scanner);
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, absent)), [], scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, shorthandActive)).includes('node-obs-delegated-route'), scanner);
+      }
+    } finally {
+      cleanup(disabled);
+      cleanup(absent);
+      cleanup(shorthandActive);
+    }
+  });
+
   test('.NET distro without UseS2SEndpoint and with AgenticTokenStruct registration reports both findings', () => {
     const dir = createFixture({
       'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
@@ -439,19 +501,26 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     }
   });
 
-  test('Blueprint agent without a recorded registration reports agent-registration-not-recorded', () => {
+  test('Blueprint agent without a recorded registration uses detection cache before aiTeammate fallback', () => {
     const agentId = '22222222-2222-2222-2222-222222222222';
     const blueprintId = '33333333-3333-3333-3333-333333333333';
-    const unregistered = createFixture({
-      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+    const systemAgent = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'system-agent' }),
+      'a365.config.json': JSON.stringify({}),
       'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
     });
     const registered = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'system-agent' }),
       'a365.config.json': JSON.stringify({ aiTeammate: false }),
       'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId, agentRegistrationId: 'reg-1' }),
     });
     const aiTeammate = createFixture({
-      'a365.config.json': JSON.stringify({ aiTeammate: true }),
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'ai-teammate' }),
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const fallback = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
       'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
     });
     const noBlueprint = createFixture({
@@ -459,20 +528,22 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       'a365.generated.config.json': JSON.stringify({ agenticAppId: agentId }),
     });
     try {
-      const finding = runValidator(VALIDATOR, unregistered).findings.find(f => f.id === 'agent-registration-not-recorded');
+      const finding = runValidator(VALIDATOR, systemAgent).findings.find(f => f.id === 'agent-registration-not-recorded');
       assert.ok(finding, 'expected agent-registration-not-recorded');
       assert.equal(finding.severity, 'medium');
       assert.ok(!findingIds(runValidator(VALIDATOR, registered)).includes('agent-registration-not-recorded'));
       assert.ok(!findingIds(runValidator(VALIDATOR, aiTeammate)).includes('agent-registration-not-recorded'));
       for (const scanner of [VALIDATOR, STANDALONE]) {
-        assert.ok(findingIds(runValidator(scanner, unregistered)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(findingIds(runValidator(scanner, systemAgent)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(findingIds(runValidator(scanner, fallback)).includes('agent-registration-not-recorded'), scanner);
         assert.ok(!findingIds(runValidator(scanner, noBlueprint)).includes('agent-registration-not-recorded'),
           `${scanner}: without a blueprint ID there is no blueprint agent instance to register`);
       }
     } finally {
-      cleanup(unregistered);
+      cleanup(systemAgent);
       cleanup(registered);
       cleanup(aiTeammate);
+      cleanup(fallback);
       cleanup(noBlueprint);
     }
   });
