@@ -822,6 +822,76 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
+  test('Node.js useS2SEndpoint only on an unrelated object → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': `${NODEJS_DISTRO_VALID['src/index.ts'].replace(' useS2SEndpoint: true,', '')}\nconst workloadOptions = { useS2SEndpoint: true };`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*useS2SEndpoint: true/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js comment documenting the legacy refresh call is not flagged', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}\n// Do NOT call AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization).`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET UseS2SEndpoint set outside the UseMicrosoftOpenTelemetry options → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': DOTNET_DISTRO_VALID['Program.cs'].replace('o.Agent365.UseS2SEndpoint = true;', ''),
+      'WorkloadClient.cs': 'workloadOptions.UseS2SEndpoint = true;',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*UseS2SEndpoint = true/);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET commented-out AgenticTokenStruct registration is not flagged', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'MyAgent.cs': `${DOTNET_DISTRO_VALID['MyAgent.cs']}\n// Legacy: agentTokenCache?.RegisterObservability(agentId, tenantId, new AgenticTokenStruct(userAuthorization: auth, turnContext: turnContext, authHandlerName: name), scopes);`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python a365_use_s2s_endpoint only on an unrelated helper call → reports the S2S route requirement', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': `${PYTHON_DISTRO_VALID['host_agent_server.py'].replace(' a365_use_s2s_endpoint=True,', '')}\nconfigure_workload_client(a365_use_s2s_endpoint=True)`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /S2S route in every auth mode.*a365_use_s2s_endpoint=True/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python commented-out observability exchange_token is not flagged', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': `${PYTHON_DISTRO_VALID['host_agent_server.py']}\n# Legacy: token = await auth.exchange_token(context, scopes=get_observability_authentication_scope(), auth_handler_id=handler)`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
   test('Python distro passing the resolver through a kwargs dict → ok', () => {
     const dir = createFixture({
       ...PYTHON_DISTRO_VALID,

@@ -607,18 +607,60 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     }
   });
 
-  test('the stop hooks and the standalone scanner share one distro resolver helper', () => {
+  test('the stop hooks and the standalone scanner share one distro-call helper', () => {
     const observabilityHook = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-instrument-observability.js');
     const helperText = file => {
       const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
-      const start = text.indexOf('const RESOLVER_WIRING = {');
-      const end = text.indexOf('\n}\n', text.indexOf('function distroCallHasResolver('));
-      assert.ok(start >= 0 && end > start, `${file}: resolver helper not found`);
+      const start = text.indexOf('const DISTRO_CALLS = {');
+      const end = text.indexOf('\n}\n', text.indexOf('function codeCallMatches('));
+      assert.ok(start >= 0 && end > start, `${file}: distro-call helper not found`);
       return text.slice(start, end);
     };
     const expected = helperText(VALIDATOR);
-    assert.equal(helperText(STANDALONE), expected, 'standalone scanner must use the same resolver helper');
-    assert.equal(helperText(observabilityHook), expected, 'instrument-observability hook must use the same resolver helper');
+    assert.equal(helperText(STANDALONE), expected, 'standalone scanner must use the same distro-call helper');
+    assert.equal(helperText(observabilityHook), expected, 'instrument-observability hook must use the same distro-call helper');
+  });
+
+  test('route flags outside the distro call and legacy calls in comments are handled the same by both scanners', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const routeElsewhere = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': `${NODE_S2S_INDEX.replace(' useS2SEndpoint: true,', '')}\nconst workloadOptions = { useS2SEndpoint: true };`,
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });\nworkloadOptions.UseS2SEndpoint = true;',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=OBS_TOKENS.resolve)\nconfigure_workload_client(a365_use_s2s_endpoint=True)',
+    });
+    const commentedLegacy = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': '// Do NOT call AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization).',
+      'Agent.csproj': csproj,
+      'Program.cs': [
+        'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
+        '// Legacy: _cache.RegisterObservability(a, t, new AgenticTokenStruct(userAuthorization: u, turnContext: c, authHandlerName: n), s);',
+      ].join('\n'),
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        '# Legacy: token = await auth.exchange_token(context, scopes=get_observability_authentication_scope())',
+      ].join('\n'),
+    });
+    const routeIds = ids => ids.filter(id => /obs-delegated-route|s2s-endpoint-not-set/.test(id)).sort();
+    const tokenIds = ids => ids.filter(id => /obs-delegated-token/.test(id));
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(routeIds(findingIds(runValidator(scanner, routeElsewhere))), [
+          'dotnet-obs-delegated-route',
+          'node-obs-delegated-route',
+          'python-s2s-endpoint-not-set',
+        ], scanner);
+        assert.deepEqual(tokenIds(findingIds(runValidator(scanner, commentedLegacy))), [], scanner);
+      }
+    } finally {
+      cleanup(routeElsewhere);
+      cleanup(commentedLegacy);
+    }
   });
 
   test('app-only S2S wiring in all three languages produces no delegated-telemetry findings in either scanner', () => {

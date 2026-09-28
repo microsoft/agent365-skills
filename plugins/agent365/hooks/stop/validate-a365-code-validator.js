@@ -109,28 +109,32 @@ function findCallBlocks(content, functionName) {
   return blocks;
 }
 
-// A distro call counts as wired only when its own arguments pass the export token resolver: an
-// explicit or shorthand `tokenResolver` property (Node.js), an `a365_token_resolver` keyword or
-// `**{...}` key (Python), or a `TokenResolver` assignment in the options callback (.NET). A variable
-// passed to the call is followed one level to its initializer in the same file; a resolver symbol
-// elsewhere, such as an unused import, does not count.
-const RESOLVER_WIRING = {
-  node: {
-    call: 'useMicrosoftOpenTelemetry',
-    wired: /[{,]\s*tokenResolver\s*(?=[,}])|\btokenResolver\s*:/,
-    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
-  },
-  python: {
-    call: 'use_microsoft_opentelemetry',
-    wired: /\ba365_(?:contextual_)?token_resolver\s*=(?!=)|['"]a365_(?:contextual_)?token_resolver['"]\s*:/,
-    comments: /(^|\s)#[^\n]*/gm,
-  },
-  dotnet: {
-    call: 'UseMicrosoftOpenTelemetry',
-    wired: /\b(?:Contextual)?TokenResolver\s*=(?!=)/,
-    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
-  },
+// Distro-call checks shared verbatim by both stop hooks and the standalone scanner. An option counts
+// only when the distro call's own arguments pass it: an explicit or shorthand property (Node.js), a
+// keyword or `**{...}` key (Python), or an assignment in the options callback (.NET). A variable passed
+// to the call is followed one level to its initializer in the same file. Comments are ignored, so a
+// commented-out option, an unused import, or an unrelated object elsewhere does not count.
+const DISTRO_CALLS = {
+  node: { call: 'useMicrosoftOpenTelemetry', comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm },
+  python: { call: 'use_microsoft_opentelemetry', comments: /(^|\s)#[^\n]*/gm },
+  dotnet: { call: 'UseMicrosoftOpenTelemetry', comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm },
 };
+
+const TOKEN_RESOLVER_OPTION = {
+  node: /[{,]\s*tokenResolver\s*(?=[,}])|\btokenResolver\s*:/,
+  python: /\ba365_(?:contextual_)?token_resolver\s*=(?!=)|['"]a365_(?:contextual_)?token_resolver['"]\s*:/,
+  dotnet: /\b(?:Contextual)?TokenResolver\s*=(?!=)/,
+};
+
+const S2S_ROUTE_OPTION = {
+  node: /\buseS2SEndpoint\s*:\s*true\b/,
+  python: /\ba365_use_s2s_endpoint\s*=\s*True\b|['"]a365_use_s2s_endpoint['"]\s*:\s*True\b/,
+  dotnet: /\bUseS2SEndpoint\s*=\s*true\b/,
+};
+
+function stripComments(content, language) {
+  return content.replace(DISTRO_CALLS[language].comments, '$1');
+}
 
 // Returns the text from the bracket at `open` through its matching close bracket.
 function bracketBlock(content, open) {
@@ -143,29 +147,58 @@ function bracketBlock(content, open) {
   return '';
 }
 
-function distroCallHasResolver(files, language) {
-  const { call, wired, comments } = RESOLVER_WIRING[language];
+// Returns the parenthesized arguments of every `name(...)` call in `content`.
+function callArguments(content, name) {
+  const calls = [];
+  for (let index = content.indexOf(`${name}(`); index !== -1; index = content.indexOf(`${name}(`, index + 1)) {
+    calls.push(bracketBlock(content, index + name.length));
+  }
+  return calls;
+}
+
+// True when a distro call in `files` passes an option matching `option`.
+function distroCallMatches(files, language, option) {
+  const { call } = DISTRO_CALLS[language];
   return files.some(file => {
-    const content = read(file).replace(comments, '$1');
-    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
-      const args = bracketBlock(content, index + call.length);
-      if (wired.test(args)) return true;
+    const content = stripComments(read(file), language);
+    return callArguments(content, call).some(args => {
+      if (option.test(args)) return true;
       // .NET: a method group instead of an inline lambda configures the options elsewhere in the file.
-      if (language === 'dotnet' && !args.includes('=>') && wired.test(content)) return true;
+      if (language === 'dotnet' && !args.includes('=>')) return option.test(content);
       for (const name of new Set(args.match(/[A-Za-z_$][\w$]*/g) || [])) {
         const escaped = name.replace(/\$/g, '\\$');
         const initializer = new RegExp(`(?:^|[^\\w$])${escaped}\\s*(?::[^=\\n]*)?=\\s*(?:dict\\s*)?([({])`, 'gm');
         for (let m = initializer.exec(content); m; m = initializer.exec(content)) {
-          if (wired.test(bracketBlock(content, m.index + m[0].length - 1))) return true;
+          if (option.test(bracketBlock(content, m.index + m[0].length - 1))) return true;
         }
-        if (language === 'python' &&
-            new RegExp(`\\b${escaped}\\s*\\[\\s*['"]a365_(?:contextual_)?token_resolver['"]\\s*\\]\\s*=(?!=)`).test(content)) {
-          return true;
+        if (language === 'python') {
+          // `kwargs["key"] = value` is read as the dict entry it adds.
+          const keyAssignment = new RegExp(`\\b${escaped}\\s*\\[\\s*(['"][^'"\\n]+['"])\\s*\\]\\s*=(?!=)\\s*([^\\n]*)`, 'g');
+          for (let m = keyAssignment.exec(content); m; m = keyAssignment.exec(content)) {
+            if (option.test(`${m[1]}: ${m[2]}`)) return true;
+          }
         }
       }
-    }
-    return false;
+      return false;
+    });
   });
+}
+
+function distroCallHasResolver(files, language) {
+  return distroCallMatches(files, language, TOKEN_RESOLVER_OPTION[language]);
+}
+
+function distroCallUsesS2SRoute(files, language) {
+  return distroCallMatches(files, language, S2S_ROUTE_OPTION[language]);
+}
+
+// Whole-file scans that ignore comments, so a documented legacy call is not reported.
+function codeMatches(files, language, regex) {
+  return files.some(file => regex.test(stripComments(read(file), language)));
+}
+
+function codeCallMatches(files, language, name, regex) {
+  return files.some(file => callArguments(stripComments(read(file), language), name).some(args => regex.test(args)));
 }
 
 function validatePython() {
@@ -175,8 +208,8 @@ function validatePython() {
   const hasExplicitExporter = anyFileMatches(pyFiles, /\ba365_enable_observability_exporter\s*=\s*True\b/);
   const hasExplicitExporterFalse = anyFileMatches(pyFiles, /\ba365_enable_observability_exporter\s*=\s*False\b/);
   const hasExporterEnv = envHasTruthy('ENABLE_A365_OBSERVABILITY_EXPORTER') || envHasTruthy('EnableAgent365Exporter');
-  const hasExplicitS2S = anyFileMatches(pyFiles, /\ba365_use_s2s_endpoint\s*=\s*True\b/);
-  const hasExplicitS2SFalse = anyFileMatches(pyFiles, /\ba365_use_s2s_endpoint\s*=\s*False\b/);
+  const hasExplicitS2S = distroCallUsesS2SRoute(pyFiles, 'python');
+  const hasExplicitS2SFalse = distroCallMatches(pyFiles, 'python', /\ba365_use_s2s_endpoint\s*=\s*False\b|['"]a365_use_s2s_endpoint['"]\s*:\s*False\b/);
   const hasS2SEnv = envHasTruthy('A365_USE_S2S_ENDPOINT');
   const hasS2SIntent = anyFileContains(pyFiles, 'a365_contextual_token_resolver') ||
     anyFileContains(pyFiles, 'agent_source_identity') ||
@@ -259,7 +292,7 @@ function validatePython() {
   }
 
   for (const file of pyFiles) {
-    const content = read(file);
+    const content = stripComments(read(file), 'python');
     const delegated = findCallBlocks(content, 'exchange_token').some(block => /observability/i.test(block)) ||
       /(?<!\bdef\s+)\bcache_agentic_token\s*\(/.test(content) ||
       /\ba365_token_resolver\s*=\s*(?:lambda\b[^:\n]*:\s*)?[^,)\n]*\b(get_cached_agentic_token|AgenticTokenCache|get_observability_token)\b/.test(content);
@@ -272,8 +305,8 @@ function validatePython() {
       );
     }
   }
-  const prefetchFile = pyFiles.find(f => findCallBlocks(read(f), 'prefetch').some(block => /self\.connection_manager/.test(block)));
-  if (prefetchFile && !anyFileMatches(pyFiles, /\bself\.connection_manager\s*=/)) {
+  const prefetchFile = pyFiles.find(f => findCallBlocks(stripComments(read(f), 'python'), 'prefetch').some(block => /self\.connection_manager/.test(block)));
+  if (prefetchFile && !codeMatches(pyFiles, 'python', /\bself\.connection_manager\s*=/)) {
     add(
       'high',
       'python-obs-prefetch-connection-missing',
@@ -395,7 +428,7 @@ function validateNode() {
   }
 
   // Every auth mode exports over the S2S route with an app-only token.
-  if (hasDistroCall && hasA365Enabled && !anyFileMatches(tsFiles, /\buseS2SEndpoint\s*:\s*true\b/)) {
+  if (hasDistroCall && hasA365Enabled && !distroCallUsesS2SRoute(tsFiles, 'node')) {
     add(
       'high',
       'node-obs-delegated-route',
@@ -412,7 +445,7 @@ function validateNode() {
     );
   }
   for (const file of tsFiles) {
-    const content = read(file);
+    const content = stripComments(read(file), 'node');
     const delegatedRefresh = ['refreshObservabilityToken', 'RefreshObservabilityToken']
       .some(name => findCallBlocks(content, name).some(block => /authorization/i.test(block))) ||
       /AgenticTokenCacheInstance\s*\.\s*getObservabilityToken\s*\(/.test(content);
@@ -487,7 +520,7 @@ function validateDotnet() {
 
   // Every auth mode exports over the S2S route with an app-only token.
   const csFiles = allFiles.filter(f => f.endsWith('.cs'));
-  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !anyFileMatches(csFiles, /\bUseS2SEndpoint\s*=\s*true\b/)) {
+  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !distroCallUsesS2SRoute(csFiles, 'dotnet')) {
     add(
       'high',
       'dotnet-obs-delegated-route',
@@ -504,7 +537,7 @@ function validateDotnet() {
     );
   }
   for (const file of csFiles) {
-    const content = read(file);
+    const content = stripComments(read(file), 'dotnet');
     if (findCallBlocks(content, 'RegisterObservability').some(block => block.includes('AgenticTokenStruct')) ||
         /\bnew\s+AgenticTokenStruct\s*[({]|IExporterTokenCache\s*<\s*AgenticTokenStruct\s*>\s*\??\s+[A-Za-z_]\w*/.test(content)) {
       add(
