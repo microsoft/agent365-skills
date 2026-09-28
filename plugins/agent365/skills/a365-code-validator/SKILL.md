@@ -202,6 +202,7 @@ Python must have either explicit code:
 use_microsoft_opentelemetry(
     enable_a365=True,
     a365_enable_observability_exporter=True,
+    a365_use_s2s_endpoint=True,
 )
 ```
 
@@ -218,6 +219,7 @@ useMicrosoftOpenTelemetry({
   a365: {
     enabled: true,
     enableObservabilityExporter: true,
+    useS2SEndpoint: true,
   },
 });
 ```
@@ -314,7 +316,7 @@ than relying only on `A365_USE_S2S_ENDPOINT=true` in the runtime environment.
 Flag **delegated telemetry** as `high`: the S2S route rejects any token carrying `scp`, and the
 legacy delegated route needs admin consent. Signals are:
 
-- Node.js `AgenticTokenCacheInstance.refreshObservabilityToken(..., authorization)` (often wrapped
+- Node.js `AgenticTokenCacheInstance.refreshObservabilityToken(...)` (often wrapped
   in a `preloadObservabilityToken` helper), or a `tokenResolver` that reads
   `AgenticTokenCacheInstance.getObservabilityToken(...)`.
 - .NET `RegisterObservability(..., new AgenticTokenStruct(...), ...)`, any `new AgenticTokenStruct(...)`
@@ -409,8 +411,9 @@ Interpret observability authorization for the S2S route, which every auth mode u
 | Neither registration nor the application role is evident | `high` — export will likely return 403 `insufficient_scope`. Blueprint agents: `a365 setup all --agent-registration-only`. AI Teammates: complete the `OtelWrite` application-role step `a365 setup all --aiteammate` prints |
 | Only the delegated `Agent365.Observability.OtelWrite` scope is granted | Informational — it only matters to legacy delegated-route exporters; flag the code for migration instead (§3.5) |
 
-Do **not** treat a missing `OtelWrite` grant as a blocker for a registered blueprint agent: the
-Agent 365 CLI no longer requests Observability API permissions for blueprint agents. Treat a
+Do **not** treat a missing `OtelWrite` grant as a blocker for a registered blueprint agent: newer
+Agent 365 CLI versions skip Observability API permissions for blueprint agents, and older versions
+may still grant them harmlessly. Treat a
 non-zero `inheritance` result for another required resource as `high`. Permission names and
 resource display names are safe to summarize, but redact tenant, Blueprint, application,
 service-principal, and agent IDs.

@@ -329,7 +329,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite** — compute four sub-signals, then combine:
   - `obs_entry`     = `useMicrosoftOpenTelemetry` in any `src/**/*.ts`
-  - `obs_token`     = the `useMicrosoftOpenTelemetry({...})` call passes `tokenResolver` in its `a365` options (the app-only resolver `observability/app-token-resolver.ts` for obo / agentic-user; S2S also accepts `getS2SObservabilityToken` / `startTokenService`). A `tokenResolver` symbol elsewhere, such as an unused import, does not count. AND no `refreshObservabilityToken(..., authorization)` call or `AgenticTokenCacheInstance.getObservabilityToken` resolver (either means the telemetry token is delegated)
+  - `obs_token`     = the `useMicrosoftOpenTelemetry({...})` call passes `tokenResolver` in its `a365` options (the app-only resolver `observability/app-token-resolver.ts` for obo / agentic-user; S2S also accepts `getS2SObservabilityToken` / `startTokenService`). A `tokenResolver` symbol elsewhere, such as an unused import, does not count. AND no `refreshObservabilityToken(...)` call or `AgenticTokenCacheInstance.getObservabilityToken` resolver (either means the telemetry token is delegated)
   - `obs_route`     = `useS2SEndpoint: true` in the same `useMicrosoftOpenTelemetry` call's `a365` options (telemetry uses the S2S route in every auth mode)
   - `obs_handler`   = `BaggageBuilder` OR `BaggageBuilderUtils` OR `InvokeAgentScope` in any `src/**/*.ts`
   - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`

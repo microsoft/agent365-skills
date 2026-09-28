@@ -322,13 +322,13 @@ describe('validate-a365-code-validator — S2S route and delegated telemetry', (
     }
   });
 
-  test('Node refreshObservabilityToken(..., authorization) reports delegated token; app-only S2S wiring does not', () => {
+  test('Node lowercase refreshObservabilityToken without authorization literal reports delegated token; app-only S2S wiring does not', () => {
     const dir = createFixture({
       'package.json': NODE_PKG,
       'index.ts': NODE_S2S_INDEX,
       'agent.ts': `
 await AgenticTokenCacheInstance.refreshObservabilityToken(
-  agentId, tenantId, turnContext as any, this.authorization as any);
+  agentId, tenantId, turnContext as any, app.auth);
       `.trim(),
     });
     try {
@@ -338,6 +338,28 @@ await AgenticTokenCacheInstance.refreshObservabilityToken(
       assert.ok(!ids.includes('node-obs-delegated-route'));
     } finally {
       cleanup(dir);
+    }
+  });
+
+  test('Node PascalCase RefreshObservabilityToken app-only overload is allowed; delegated overload is flagged by both scanners', () => {
+    const appOnly = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': 'await tokenCache.RefreshObservabilityToken(agentId, tenantId, resolver);',
+    });
+    const delegated = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': 'await tokenCache.RefreshObservabilityToken(agentId, tenantId, buildContext({ nested: [1, 2] }), app.auth);',
+    });
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(!findingIds(runValidator(scanner, appOnly)).includes('node-obs-delegated-token'), scanner);
+        assert.ok(findingIds(runValidator(scanner, delegated)).includes('node-obs-delegated-token'), scanner);
+      }
+    } finally {
+      cleanup(appOnly);
+      cleanup(delegated);
     }
   });
 

@@ -255,8 +255,8 @@ Pull `<agentBlueprintId>`, `<agentBlueprintClientSecret>`, `<tenantId>` from `a3
 > **Not in this table (and why)** — the following Node.js keys appeared in older skill versions but are NOT consumed by `@microsoft/Agents-for-js` or `@microsoft/opentelemetry`, so the skill must NOT write them as required vars:
 > - `USE_AGENTIC_AUTH` — handler selection is in code (`MyAgent.authHandlerName = 'agentic'`); env var is informational only.
 > - `agentic_connectionName` — invalid key for the agentic handler (only `type`, `scopes`, `altBlueprintConnectionName` are recognized; `connectionName` is an Azure-Bot-handler legacy alias).
-> - `agent365Observability__agentBlueprintId` — CLI writes `__agentId`, not `__agentBlueprintId`. Stray.
-> - `agent365Observability__clientId` / `__clientSecret` — never written by the CLI and never read by the distro. Stray.
+> - `agent365Observability__agentBlueprintId` — written by the CLI; keep it if present. Observability fallback guards use it to avoid treating a blueprint ID as a runtime agent identity.
+> - `agent365Observability__clientId` / `__clientSecret` — written by the CLI for compatibility. Current observability wiring gets tokens from the hosting connection instead; keep these keys if present, but do not hand-author them for new code.
 > - `agent365Observability__sponsorUserId` / `__sponsorUserName` / `__sponsorUserEmail` — S2S-only. For AI Teammate (always `agentic-user`), `CallerDetails` come from the turn context — these env vars are inert.
 
 **For `runTarget = "prod"` — additional verification:**
@@ -601,4 +601,3 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 
 
 ---
-

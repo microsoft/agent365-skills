@@ -133,11 +133,14 @@ agent365-skills/
    scaffold. Always set the S2S route flag (`o.Agent365.UseS2SEndpoint = true`,
    `useS2SEndpoint: true`, `a365_use_s2s_endpoint=True`). Never generate a per-turn delegated
    telemetry token (`RegisterObservability(..., AgenticTokenStruct)`,
-   `refreshObservabilityToken(..., authorization)`, `exchange_token(...)` for the observability
+   `refreshObservabilityToken(...)`, `exchange_token(...)` for the observability
    scope), and never add the delegated `OtelWrite` scope for telemetry. Registered blueprint agent
    instances need no `Agent365.Observability.OtelWrite` permission or admin consent, so never make
-   an OBS grant a required step for them. For blueprint agents, a 403 `insufficient_scope` means
-   the instance isn't registered: `a365 setup all --agent-registration-only`. AI Teammates complete
+   an OBS grant a required step for them. Newer `a365 setup all` versions skip OtelWrite for
+   blueprint agents and fail when registration fails or cannot be verified; older versions may
+   still grant OtelWrite (harmless) and may exit 0 after a failed registration, so check setup
+   output and rerun `a365 setup all --agent-registration-only` if needed. For blueprint agents,
+   a 403 `insufficient_scope` means the instance isn't registered. AI Teammates complete
    the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. The application
    role is always an accepted fallback on the S2S route.
 

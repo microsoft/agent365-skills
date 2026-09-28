@@ -269,9 +269,39 @@ function codeMatches(files, language, regex) {
   return files.some(file => regex.test(stripComments(read(file), language)));
 }
 
-function codeCallMatches(files, language, name, regex) {
-  return files.some(file => callArguments(stripComments(read(file), language), name).some(args => regex.test(args)));
+function topLevelArgumentCount(args) {
+  const text = args.trim().replace(/^\(/, '').replace(/\)$/, '');
+  if (!text.trim()) return 0;
+  let count = 1;
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (ch === ',' && depth === 0) {
+      count++;
+    }
+  }
+  return count;
 }
+
+function codeCallMatches(files, language, name, matcher) {
+  return files.some(file => callArguments(stripComments(read(file), language), name)
+    .some(args => typeof matcher === 'function' ? matcher(args) : matcher.test(args)));
+}
+
 
 function validatePython() {
   const hasMicrosoftOpenTelemetryPackage = reqFiles.some(f => fileContains(f, 'microsoft-opentelemetry'));
@@ -518,14 +548,14 @@ function validateNode() {
   }
   for (const file of tsFiles) {
     const content = stripComments(read(file), 'node');
-    const delegatedRefresh = ['refreshObservabilityToken', 'RefreshObservabilityToken']
-      .some(name => findCallBlocks(content, name).some(block => /authorization/i.test(block))) ||
+    const delegatedRefresh = codeCallMatches([file], 'node', 'refreshObservabilityToken', () => true) ||
+      codeCallMatches([file], 'node', 'RefreshObservabilityToken', args => topLevelArgumentCount(args) >= 4) ||
       /AgenticTokenCacheInstance\s*\.\s*getObservabilityToken\s*\(/.test(content);
     if (delegatedRefresh) {
       add(
         'high',
         'node-obs-delegated-token',
-        'Telemetry uses a delegated (OBO) token (refreshObservabilityToken(..., authorization) or AgenticTokenCacheInstance.getObservabilityToken). The S2S route rejects delegated tokens; use an app-only tokenResolver for the agent identity instead.',
+        'Telemetry uses a delegated (OBO) token (refreshObservabilityToken(...) or a four-argument RefreshObservabilityToken(...) call, or AgenticTokenCacheInstance.getObservabilityToken). The S2S route rejects delegated tokens; use an app-only tokenResolver for the agent identity instead.',
         file
       );
     }

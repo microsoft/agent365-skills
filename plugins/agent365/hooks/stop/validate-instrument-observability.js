@@ -198,8 +198,37 @@ function codeMatches(files, language, regex) {
   return files.some(file => regex.test(stripComments(read(file), language)));
 }
 
-function codeCallMatches(files, language, name, regex) {
-  return files.some(file => callArguments(stripComments(read(file), language), name).some(args => regex.test(args)));
+function topLevelArgumentCount(args) {
+  const text = args.trim().replace(/^\(/, '').replace(/\)$/, '');
+  if (!text.trim()) return 0;
+  let count = 1;
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '[' || ch === '{') {
+      depth++;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth = Math.max(0, depth - 1);
+    } else if (ch === ',' && depth === 0) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function codeCallMatches(files, language, name, matcher) {
+  return files.some(file => callArguments(stripComments(read(file), language), name)
+    .some(args => typeof matcher === 'function' ? matcher(args) : matcher.test(args)));
 }
 
 // ── Detect project type ─────────────────────────────────────────────────────
@@ -417,10 +446,10 @@ if (isNodejs) {
   if (usesDistro && !distroCallUsesS2SRoute(tsFiles, 'node')) {
     issues.push('Observability export must use the S2S route in every auth mode: pass useS2SEndpoint: true in the a365 options of useMicrosoftOpenTelemetry() with an app-only tokenResolver (observability/app-token-resolver.ts for obo / agentic-user)');
   }
-  if (codeCallMatches(tsFiles, 'node', 'refreshObservabilityToken', /authorization/i) ||
-      codeCallMatches(tsFiles, 'node', 'RefreshObservabilityToken', /authorization/i) ||
+  if (codeCallMatches(tsFiles, 'node', 'refreshObservabilityToken', () => true) ||
+      codeCallMatches(tsFiles, 'node', 'RefreshObservabilityToken', args => topLevelArgumentCount(args) >= 4) ||
       codeMatches(tsFiles, 'node', /AgenticTokenCacheInstance\s*\.\s*getObservabilityToken\s*\(/)) {
-    issues.push('refreshObservabilityToken(..., authorization) or AgenticTokenCacheInstance.getObservabilityToken(...) feeds a delegated (OBO) telemetry token, which the S2S route rejects — remove it (and any preloadObservabilityToken helper) and use the app-only tokenResolver (see nodejs-observability.md)');
+    issues.push('refreshObservabilityToken(...), a four-argument RefreshObservabilityToken(...) call, or AgenticTokenCacheInstance.getObservabilityToken(...) feeds a delegated (OBO) telemetry token, which the S2S route rejects — remove it (and any preloadObservabilityToken helper) and use the app-only tokenResolver (see nodejs-observability.md)');
   }
 
   // 5. .env has observability vars

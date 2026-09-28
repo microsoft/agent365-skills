@@ -12,7 +12,8 @@ into a .NET AgentFramework agent. All samples mirror the official Microsoft Lear
 > route rejects delegated (`scp`) tokens, so do not register per-turn OBO tokens
 > (`RegisterObservability(..., new AgenticTokenStruct(...))`) for telemetry. Registered blueprint
 > agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject
-> to service policy), and `a365 setup all` no longer requests them for blueprint agents. AI Teammate
+> to service policy). Newer `a365 setup all` versions skip that grant for blueprint agents; older
+> versions may still grant it harmlessly. AI Teammate
 > setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the
 > app-role action item it prints, because the S2S route accepts that role.
 >
@@ -201,7 +202,7 @@ public static class ObservabilityServiceExtensions
 >   - `true` (production) — MSI → Blueprint FIC → Agent Identity → API
 >   - `false` (local dev) — Client Secret → Blueprint FIC → Agent Identity → API
 >
-> **Authorization:** registered agent instances are authorized on the S2S route without the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy), and `a365 setup all` no longer requests it for blueprint agents. If export returns 403 `insufficient_scope`, register a blueprint agent instance with `a365 setup all --agent-registration-only`; for AI Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `OtelWrite` application role.
+> **Authorization:** registered agent instances are authorized on the S2S route without the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy). Newer `a365 setup all` versions skip that grant for blueprint agents; older versions may still grant it harmlessly. If export returns 403 `insufficient_scope`, register a blueprint agent instance with `a365 setup all --agent-registration-only`; for AI Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `OtelWrite` application role.
 
 ```csharp
 using Azure.Core;
@@ -494,12 +495,19 @@ namespace <ProjectNamespace>;
 public sealed class AgentAppTokenResolver
 {
     private static readonly string[] ObservabilityScopes = ["api://9b975845-388f-4429-889e-eab1ef63949c/.default"];
+    private static readonly HashSet<string> ObservabilityAudiences =
+    [
+        "api://9b975845-388f-4429-889e-eab1ef63949c",
+        "9b975845-388f-4429-889e-eab1ef63949c",
+    ];
     private static readonly TimeSpan RefreshSkew = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(60);
 
     private readonly IConnections _connections;
     private readonly ILogger<AgentAppTokenResolver> _logger;
     private readonly ConcurrentDictionary<string, AuthenticationResult> _tokens = new();
-    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshGates = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _failedUntil = new();
 
     public AgentAppTokenResolver(IConnections connections, ILogger<AgentAppTokenResolver> logger)
     {
@@ -522,7 +530,13 @@ public sealed class AgentAppTokenResolver
             return token;
         }
 
-        await _refreshGate.WaitAsync().ConfigureAwait(false);
+        if (_failedUntil.TryGetValue(key, out var retryAfter) && retryAfter > DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        var refreshGate = _refreshGates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await refreshGate.WaitAsync().ConfigureAwait(false);
         try
         {
             if (TryGetFresh(key, out token))
@@ -533,6 +547,7 @@ public sealed class AgentAppTokenResolver
             if (_connections.GetDefaultConnection() is not IAgenticTokenProvider blueprint)
             {
                 _logger.LogWarning("The default connection cannot issue agentic tokens; A365 observability export skipped.");
+                RememberFailure(key);
                 return null;
             }
 
@@ -546,23 +561,27 @@ public sealed class AgentAppTokenResolver
                 .ExecuteAsync()
                 .ConfigureAwait(false);
 
-            if (HasDelegatedScope(result.AccessToken))
+            var validationError = ValidateToken(result.AccessToken, agentId, tenantId);
+            if (validationError is not null)
             {
-                _logger.LogWarning("The observability token carries a delegated scp claim, which the S2S route rejects; export skipped.");
+                _logger.LogWarning("The observability token is not valid for S2S export: {Reason}", validationError);
+                RememberFailure(key);
                 return null;
             }
 
             _tokens[key] = result;
+            _failedUntil.TryRemove(key, out _);
             return result.AccessToken;
         }
         catch (Exception ex)
         {
+            RememberFailure(key);
             _logger.LogWarning(ex, "Could not acquire an app-only A365 observability token for agent {AgentId}; export skipped.", agentId);
             return null;
         }
         finally
         {
-            _refreshGate.Release();
+            refreshGate.Release();
         }
     }
 
@@ -574,19 +593,54 @@ public sealed class AgentAppTokenResolver
         return token is not null;
     }
 
-    private static bool HasDelegatedScope(string accessToken)
+    private void RememberFailure(string key)
+    {
+        _failedUntil[key] = DateTimeOffset.UtcNow + FailureBackoff;
+    }
+
+    private static string? ValidateToken(string accessToken, string agentId, string tenantId)
     {
         var payload = accessToken.Split('.')[1].Replace('-', '+').Replace('_', '/');
         payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
         using var claims = JsonDocument.Parse(Convert.FromBase64String(payload));
-        return claims.RootElement.TryGetProperty("scp", out _);
+        var root = claims.RootElement;
+        if (root.TryGetProperty("scp", out _))
+        {
+            return "it carries a delegated scp claim";
+        }
+
+        var clientId = Claim(root, "azp") ?? Claim(root, "appid");
+        if (!string.Equals(clientId, agentId, StringComparison.OrdinalIgnoreCase))
+        {
+            return "azp/appid does not match the exporting agent";
+        }
+
+        if (!string.Equals(Claim(root, "tid"), tenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            return "tid does not match the exporting tenant";
+        }
+
+        var audience = Claim(root, "aud");
+        if (audience is null || !ObservabilityAudiences.Contains(audience))
+        {
+            return "aud does not match the Observability API";
+        }
+
+        return null;
     }
+
+    private static string? Claim(JsonElement claims, string name) =>
+        claims.TryGetProperty(name, out var value) ? value.GetString() : null;
 }
 ```
 
 > `IConnections` is registered by the Agents SDK hosting setup (`AddAgentApplicationOptions` /
 > `AddAgent<T>`), and its default connection is the blueprint credential that `a365 setup all`
 > writes to `appsettings.json` (`Connections:ServiceConnection`). No extra settings are needed.
+> This intentionally mirrors the Node/Python skill scaffolds: the hosting connection lets one
+> deployment serve several agent instances/tenants and inherit certificate, federated-identity,
+> or managed-identity credentials. The Agent365 samples use a dedicated single-identity OBS
+> credential when telemetry auth should be isolated from business auth.
 > Registered blueprint agent instances are authorized on the S2S route without the
 > `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy). For AI
 > Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints.
@@ -628,7 +682,10 @@ builder.AddA365Tracing();                        // from Microsoft.Agents.A365.O
 These are subsumed by `UseMicrosoftOpenTelemetry()` and the distro package — mixing the
 two causes CS0433 duplicate-type errors. Pick one wiring style per project. The legacy
 `AddAgenticTracingExporter()` wiring exports over the delegated route with OBO tokens; migrate
-it to the distro with `o.Agent365.UseS2SEndpoint = true` and `AgentAppTokenResolver`.
+it to the distro with `o.Agent365.UseS2SEndpoint = true` and `AgentAppTokenResolver`. If offline
+storage is enabled, set `o.Agent365.DisableOfflineStorage = true` (Microsoft.OpenTelemetry 1.1.0+)
+until the installed release enforces S2S for both live and replayed exports, or clear the storage
+directory.
 
 ---
 
@@ -1473,7 +1530,7 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | No logs in Defender | Missing `Logging.LogLevel` config | Add `Microsoft.Agents.A365.Observability: Debug` to appsettings.json |
 | `AgenticAppId` is null | Missing `AGENTIC_APP_ID` env var | Set it in `.env` or App Service config |
 | Token resolver returns null | `AgentAppTokenResolver` not registered or not wired, or token acquisition failed (see the `Could not acquire an app-only A365 observability token` warning) | Register `builder.Services.AddSingleton<AgentAppTokenResolver>()`, wire `o.Agent365.TokenResolver`, and resolve it after `Build()`. Check that the default connection holds the blueprint credential |
-| 401 from A365 exporter | The exporter is on the delegated route (`UseS2SEndpoint` not set) or received a delegated token | Set `o.Agent365.UseS2SEndpoint = true` and use `AgentAppTokenResolver` / `ObservabilityTokenService`. The token must have no `scp` claim, and its `azp`/`appid` must equal the exporting agent ID. Do not run a delegated consent flow for telemetry |
+| 401 from A365 exporter | The exporter is on the delegated route (`UseS2SEndpoint` not set) or received the wrong token | Set `o.Agent365.UseS2SEndpoint = true` and use `AgentAppTokenResolver` / `ObservabilityTokenService`. The token must have no `scp` claim, `azp`/`appid` equal to the exporting agent ID, matching `tid`, and `aud` equal to the Observability API. Do not run a delegated consent flow for telemetry |
 | Build error on `BaggageBuilder` | Wrong namespace | Use `Microsoft.Agents.A365.Observability.Runtime.Common` |
 | Build error on `AgenticTokenStruct` / `IExporterTokenCache` in agent code | Legacy delegated-route token registration left in the handler | Remove the `IExporterTokenCache<AgenticTokenStruct>` injection and the per-turn `RegisterObservability(...)` call — telemetry uses `AgentAppTokenResolver` |
 | Build error on `AddAgenticTracingExporter` | Wrong namespace (and it is the legacy delegated-route wiring) | The namespace is `Microsoft.Agents.A365.Observability.Hosting`, but prefer removing the call and migrating to `AgentAppTokenResolver` on the S2S route — see "Legacy two-package wiring" above |

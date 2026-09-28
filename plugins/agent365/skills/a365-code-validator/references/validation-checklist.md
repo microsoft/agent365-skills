@@ -19,6 +19,7 @@ Required code:
 use_microsoft_opentelemetry(
     enable_a365=True,
     a365_enable_observability_exporter=True,
+    a365_use_s2s_endpoint=True,
 )
 ```
 
@@ -171,7 +172,7 @@ fragile and should be called out.
 
 **Delegated telemetry is a finding (`high`).** Look for any of these:
 
-- Node.js `refreshObservabilityToken(..., authorization)` or a `preloadObservabilityToken` helper, or
+- Node.js `refreshObservabilityToken(...)` or a `preloadObservabilityToken` helper, or
   a `tokenResolver` reading `AgenticTokenCacheInstance.getObservabilityToken(...)`.
 - .NET `RegisterObservability(..., new AgenticTokenStruct(...), ...)`, any `new AgenticTokenStruct(...)`,
   or an `IExporterTokenCache<AgenticTokenStruct>` dependency.

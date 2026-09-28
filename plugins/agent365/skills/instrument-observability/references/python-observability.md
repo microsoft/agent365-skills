@@ -10,9 +10,9 @@ into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.2.x** (releas
 > and the scope types are still importable from their legacy module paths (transitive deps).
 > See `MIGRATION_A365.md` in the distro repo for the authoritative migration guide.
 >
-> **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` + `get_observability_authentication_scope` from `microsoft.opentelemetry.a365.core.middleware.baggage_builder` and `microsoft_agents_a365.runtime.environment_utils` respectively. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
+> **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` from `microsoft.opentelemetry.a365.core.middleware.baggage_builder`. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
 >
-> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `a365_use_s2s_endpoint=True` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token (for example from `exchange_token(... scopes=get_observability_authentication_scope() ...)`) to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy), and `a365 setup all` no longer requests them for blueprint agents. AI Teammate setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the app-role action item it prints, because the S2S route accepts that role.
+> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `a365_use_s2s_endpoint=True` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token (for example from `exchange_token(... scopes=get_observability_authentication_scope() ...)`) to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy); newer `a365 setup all` versions skip it for blueprint agents, while older versions may still grant it harmlessly. AI Teammate setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the app-role action item it prints, because the S2S route accepts that role.
 
 ---
 
@@ -252,6 +252,14 @@ the cache. `prefetch` replaces a token five minutes before it expires; `resolve`
 it until one minute before expiry, so a turn that starts just before the refresh point still
 exports.
 
+This differs from the Agent365-Samples design for the same reason as the Node scaffold: the
+skill reuses the hosting connection (`get_agentic_application_token`) so one deployment can serve
+several agent instances/tenants and inherit certificate, federated-identity, or managed-identity
+credentials; the samples use a dedicated single-identity OBS credential to isolate telemetry auth.
+After a restart, the sync resolver returns `None` for identities that have not handled a turn and
+prefetched yet, so replayed records for idle identities can age out (default max record age: 2 days).
+That is acceptable during migration because offline storage is disabled.
+
 ```python
 # observability/app_token_resolver.py
 # A365 Observability — best-effort instrumentation (verify against official sample)
@@ -274,8 +282,10 @@ import time
 import msal
 
 OBSERVABILITY_SCOPE = "api://9b975845-388f-4429-889e-eab1ef63949c/.default"
+OBSERVABILITY_AUDIENCES = {"api://9b975845-388f-4429-889e-eab1ef63949c", "9b975845-388f-4429-889e-eab1ef63949c"}
 SERVE_SKEW_SECONDS = 60      # resolve() stops serving a token this close to expiry
 REFRESH_SKEW_SECONDS = 300   # prefetch() replaces a token this close to expiry
+FAILURE_BACKOFF_SECONDS = 60
 
 
 class AppTokenResolver:
@@ -283,6 +293,7 @@ class AppTokenResolver:
 
     def __init__(self):
         self._tokens = {}
+        self._failures = {}
         self._lock = threading.Lock()
 
     def resolve(self, agent_id, tenant_id):
@@ -302,23 +313,36 @@ class AppTokenResolver:
         """Acquires the token for this turn's agent identity before its spans are exported."""
         if not tenant_id or not agent_id or self._cached(agent_id, tenant_id, REFRESH_SKEW_SECONDS):
             return
-        connection = connection_manager.get_default_connection()
-        assertion = await connection.get_agentic_application_token(tenant_id, agent_id)
-        if not assertion:
-            raise RuntimeError("The hosting connection issued no FMI assertion for this agent identity.")
-        result = await asyncio.to_thread(_acquire, tenant_id, agent_id, assertion)
-        token = result.get("access_token")
-        if not token:
-            raise RuntimeError(f"Observability token request failed: {result.get('error')}")
-        claims = _claims(token)
-        if "scp" in claims:
-            raise RuntimeError("Observability token is delegated (scp claim); the S2S route rejects it.")
-        client = str(claims.get("azp") or claims.get("appid") or "").lower()
-        if client != agent_id.lower() or str(claims.get("tid", "")).lower() != tenant_id.lower():
-            raise RuntimeError("Observability token client or tenant does not match the exporting agent.")
-        expires_at = float(claims.get("exp") or time.time() + float(result.get("expires_in", 0)))
+        key = (tenant_id.lower(), agent_id.lower())
         with self._lock:
-            self._tokens[(tenant_id.lower(), agent_id.lower())] = (token, expires_at)
+            retry_after = self._failures.get(key)
+        if retry_after and time.time() < retry_after:
+            return
+        try:
+            connection = connection_manager.get_default_connection()
+            assertion = await connection.get_agentic_application_token(tenant_id, agent_id)
+            if not assertion:
+                raise RuntimeError("The hosting connection issued no FMI assertion for this agent identity.")
+            result = await asyncio.to_thread(_acquire, tenant_id, agent_id, assertion)
+            token = result.get("access_token")
+            if not token:
+                raise RuntimeError(f"Observability token request failed: {result.get('error')}")
+            claims = _claims(token)
+            if "scp" in claims:
+                raise RuntimeError("Observability token is delegated (scp claim); the S2S route rejects it.")
+            client = str(claims.get("azp") or claims.get("appid") or "").lower()
+            if client != agent_id.lower() or str(claims.get("tid", "")).lower() != tenant_id.lower():
+                raise RuntimeError("Observability token client or tenant does not match the exporting agent.")
+            if str(claims.get("aud", "")) not in OBSERVABILITY_AUDIENCES:
+                raise RuntimeError("Observability token audience does not match the Observability API.")
+            expires_at = float(claims.get("exp") or time.time() + float(result.get("expires_in", 0)))
+            with self._lock:
+                self._tokens[key] = (token, expires_at)
+                self._failures.pop(key, None)
+        except Exception:
+            with self._lock:
+                self._failures[key] = time.time() + FAILURE_BACKOFF_SECONDS
+            raise
 
 
 def _acquire(tenant_id, agent_id, assertion):
@@ -574,26 +598,29 @@ can only reuse a token another handler cached, and once that token expires its s
 # OBS_TOKENS is the AppTokenResolver created next to use_microsoft_opentelemetry(...) at startup.
 
 
-async def _setup_observability_token(self, context, tenant_id, agent_id):
-    """Prefetch the app-only observability token for this turn's agent identity."""
-    try:
-        await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)
-    except Exception as e:
-        logger.warning(f"Failed to acquire observability token: {e}")
+class GenericAgentHost:
+    async def _setup_observability_token(self, context, tenant_id, agent_id):
+        """Prefetch the app-only observability token for this turn's agent identity."""
+        try:
+            await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)
+        except Exception as e:
+            logger.warning(f"Failed to acquire observability token: {e}")
 
+    def _setup_handlers(self):
+        """Register activity handlers on the adapter."""
 
-@AGENT_APP.activity("message", auth_handlers=["AGENTIC"])
-async def on_message(context: TurnContext, state: TurnState):
-    tenant_id = context.activity.recipient.tenant_id
-    agent_id = context.activity.recipient.agentic_app_id
+        @self._adapter.on_activity(ActivityTypes.message)
+        async def on_message(context, state):
+            tenant_id = context.activity.recipient.tenant_id
+            agent_id = context.activity.recipient.agentic_app_id
 
-    # Prefetch the app-only telemetry token (cached; a no-op on warm turns).
-    await self._setup_observability_token(context, tenant_id, agent_id)
+            # Prefetch the app-only telemetry token (cached; a no-op on warm turns).
+            await self._setup_observability_token(context, tenant_id, agent_id)
 
-    # ObservabilityHostingManager (registered at startup) already populated baggage
-    # from TurnContext. Your handler logic can run directly:
-    response = await self.invoke_llm(context.activity.text)
-    await context.send_activity(response)
+            # ObservabilityHostingManager (registered at startup) already populated baggage
+            # from TurnContext. Your handler logic can run directly:
+            response = await self._agent.process_user_message(context.activity.text or "")
+            await context.send_activity(response)
 ```
 
 > **`self.connection_manager`** is the `MsalConnectionManager` the host passes to its
@@ -610,6 +637,11 @@ async def on_message(context: TurnContext, state: TurnState):
 > and `cache_agentic_token(...)`. That delegated exchange needs admin consent, and the S2S
 > route rejects its token. Also switch `a365_token_resolver` from `AgenticTokenCache` /
 > `get_cached_agentic_token` to `OBS_TOKENS.resolve` and set `a365_use_s2s_endpoint=True`.
+> Also set `a365_exporter_disable_offline_storage=True` until the installed release enforces
+> S2S for both live and replayed exports, or clear the offline storage directory. After a
+> restart, the sync resolver returns `None` for identities that have not handled a turn and
+> prefetched yet, so replayed records for idle identities can age out (default max record age:
+> 2 days). This is acceptable during migration because offline storage is disabled.
 
 #### Canonical: manual per-turn baggage construction (matches AF sample)
 
@@ -884,6 +916,7 @@ when the distro initializes — no manual `*Instrumentor().instrument()` calls n
 use_microsoft_opentelemetry(
     enable_a365=True,
     a365_enable_observability_exporter=True,
+    a365_use_s2s_endpoint=True,
     a365_token_resolver=...,
 )
 ```
@@ -1042,7 +1075,7 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 | Token resolver returns `None` | The turn's app-only token was never prefetched or its acquisition failed (see the `Failed to acquire observability token` warning), or the turn has no agent identity | Await `_setup_observability_token(...)` (which calls `OBS_TOKENS.prefetch(...)`) at the start of each handler turn. Check that the hosting connection holds the blueprint credential |
 | `ModuleNotFoundError: microsoft.opentelemetry` | Package not installed | `pip install microsoft-opentelemetry` |
 | `uv sync` runs for minutes / appears to hang on a Google ADK project | OTel resolver backtracking between `google-adk` (`opentelemetry-sdk<1.39.0`) and `microsoft-opentelemetry` 1.1.x (newer transitive OTel SDK) | Add `[tool.uv] override-dependencies` to `pyproject.toml` pinning `opentelemetry-api` and `opentelemetry-sdk` to `>=1.38.0,<1.39.0`. See the "Google ADK projects — pin the OTel stack" section above. |
-| 401 on export | The exporter is on the delegated route (`a365_use_s2s_endpoint` not set) or received a delegated token | Set `a365_use_s2s_endpoint=True` and use the app-only resolver. The token must have no `scp` claim, and its `azp`/`appid` must equal the exporting agent ID |
+| 401 on export | The exporter is on the delegated route (`a365_use_s2s_endpoint` not set) or received the wrong token | Set `a365_use_s2s_endpoint=True` and use the app-only resolver. The token must have no `scp` claim, `azp`/`appid` equal to the exporting agent ID, matching `tid`, and `aud` equal to the Observability API |
 | Spans dropped silently | Missing tenant/agent ID in baggage | Ensure `enable_baggage=True` and that `populate(builder, context)` runs before scope creation |
 | Delegated (OBO) telemetry token code still runs in the handler | Telemetry no longer uses a per-turn OBO exchange in any mode | Remove the `exchange_token(... get_observability_authentication_scope() ...)` / `cache_agentic_token` path. Interactive agents prefetch an app-only token; `s2s` agents use the background token service |
 | S2S 401: wrong Hop 3 scope | FMI Hop 3 used `https://api.powerplatform.com/.default` from older samples | Change Hop 3 scope to `api://9b975845-388f-4429-889e-eab1ef63949c/.default` |

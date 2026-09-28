@@ -97,8 +97,8 @@ delegated telemetry" in Phase 3).
 > agent identity, whatever the `authMode`. The S2S route rejects delegated (`scp`) tokens, so
 > OBO / Agentic User tokens are used only for workload calls (MCP / Graph), never for the
 > exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite`
-> permission or admin consent (subject to service policy), and `a365 setup all` no longer requests
-> them for blueprint agents. AI Teammate setup (`a365 setup all --aiteammate`) still offers the
+> permission or admin consent (subject to service policy). Newer `a365 setup all` versions skip
+> that grant for blueprint agents; older versions may still grant it harmlessly. AI Teammate setup (`a365 setup all --aiteammate`) still offers the
 > `OtelWrite` application role; complete the app-role action item it prints, because the S2S route
 > accepts that role.
 
@@ -261,7 +261,7 @@ flag live in the references — see the "Required packages" section of:
 
 > **Migrating delegated telemetry (the one non-additive edit).** If the project already wires
 > the legacy delegated (OBO-route) telemetry path, replace it. That path is:
-> - Node.js: `AgenticTokenCacheInstance.refreshObservabilityToken(..., authorization)`, a
+> - Node.js: `AgenticTokenCacheInstance.refreshObservabilityToken(...)`, a
 >   `preloadObservabilityToken` helper, or a `tokenResolver` reading
 >   `AgenticTokenCacheInstance.getObservabilityToken(...)`.
 > - .NET: `RegisterObservability(..., new AgenticTokenStruct(...), ...)`, any
@@ -274,10 +274,13 @@ flag live in the references — see the "Required packages" section of:
 >
 > The S2S route rejects those delegated tokens, and the delegated route needs admin consent. Swap the
 > resolver for the app-only one, set the S2S route flag, and remove the per-turn delegated
-> refresh. Keep the baggage and scope wiring. Durable or offline delivery spools keep each
-> record's original route, so for `@microsoft/opentelemetry` 1.4.x set
-> `a365.durableDelivery: { enabled: false }` during the migration (as the Agent 365 samples do)
-> or clear the spool directory. List every replaced call in the final summary.
+> refresh. Keep the baggage and scope wiring. Durable/offline delivery spools keep each
+> record's original route, so disable replay until the installed release enforces S2S for both
+> live and replayed exports, or clear the spool directory:
+> - Node.js (`@microsoft/opentelemetry` 1.4.0+): `a365: { durableDelivery: { enabled: false } }`
+> - .NET (`Microsoft.OpenTelemetry` 1.1.0+): `o.Agent365.DisableOfflineStorage = true`
+> - Python (`microsoft-opentelemetry`): `a365_exporter_disable_offline_storage=True`
+> List every replaced call in the final summary.
 
 ### For .NET AgentFramework
 
@@ -377,7 +380,7 @@ flag live in the references — see the "Required packages" section of:
          : null;
      ```
    - **Keep the `Agent365Observability` section in `appsettings.json`** (`EnableAgent365Exporter` and base exporter settings are still required — Phase 6 handles these). No S2S credentials are needed there: `AgentAppTokenResolver` uses the agent's `Connections` settings, and agentic turns resolve their agent ID at runtime.
-   - **The inline pattern shown above is preferred** for new code (mirrors PR #308 in `microsoft/Agent365-Samples`). The older `A365OtelWrapper.InvokeObservedAgentOperation(...)` static-wrapper pattern at `Agent365-samples/dotnet/agent-framework/sample-agent/telemetry/A365OtelWrapper.cs` is functionally equivalent but uses a separate helper class.
+   - `A365OtelWrapper` is the legacy delegated-token wrapper. Remove it and migrate the handler to the inline app-only S2S pattern above (see "Migrating delegated telemetry" in Phase 3).
 
    **S2S path**:
    - Inject `Agent365ObservabilityContext` (singleton registered by `AddAgent365Observability()`) in the constructor
@@ -839,7 +842,7 @@ If expected files are not found:
 
 This skill is safe to rerun. On subsequent runs:
 - Skip package installation if packages already present
-- Skip code edits only if observability is already wired **the current way**. Marker comments must be present, the S2S route flag must be set (`useS2SEndpoint: true` / `a365_use_s2s_endpoint=True` / `o.Agent365.UseS2SEndpoint = true`), and no delegated-telemetry signal may remain: `refreshObservabilityToken(..., authorization)`, `AgenticTokenCacheInstance.getObservabilityToken`, `AgenticTokenStruct` / `RegisterObservability(..., AgenticTokenStruct)`, `exchange_token(...)` for the observability scope, `cache_agentic_token`, or an `AgenticTokenCache` resolver. Marker comments alone are not enough — code written by earlier versions of this skill carries them on the delegated wiring. If any delegated signal is present or the route flag is missing, run "Migrating delegated telemetry" (Phase 3) instead of skipping.
+- Skip code edits only if observability is already wired **the current way**. Marker comments must be present, the S2S route flag must be set (`useS2SEndpoint: true` / `a365_use_s2s_endpoint=True` / `o.Agent365.UseS2SEndpoint = true`), and no delegated-telemetry signal may remain: `refreshObservabilityToken(...)`, `AgenticTokenCacheInstance.getObservabilityToken`, `AgenticTokenStruct` / `RegisterObservability(..., AgenticTokenStruct)`, `exchange_token(...)` for the observability scope, `cache_agentic_token`, or an `AgenticTokenCache` resolver. Marker comments alone are not enough — code written by earlier versions of this skill carries them on the delegated wiring. If any delegated signal is present or the route flag is missing, run "Migrating delegated telemetry" (Phase 3) instead of skipping.
 - Update configuration only if values are missing
 - Always revalidate the build
 
@@ -849,10 +852,10 @@ This skill is safe to rerun. On subsequent runs:
 
 ### Authorization — registration, not OtelWrite
 
-Telemetry is exported over the S2S route with an app-only token for the agent identity. Registered agent instances are authorized on that route **without** `Agent365.Observability.OtelWrite` or admin consent (subject to service policy). `a365 setup all` no longer requests Observability API permissions for blueprint agents, and a failed or unverifiable registration now fails setup.
+Telemetry is exported over the S2S route with an app-only token for the agent identity. Registered agent instances are authorized on that route **without** `Agent365.Observability.OtelWrite` or admin consent (subject to service policy). Newer `a365 setup all` versions skip Observability API permissions for blueprint agents and exit 1 when registration fails or cannot be verified. Older versions may still grant OtelWrite (harmless) and may exit 0 after a failed registration, so check setup output for registration errors and rerun `a365 setup all --agent-registration-only` if needed.
 
 - **403 `insufficient_scope` on export** → the agent instance is not registered and has no `OtelWrite` application role. Blueprint agents: run `a365 setup all --agent-registration-only` (idempotent), then retry. AI Teammates: that flag does not apply — complete the Observability API S2S app-role action item `a365 setup all --aiteammate` prints (the application role below).
-- **Application role (AI Teammates, and fallback for blueprint agents):** a Global Administrator can grant the `Agent365.Observability.OtelWrite` **application** role on the Blueprint, which agent identities inherit. The S2S route accepts it. Use the PowerShell steps that `a365 setup all` prints, or the Entra portal: App registrations > Blueprint > API permissions > APIs my organization uses > `9b975845-388f-4429-889e-eab1ef63949c` > **Application** `Agent365.Observability.OtelWrite` > Grant admin consent.
+- **Application role (AI Teammates, and fallback for blueprint agents):** a Global Administrator can grant the `Agent365.Observability.OtelWrite` **application** role on the Blueprint, which agent identities inherit. The S2S route accepts it. Use the PowerShell steps that `a365 setup all` prints, or the Entra portal: App registrations > Blueprint > API permissions > APIs my organization uses > `9b975845-388f-4429-889e-eab1ef63949c` > **Application** `Agent365.Observability.OtelWrite` > Grant admin consent. `a365 setup all --aiteammate` still requests OtelWrite as both delegated and application permission; run the printed script. The application role is what the S2S route accepts, and the delegated part is harmless and not used for telemetry.
 - **Do not** add the delegated `OtelWrite` scope or run a delegated consent flow for telemetry. Delegated tokens are rejected by the S2S route. Only agents still on an old SDK that exports over the delegated route need that grant, and they should migrate instead (see "Migrating delegated telemetry" in Phase 3).
 
 ### Node.js and .NET SDK `/otlp/` URL Path Bug

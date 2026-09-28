@@ -473,18 +473,40 @@ _agentTokenCache?.RegisterObservability(agentId, tenantId,
     } finally { cleanup(dir); }
   });
 
-  test('Node.js refreshObservabilityToken(..., authorization) → reports delegated telemetry token', () => {
+  test('Node.js lowercase refreshObservabilityToken without authorization literal → reports delegated telemetry token', () => {
     const dir = createFixture({
       ...NODEJS_DISTRO_VALID,
       'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}
 await AgenticTokenCacheInstance.refreshObservabilityToken(
-  agentId, tenantId, turnContext as any, this.authorization as any);`,
+  agentId, tenantId, turnContext as any, app.auth);`,
     });
     try {
       const r = runValidator(VALIDATOR, dir);
       assert.equal(r.ok, false);
       assert.match(r.reason, /refreshObservabilityToken.*delegated \(OBO\) telemetry token/);
     } finally { cleanup(dir); }
+  });
+
+  test('Node.js PascalCase app-only RefreshObservabilityToken overload is allowed; delegated overload is flagged', () => {
+    const appOnly = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}
+await tokenCache.RefreshObservabilityToken(agentId, tenantId, resolver);`,
+    });
+    const delegated = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/agent.ts': `${NODEJS_DISTRO_VALID['src/agent.ts']}
+await tokenCache.RefreshObservabilityToken(agentId, tenantId, buildContext({ nested: [1, 2] }), app.auth);`,
+    });
+    try {
+      assert.equal(runValidator(VALIDATOR, appOnly).ok, true);
+      const r = runValidator(VALIDATOR, delegated);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /RefreshObservabilityToken.*delegated \(OBO\) telemetry token/);
+    } finally {
+      cleanup(appOnly);
+      cleanup(delegated);
+    }
   });
 
   test('Node.js comment mentioning refreshObservabilityToken is not flagged', () => {
