@@ -598,6 +598,17 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       'a365.config.json': JSON.stringify({ aiTeammate: false }),
       'a365.generated.config.json': JSON.stringify({ agenticAppId: agentId }),
     });
+    const configFree = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const noAiTeammateField = createFixture({
+      'a365.config.json': JSON.stringify({ agentBlueprintId: blueprintId }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const explicitAiTeammate = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: true }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
     try {
       const finding = runValidator(VALIDATOR, systemAgent).findings.find(f => f.id === 'agent-registration-not-recorded');
       assert.ok(finding, 'expected agent-registration-not-recorded');
@@ -609,6 +620,12 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
         assert.ok(!findingIds(runValidator(scanner, aiTeammate)).includes('agent-registration-not-recorded'), scanner);
         assert.ok(!findingIds(runValidator(scanner, noBlueprint)).includes('agent-registration-not-recorded'),
           `${scanner}: without a blueprint ID there is no blueprint agent instance to register`);
+        assert.ok(findingIds(runValidator(scanner, configFree)).includes('agent-registration-not-recorded'),
+          `${scanner}: config-free blueprint setup writes no a365.config.json, and only blueprint setup writes agenticAppId`);
+        assert.ok(findingIds(runValidator(scanner, noAiTeammateField)).includes('agent-registration-not-recorded'),
+          `${scanner}: a blueprint config does not need an explicit aiTeammate:false field`);
+        assert.ok(!findingIds(runValidator(scanner, explicitAiTeammate)).includes('agent-registration-not-recorded'),
+          `${scanner}: an explicit aiTeammate:true config is an AI Teammate, which --agent-registration-only does not apply to`);
       }
     } finally {
       cleanup(systemAgent);
@@ -616,6 +633,9 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       cleanup(aiTeammate);
       cleanup(fallback);
       cleanup(noBlueprint);
+      cleanup(configFree);
+      cleanup(noAiTeammateField);
+      cleanup(explicitAiTeammate);
     }
   });
 

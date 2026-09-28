@@ -689,7 +689,9 @@ function validateSetupArtifacts() {
   const staticConfig = readJsonSafe(path.join(cwd, 'a365.config.json'));
   const detection = readJsonSafe(path.join(cwd, '.a365-workspace-detection.local.json')) || {};
   const agentType = String(detection.agentType || '').toLowerCase();
-  const isSystemAgent = agentType === 'system-agent' || (!agentType && staticConfig && staticConfig.aiTeammate === false);
+  // The cached agentType is authoritative. Without it, only an explicit aiTeammate: true marks an AI Teammate:
+  // the generated agenticAppId is written only by blueprint-agent setup, which can run without a365.config.json.
+  const isSystemAgent = agentType === 'system-agent' || (!agentType && !(staticConfig && staticConfig.aiTeammate === true));
   if (isSystemAgent && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
     add('medium', 'agent-registration-not-recorded', 'a365.generated.config.json has an agent identity but no agentRegistrationId. The S2S route authorizes registered agent instances without an OtelWrite grant; an unregistered instance gets 403 insufficient_scope. Run a365 setup all --agent-registration-only (idempotent).', path.join(cwd, 'a365.generated.config.json'));
   }

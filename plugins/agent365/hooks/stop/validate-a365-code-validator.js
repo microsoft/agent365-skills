@@ -866,7 +866,9 @@ function validateSetupArtifacts() {
     const staticConfig = readJson(path.join(cwd, 'a365.config.json'));
     const detection = readJson(path.join(cwd, '.a365-workspace-detection.local.json')) || {};
     const agentType = String(detection.agentType || '').toLowerCase();
-    const isSystemAgent = agentType === 'system-agent' || (!agentType && staticConfig && staticConfig.aiTeammate === false);
+    // The cached agentType is authoritative. Without it, only an explicit aiTeammate: true marks an AI Teammate:
+    // the generated agenticAppId is written only by blueprint-agent setup, which can run without a365.config.json.
+    const isSystemAgent = agentType === 'system-agent' || (!agentType && !(staticConfig && staticConfig.aiTeammate === true));
     if (isSystemAgent && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
       add(
         'medium',
