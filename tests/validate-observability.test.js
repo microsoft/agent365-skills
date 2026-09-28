@@ -714,6 +714,114 @@ async def _legacy_cache(self, context, tenant_id, agent_id):
     } finally { cleanup(dir); }
   });
 
+  test('Node.js unused tokenResolver import with no resolver in the distro call → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': `import { tokenResolver } from './workload-token-resolver';\n${NODEJS_DISTRO_VALID['src/index.ts'].replace(', tokenResolver: appTokenResolver', '')}`,
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js options object passed to the distro call by variable → ok', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': `
+import { useMicrosoftOpenTelemetry } from '@microsoft/opentelemetry';
+import { createAppTokenResolver } from './observability/app-token-resolver';
+const appTokenResolver = createAppTokenResolver(() => getObsConnection());
+const otelOptions: MicrosoftOpenTelemetryOptions = {
+  a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver },
+};
+useMicrosoftOpenTelemetry(otelOptions);
+      `.trim(),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js shorthand tokenResolver property in the distro call → ok', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts']
+        .replace('const appTokenResolver =', 'const tokenResolver =')
+        .replace('tokenResolver: appTokenResolver', 'tokenResolver'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python resolver assigned but not passed to the distro call → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py']
+        .replace(', a365_token_resolver=OBS_TOKENS.resolve)', ')\na365_token_resolver = OBS_TOKENS.resolve'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365_token_resolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python keyword arguments passed with ** from a dict(...) → ok', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(
+        'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        'OTEL_KWARGS = dict(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)\nuse_microsoft_opentelemetry(**OTEL_KWARGS)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('Node.js resolver commented out inside the distro call → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(', tokenResolver: appTokenResolver', ',\n  // tokenResolver: appTokenResolver,\n'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /no a365 tokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
+  test('Python resolver added to a kwargs dict by key before the distro call → ok', () => {
+    const dir = createFixture({
+      ...PYTHON_DISTRO_VALID,
+      'host_agent_server.py': PYTHON_DISTRO_VALID['host_agent_server.py'].replace(
+        'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        'OTEL_KWARGS = dict(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True)\nOTEL_KWARGS["a365_token_resolver"] = OBS_TOKENS.resolve\nuse_microsoft_opentelemetry(**OTEL_KWARGS)'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
+  test('.NET TokenResolver assigned outside the UseMicrosoftOpenTelemetry options → reports the missing app-only resolver', () => {
+    const dir = createFixture({
+      ...DOTNET_DISTRO_VALID,
+      'Program.cs': DOTNET_DISTRO_VALID['Program.cs'].replace(/\n\s*o\.Agent365\.TokenResolver = [^\n]*/, ''),
+      'WorkloadTokens.cs': 'workloadOptions.TokenResolver = workloadTokens.ResolveAsync;',
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, false);
+      assert.match(r.reason, /without o\.Agent365\.TokenResolver/);
+    } finally { cleanup(dir); }
+  });
+
   test('Python distro passing the resolver through a kwargs dict → ok', () => {
     const dir = createFixture({
       ...PYTHON_DISTRO_VALID,

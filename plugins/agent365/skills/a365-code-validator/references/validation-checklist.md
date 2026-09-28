@@ -179,8 +179,9 @@ fragile and should be called out.
   telemetry token cache, `cache_agentic_token(...)`, or an `AgenticTokenCache` /
   `get_cached_agentic_token` resolver.
 - A distro call without the S2S transport flag.
-- A distro call with no token resolver (`tokenResolver`, `a365_token_resolver`, or
-  `o.Agent365.TokenResolver`). The S2S route then has no app-only token to export with.
+- A distro call whose own options pass no token resolver (`tokenResolver`, `a365_token_resolver`,
+  or `o.Agent365.TokenResolver`). The S2S route then has no app-only token to export with. A
+  resolver symbol elsewhere, such as an unused import, does not count.
 
 Each sends a delegated token (rejected by the S2S route) or uses the legacy delegated route, which
 needs admin consent. Replace it with the app-only resolver from the `instrument-observability`

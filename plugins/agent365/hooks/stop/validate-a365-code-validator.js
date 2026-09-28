@@ -109,6 +109,65 @@ function findCallBlocks(content, functionName) {
   return blocks;
 }
 
+// A distro call counts as wired only when its own arguments pass the export token resolver: an
+// explicit or shorthand `tokenResolver` property (Node.js), an `a365_token_resolver` keyword or
+// `**{...}` key (Python), or a `TokenResolver` assignment in the options callback (.NET). A variable
+// passed to the call is followed one level to its initializer in the same file; a resolver symbol
+// elsewhere, such as an unused import, does not count.
+const RESOLVER_WIRING = {
+  node: {
+    call: 'useMicrosoftOpenTelemetry',
+    wired: /[{,]\s*tokenResolver\s*(?=[,}])|\btokenResolver\s*:/,
+    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
+  },
+  python: {
+    call: 'use_microsoft_opentelemetry',
+    wired: /\ba365_(?:contextual_)?token_resolver\s*=(?!=)|['"]a365_(?:contextual_)?token_resolver['"]\s*:/,
+    comments: /(^|\s)#[^\n]*/gm,
+  },
+  dotnet: {
+    call: 'UseMicrosoftOpenTelemetry',
+    wired: /\b(?:Contextual)?TokenResolver\s*=(?!=)/,
+    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
+  },
+};
+
+// Returns the text from the bracket at `open` through its matching close bracket.
+function bracketBlock(content, open) {
+  const close = { '(': ')', '{': '}' }[content[open]];
+  let depth = 0;
+  for (let i = open; close && i < content.length; i++) {
+    if (content[i] === content[open]) depth++;
+    else if (content[i] === close && --depth === 0) return content.slice(open, i + 1);
+  }
+  return '';
+}
+
+function distroCallHasResolver(files, language) {
+  const { call, wired, comments } = RESOLVER_WIRING[language];
+  return files.some(file => {
+    const content = read(file).replace(comments, '$1');
+    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
+      const args = bracketBlock(content, index + call.length);
+      if (wired.test(args)) return true;
+      // .NET: a method group instead of an inline lambda configures the options elsewhere in the file.
+      if (language === 'dotnet' && !args.includes('=>') && wired.test(content)) return true;
+      for (const name of new Set(args.match(/[A-Za-z_$][\w$]*/g) || [])) {
+        const escaped = name.replace(/\$/g, '\\$');
+        const initializer = new RegExp(`(?:^|[^\\w$])${escaped}\\s*(?::[^=\\n]*)?=\\s*(?:dict\\s*)?([({])`, 'gm');
+        for (let m = initializer.exec(content); m; m = initializer.exec(content)) {
+          if (wired.test(bracketBlock(content, m.index + m[0].length - 1))) return true;
+        }
+        if (language === 'python' &&
+            new RegExp(`\\b${escaped}\\s*\\[\\s*['"]a365_(?:contextual_)?token_resolver['"]\\s*\\]\\s*=(?!=)`).test(content)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+}
+
 function validatePython() {
   const hasMicrosoftOpenTelemetryPackage = reqFiles.some(f => fileContains(f, 'microsoft-opentelemetry'));
   const hasDistroCall = anyFileContains(pyFiles, 'use_microsoft_opentelemetry');
@@ -190,7 +249,7 @@ function validatePython() {
     );
   }
 
-  if (expectsS2S && !hasExplicitExporterFalse && !anyFileMatches(pyFiles, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+  if (expectsS2S && !hasExplicitExporterFalse && !distroCallHasResolver(pyFiles, 'python')) {
     add(
       'high',
       'python-obs-token-resolver-missing',
@@ -344,7 +403,7 @@ function validateNode() {
       tsFiles.find(f => fileContains(f, 'useMicrosoftOpenTelemetry'))
     );
   }
-  if (hasDistroCall && hasA365Enabled && !hasExporterFalse && !anyFileMatches(tsFiles, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+  if (hasDistroCall && hasA365Enabled && !hasExporterFalse && !distroCallHasResolver(tsFiles, 'node')) {
     add(
       'high',
       'node-obs-token-resolver-missing',
@@ -436,7 +495,7 @@ function validateDotnet() {
       csFiles.find(f => fileContains(f, 'UseMicrosoftOpenTelemetry'))
     );
   }
-  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !anyFileMatches(csFiles, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+  if (anyFileContains(csFiles, 'UseMicrosoftOpenTelemetry') && !distroCallHasResolver(csFiles, 'dotnet')) {
     add(
       'high',
       'dotnet-obs-token-resolver-missing',
@@ -478,7 +537,7 @@ function validateSetupArtifacts() {
       );
     }
     const staticConfig = readJson(path.join(cwd, 'a365.config.json'));
-    if (staticConfig && staticConfig.aiTeammate === false && generated.agenticAppId && !generated.agentRegistrationId) {
+    if (staticConfig && staticConfig.aiTeammate === false && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
       add(
         'medium',
         'agent-registration-not-recorded',

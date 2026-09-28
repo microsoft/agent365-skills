@@ -329,7 +329,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite** — compute four sub-signals, then combine:
   - `obs_entry`     = `useMicrosoftOpenTelemetry` in any `src/**/*.ts`
-  - `obs_token`     = `tokenResolver` in any `src/**/*.ts` (the app-only resolver `observability/app-token-resolver.ts` for obo / agentic-user; S2S also accepts `getS2SObservabilityToken` / `startTokenService`), AND no `refreshObservabilityToken(..., authorization)` call or `AgenticTokenCacheInstance.getObservabilityToken` resolver (either means the telemetry token is delegated)
+  - `obs_token`     = the `useMicrosoftOpenTelemetry({...})` call passes `tokenResolver` in its `a365` options (the app-only resolver `observability/app-token-resolver.ts` for obo / agentic-user; S2S also accepts `getS2SObservabilityToken` / `startTokenService`). A `tokenResolver` symbol elsewhere, such as an unused import, does not count. AND no `refreshObservabilityToken(..., authorization)` call or `AgenticTokenCacheInstance.getObservabilityToken` resolver (either means the telemetry token is delegated)
   - `obs_route`     = `useS2SEndpoint: true` in any `src/**/*.ts` (telemetry uses the S2S route in every auth mode)
   - `obs_handler`   = `BaggageBuilder` OR `BaggageBuilderUtils` OR `InvokeAgentScope` in any `src/**/*.ts`
   - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`
@@ -343,7 +343,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite:**
   - `obs_entry`   = `UseMicrosoftOpenTelemetry` in `Program.cs` (or legacy `AddA365Tracing`)
-  - `obs_token`   = `AgentAppTokenResolver` (obo / agentic-user) or `ObservabilityTokenService` / `AddAgent365Observability` (S2S), AND no `AgenticTokenStruct` usage (`RegisterObservability(..., new AgenticTokenStruct(...))`, `new AgenticTokenStruct(...)`, or an `IExporterTokenCache<AgenticTokenStruct>` dependency — all register a delegated telemetry token)
+  - `obs_token`   = the `UseMicrosoftOpenTelemetry(...)` options assign `o.Agent365.TokenResolver` (`o.Agent365.Exporter.TokenResolver` on 1.0.2 and earlier) to `AgentAppTokenResolver` (obo / agentic-user) or to the token cache fed by `ObservabilityTokenService` / `AddAgent365Observability` (S2S). A scaffold file that is never assigned does not count. AND no `AgenticTokenStruct` usage (`RegisterObservability(..., new AgenticTokenStruct(...))`, `new AgenticTokenStruct(...)`, or an `IExporterTokenCache<AgenticTokenStruct>` dependency — all register a delegated telemetry token)
   - `obs_route`   = `UseS2SEndpoint = true` in any `**/*.cs` (telemetry uses the S2S route in every auth mode)
   - `obs_handler` = `BaggageBuilder` OR `BaggageTurnMiddleware` OR `InvokeAgentScope.Start` in `**/*.cs`
   - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`
@@ -357,7 +357,7 @@ Ask: "What language and framework are you using?" and set `language` and `agentS
 - `ToolingManifest.json` exists → `hasManifest`
 - **Observability composite:**
   - `obs_entry`   = `use_microsoft_opentelemetry` in any `**/*.py`
-  - `obs_token`   = `token_resolver` (the app-only `AppTokenResolver` / `OBS_TOKENS` for obo / agentic-user; S2S: `run_token_service` / `get_s2s_observability_token`), AND no `exchange_token(...)` for the observability scope, `cache_agentic_token(...)`, or `AgenticTokenCache` / `get_cached_agentic_token` resolver (all are delegated telemetry tokens)
+  - `obs_token`   = the `use_microsoft_opentelemetry(...)` call passes `a365_token_resolver=` (the app-only `OBS_TOKENS.resolve` for obo / agentic-user; S2S: the `run_token_service` / `get_s2s_observability_token` cache). A resolver defined but not passed does not count. AND no `exchange_token(...)` for the observability scope, `cache_agentic_token(...)`, or `AgenticTokenCache` / `get_cached_agentic_token` resolver (all are delegated telemetry tokens)
   - `obs_route`   = `a365_use_s2s_endpoint=True` in any `**/*.py` (or `A365_USE_S2S_ENDPOINT=true` in `.env`) — telemetry uses the S2S route in every auth mode
   - `obs_handler` = `BaggageBuilder` OR `populate_baggage` OR `InvokeAgentScope` in any `**/*.py`
   - `has_obs_complete` = `obs_entry && obs_token && obs_route && obs_handler`

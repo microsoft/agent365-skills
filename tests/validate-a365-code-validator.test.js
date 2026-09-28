@@ -4,6 +4,7 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 const { createFixture, runValidator, cleanup } = require('./helpers');
 
@@ -431,16 +432,26 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
       'a365.config.json': JSON.stringify({ aiTeammate: true }),
       'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
     });
+    const noBlueprint = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agenticAppId: agentId }),
+    });
     try {
       const finding = runValidator(VALIDATOR, unregistered).findings.find(f => f.id === 'agent-registration-not-recorded');
       assert.ok(finding, 'expected agent-registration-not-recorded');
       assert.equal(finding.severity, 'medium');
       assert.ok(!findingIds(runValidator(VALIDATOR, registered)).includes('agent-registration-not-recorded'));
       assert.ok(!findingIds(runValidator(VALIDATOR, aiTeammate)).includes('agent-registration-not-recorded'));
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(findingIds(runValidator(scanner, unregistered)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, noBlueprint)).includes('agent-registration-not-recorded'),
+          `${scanner}: without a blueprint ID there is no blueprint agent instance to register`);
+      }
     } finally {
       cleanup(unregistered);
       cleanup(registered);
       cleanup(aiTeammate);
+      cleanup(noBlueprint);
     }
   });
 
@@ -550,6 +561,64 @@ token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d
     } finally {
       cleanup(dir);
     }
+  });
+
+  test('resolver symbols outside the distro call do not count in either scanner; options passed by variable do', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const unwired = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': `import { tokenResolver } from './workload-token-resolver';\n${NODE_S2S_INDEX.replace(', tokenResolver: appTokenResolver', '')}`,
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; });',
+      'WorkloadTokens.cs': 'workloadOptions.TokenResolver = workloadTokens.ResolveAsync;',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True)\na365_token_resolver = OBS_TOKENS.resolve',
+    });
+    const byVariable = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const otelOptions = { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };',
+        'useMicrosoftOpenTelemetry(otelOptions);',
+      ].join('\n'),
+      'Agent.csproj': csproj,
+      'Program.cs': [
+        'builder.UseMicrosoftOpenTelemetry(ConfigureTelemetry);',
+        'static void ConfigureTelemetry(MicrosoftOpenTelemetryOptions o) { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); }',
+      ].join('\n'),
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'OTEL_KWARGS = dict(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        'use_microsoft_opentelemetry(**OTEL_KWARGS)',
+      ].join('\n'),
+    });
+    const resolverIds = ids => ids.filter(id => /token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(resolverIds(findingIds(runValidator(scanner, unwired))), [
+          'dotnet-obs-token-resolver-missing',
+          'node-obs-token-resolver-missing',
+          'python-obs-token-resolver-missing',
+        ], scanner);
+        assert.deepEqual(resolverIds(findingIds(runValidator(scanner, byVariable))), [], scanner);
+      }
+    } finally {
+      cleanup(unwired);
+      cleanup(byVariable);
+    }
+  });
+
+  test('the stop hooks and the standalone scanner share one distro resolver helper', () => {
+    const observabilityHook = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-instrument-observability.js');
+    const helperText = file => {
+      const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+      const start = text.indexOf('const RESOLVER_WIRING = {');
+      const end = text.indexOf('\n}\n', text.indexOf('function distroCallHasResolver('));
+      assert.ok(start >= 0 && end > start, `${file}: resolver helper not found`);
+      return text.slice(start, end);
+    };
+    const expected = helperText(VALIDATOR);
+    assert.equal(helperText(STANDALONE), expected, 'standalone scanner must use the same resolver helper');
+    assert.equal(helperText(observabilityHook), expected, 'instrument-observability hook must use the same resolver helper');
   });
 
   test('app-only S2S wiring in all three languages produces no delegated-telemetry findings in either scanner', () => {

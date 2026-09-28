@@ -107,6 +107,65 @@ function callBlocks(content, name) {
   return blocks;
 }
 
+// A distro call counts as wired only when its own arguments pass the export token resolver: an
+// explicit or shorthand `tokenResolver` property (Node.js), an `a365_token_resolver` keyword or
+// `**{...}` key (Python), or a `TokenResolver` assignment in the options callback (.NET). A variable
+// passed to the call is followed one level to its initializer in the same file; a resolver symbol
+// elsewhere, such as an unused import, does not count.
+const RESOLVER_WIRING = {
+  node: {
+    call: 'useMicrosoftOpenTelemetry',
+    wired: /[{,]\s*tokenResolver\s*(?=[,}])|\btokenResolver\s*:/,
+    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
+  },
+  python: {
+    call: 'use_microsoft_opentelemetry',
+    wired: /\ba365_(?:contextual_)?token_resolver\s*=(?!=)|['"]a365_(?:contextual_)?token_resolver['"]\s*:/,
+    comments: /(^|\s)#[^\n]*/gm,
+  },
+  dotnet: {
+    call: 'UseMicrosoftOpenTelemetry',
+    wired: /\b(?:Contextual)?TokenResolver\s*=(?!=)/,
+    comments: /\/\*[\s\S]*?\*\/|(^|[\s,{;(])\/\/[^\n]*/gm,
+  },
+};
+
+// Returns the text from the bracket at `open` through its matching close bracket.
+function bracketBlock(content, open) {
+  const close = { '(': ')', '{': '}' }[content[open]];
+  let depth = 0;
+  for (let i = open; close && i < content.length; i++) {
+    if (content[i] === content[open]) depth++;
+    else if (content[i] === close && --depth === 0) return content.slice(open, i + 1);
+  }
+  return '';
+}
+
+function distroCallHasResolver(files, language) {
+  const { call, wired, comments } = RESOLVER_WIRING[language];
+  return files.some(file => {
+    const content = read(file).replace(comments, '$1');
+    for (let index = content.indexOf(`${call}(`); index !== -1; index = content.indexOf(`${call}(`, index + 1)) {
+      const args = bracketBlock(content, index + call.length);
+      if (wired.test(args)) return true;
+      // .NET: a method group instead of an inline lambda configures the options elsewhere in the file.
+      if (language === 'dotnet' && !args.includes('=>') && wired.test(content)) return true;
+      for (const name of new Set(args.match(/[A-Za-z_$][\w$]*/g) || [])) {
+        const escaped = name.replace(/\$/g, '\\$');
+        const initializer = new RegExp(`(?:^|[^\\w$])${escaped}\\s*(?::[^=\\n]*)?=\\s*(?:dict\\s*)?([({])`, 'gm');
+        for (let m = initializer.exec(content); m; m = initializer.exec(content)) {
+          if (wired.test(bracketBlock(content, m.index + m[0].length - 1))) return true;
+        }
+        if (language === 'python' &&
+            new RegExp(`\\b${escaped}\\s*\\[\\s*['"]a365_(?:contextual_)?token_resolver['"]\\s*\\]\\s*=(?!=)`).test(content)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+}
+
 function validatePython() {
   const hasPackage = req.some(f => read(f).includes('microsoft-opentelemetry'));
   const hasDistro = anyContains(py, 'use_microsoft_opentelemetry');
@@ -146,7 +205,7 @@ function validatePython() {
   } else if (expectsS2S && !s2sTrue && !s2sEnv) {
     add('high', 'python-s2s-endpoint-not-set', 'Python does not set a365_use_s2s_endpoint=True (or A365_USE_S2S_ENDPOINT=true), so export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only token.', py.find(f => read(f).includes('use_microsoft_opentelemetry')));
   }
-  if (expectsS2S && !exporterFalse && !anyMatches(py, /\ba365_(?:contextual_)?token_resolver\b['"]?\s*\]?\s*[=:](?!=)/)) {
+  if (expectsS2S && !exporterFalse && !distroCallHasResolver(py, 'python')) {
     add('high', 'python-obs-token-resolver-missing', 'use_microsoft_opentelemetry() has no a365_token_resolver (or a365_contextual_token_resolver), so the S2S route gets no app-only token and the exporter drops spans. Pass an app-only resolver (instrument-observability app_token_resolver.py for obo / agentic-user, or the S2S token-service cache).', py.find(f => read(f).includes('use_microsoft_opentelemetry')));
   }
   for (const file of py) {
@@ -235,7 +294,7 @@ function validateNode() {
   if (hasDistro && hasEnabled && !anyMatches(ts, /\buseS2SEndpoint\s*:\s*true\b/)) {
     add('high', 'node-obs-delegated-route', 'Node code does not set useS2SEndpoint: true, so A365 export uses the legacy delegated route. Every auth mode must export over the S2S route with an app-only tokenResolver.', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
-  if (hasDistro && hasEnabled && !exporterFalse && !anyMatches(ts, /\btokenResolver\b\s*[:=,}](?!=)/)) {
+  if (hasDistro && hasEnabled && !exporterFalse && !distroCallHasResolver(ts, 'node')) {
     add('high', 'node-obs-token-resolver-missing', 'useMicrosoftOpenTelemetry() has no a365 tokenResolver, so the S2S route gets no app-only token. Pass an app-only tokenResolver (instrument-observability app-token-resolver.ts for obo / agentic-user, or the S2S token service).', ts.find(f => read(f).includes('useMicrosoftOpenTelemetry')));
   }
   for (const file of ts) {
@@ -278,7 +337,7 @@ function validateDotnet() {
   if (anyContains(cs, 'UseMicrosoftOpenTelemetry') && !anyMatches(cs, /\bUseS2SEndpoint\s*=\s*true\b/)) {
     add('high', 'dotnet-obs-delegated-route', 'UseMicrosoftOpenTelemetry is wired without UseS2SEndpoint = true, so A365 export uses the legacy delegated route. Set o.Agent365.UseS2SEndpoint = true (o.Agent365.Exporter.UseS2SEndpoint on Microsoft.OpenTelemetry 1.0.2 and earlier) with an app-only TokenResolver in every auth mode.', cs.find(f => read(f).includes('UseMicrosoftOpenTelemetry')));
   }
-  if (anyContains(cs, 'UseMicrosoftOpenTelemetry') && !anyMatches(cs, /\b(?:Contextual)?TokenResolver\s*=(?!=)/)) {
+  if (anyContains(cs, 'UseMicrosoftOpenTelemetry') && !distroCallHasResolver(cs, 'dotnet')) {
     add('high', 'dotnet-obs-token-resolver-missing', 'UseMicrosoftOpenTelemetry is wired without o.Agent365.TokenResolver, so the S2S route gets no app-only token (the distro default token cache holds delegated tokens). Set TokenResolver to an app-only resolver (instrument-observability AgentAppTokenResolver for obo / agentic-user, or the ServiceTokenCache from ObservabilityTokenService for s2s).', cs.find(f => read(f).includes('UseMicrosoftOpenTelemetry')));
   }
   for (const file of cs) {
@@ -300,7 +359,7 @@ function validateSetupArtifacts() {
     add('critical', 'blueprint-id-used-as-agent-id', 'a365.generated.config.json has identical blueprint and agentic app IDs. Verify runtime gen_ai.agent.id uses the agent instance/source agent ID, not the blueprint ID.', path.join(cwd, 'a365.generated.config.json'));
   }
   const staticConfig = readJsonSafe(path.join(cwd, 'a365.config.json'));
-  if (staticConfig && staticConfig.aiTeammate === false && generated.agenticAppId && !generated.agentRegistrationId) {
+  if (staticConfig && staticConfig.aiTeammate === false && generated.agentBlueprintId && generated.agenticAppId && !generated.agentRegistrationId) {
     add('medium', 'agent-registration-not-recorded', 'a365.generated.config.json has an agent identity but no agentRegistrationId. The S2S route authorizes registered agent instances without an OtelWrite grant; an unregistered instance gets 403 insufficient_scope. Run a365 setup all --agent-registration-only (idempotent).', path.join(cwd, 'a365.generated.config.json'));
   }
 }
