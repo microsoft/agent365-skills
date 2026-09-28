@@ -458,6 +458,44 @@ await AgenticTokenCacheInstance.refreshObservabilityToken(
     }
   });
 
+  test('Node options spreads are followed, and unresolvable spreads keep the call active in both scanners', () => {
+    const spreadNoRoute = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const baseOptions = { a365: { enabled: true, enableObservabilityExporter: true, tokenResolver: appTokenResolver } };\nuseMicrosoftOpenTelemetry({ ...baseOptions });',
+    });
+    const spreadWired = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const baseOptions = { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };\nuseMicrosoftOpenTelemetry({ ...baseOptions });',
+    });
+    const spreadCall = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ ...buildBaseOptions() });',
+    });
+    const spreadImport = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "import { baseOptions } from './otel-options';\nuseMicrosoftOpenTelemetry({ ...baseOptions });",
+    });
+    const s2sIds = result => findingIds(result).filter(id => /^node-obs-(?:delegated-route|token-resolver-missing)$/.test(id)).sort();
+    const unwired = ['node-obs-delegated-route', 'node-obs-token-resolver-missing'];
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadNoRoute)), ['node-obs-delegated-route'],
+          `${scanner}: a same-file options spread is read, so its missing route is reported`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadWired)), [],
+          `${scanner}: route and resolver inside a same-file options spread count as wired`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadCall)), unwired,
+          `${scanner}: a spread built by a call cannot be read, so the call stays active and unwired`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadImport)), unwired,
+          `${scanner}: an imported spread cannot be read, so the call stays active and unwired`);
+      }
+    } finally {
+      cleanup(spreadNoRoute);
+      cleanup(spreadWired);
+      cleanup(spreadCall);
+      cleanup(spreadImport);
+    }
+  });
+
   test('.NET distro without UseS2SEndpoint and with AgenticTokenStruct registration reports both findings', () => {
     const dir = createFixture({
       'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',

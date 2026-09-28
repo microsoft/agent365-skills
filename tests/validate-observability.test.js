@@ -957,6 +957,19 @@ useMicrosoftOpenTelemetry(otelOptions);
     } finally { cleanup(dir); }
   });
 
+  test('Node.js options spread resolved to an object literal → ok', () => {
+    const dir = createFixture({
+      ...NODEJS_DISTRO_VALID,
+      'src/index.ts': NODEJS_DISTRO_VALID['src/index.ts'].replace(
+        'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+        'const baseOptions = { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };\nuseMicrosoftOpenTelemetry({ ...baseOptions });'),
+    });
+    try {
+      const r = runValidator(VALIDATOR, dir);
+      assert.equal(r.ok, true, r.reason);
+    } finally { cleanup(dir); }
+  });
+
   test('Node.js unresolvable a365 identifier → reports both requirements', () => {
     const dir = createFixture({
       ...NODEJS_DISTRO_VALID,

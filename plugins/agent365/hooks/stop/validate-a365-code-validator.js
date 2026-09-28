@@ -347,13 +347,38 @@ function nodeOptionsTexts(outside, args) {
   if (values.length === 0) return { texts: [], unreadable: false };
   const first = values[0].trim();
   if (!first) return { texts: [], unreadable: false };
-  if (first[0] === '{') return { texts: [first], unreadable: false };
+  if (first[0] === '{') return nodeObjectTexts(outside, first, new Set());
   const identifier = first.match(/^[A-Za-z_$][\w$]*$/);
-  if (identifier) {
-    const initializers = initializerBlocks(outside, identifier[0]);
-    return initializers.length ? { texts: initializers, unreadable: false } : { texts: [], unreadable: true };
-  }
+  if (identifier) return nodeIdentifierTexts(outside, identifier[0], new Set());
   return { texts: [], unreadable: true };
+}
+
+// An options object plus the same-file objects its top-level spreads resolve to. Any other spread
+// (a call, a member access, an import) makes the options unreadable.
+function nodeObjectTexts(outside, text, seen) {
+  const result = { texts: [text], unreadable: false };
+  for (const field of splitTopLevel(text)) {
+    if (!field.startsWith('...')) continue;
+    const name = field.slice(3).trim().match(/^[A-Za-z_$][\w$]*$/);
+    const spread = name ? nodeIdentifierTexts(outside, name[0], seen) : { texts: [], unreadable: true };
+    result.texts.push(...spread.texts);
+    result.unreadable = result.unreadable || spread.unreadable;
+  }
+  return result;
+}
+
+function nodeIdentifierTexts(outside, name, seen) {
+  if (seen.has(name)) return { texts: [], unreadable: false };
+  seen.add(name);
+  const objects = initializerBlocks(outside, name).filter(block => block.startsWith('{'));
+  if (objects.length === 0) return { texts: [], unreadable: true };
+  const result = { texts: [], unreadable: false };
+  for (const object of objects) {
+    const nested = nodeObjectTexts(outside, object, seen);
+    result.texts.push(...nested.texts);
+    result.unreadable = result.unreadable || nested.unreadable;
+  }
+  return result;
 }
 
 // True when a distro call in `files` passes an option matching `option`.
