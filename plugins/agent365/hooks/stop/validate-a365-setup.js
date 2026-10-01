@@ -2,7 +2,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 /**
- * validate-setup.js
+ * validate-a365-setup.js
  *
  * Stop hook validator for the a365-setup skill.
  * a365-setup is responsible for Steps 1-2 only (CLI + Azure prereqs), then
@@ -14,6 +14,8 @@
  *   - a365 CLI is installed and on PATH
  *   - If a365.generated.config.json happens to exist (delegated skill ran),
  *     validate it has a non-empty agentBlueprintId (non-blocking warning if missing)
+ * Standalone Copilot SDK takes an early local-only branch. --report-only allows
+ * pending prerequisites, never operation approval; ordinary invocation is strict.
  *
  * Exit codes:
  *   0  → ok: true  (session may end)
@@ -23,9 +25,29 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { getCopilotSdkProject } = require('../lib/copilot-sdk');
 
 const issues = [];
 const cwd = process.cwd();
+const copilotSdk = getCopilotSdkProject(cwd);
+if (copilotSdk) {
+  // Report completion never authorizes registration or edits.
+  const reportOnly = process.argv.includes('--report-only');
+  const standaloneIssues = reportOnly ? copilotSdk.reportIssues : copilotSdk.issues;
+  process.stdout.write(JSON.stringify({
+    ok: standaloneIssues.length === 0,
+    status: standaloneIssues.length ? 'blocked' : reportOnly ? 'report-only' : 'local-context-validated',
+    operationAllowed: false,
+    ...(standaloneIssues.length ? { reason: standaloneIssues.join('; ') } : {}),
+    pending: [
+      ...copilotSdk.prerequisites,
+      'Registration and instrumentation require separate explicit approvals and local validation',
+      'Tenant authentication, identity, grants, registry registration, and ingestion are not verified',
+    ],
+    note: 'Local static report only; no CLI, authentication, installation, or provisioning was run',
+  }));
+  process.exit(standaloneIssues.length ? 1 : 0);
+}
 
 function fileExists(filePath) {
   try { fs.accessSync(filePath); return true; } catch { return false; }

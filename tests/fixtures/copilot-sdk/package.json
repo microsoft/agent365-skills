@@ -1,0 +1,9 @@
+{
+  "name": "copilot-sdk-onboarding-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@github/copilot-sdk": "1.0.14"
+  }
+}

@@ -32,6 +32,7 @@
 const fs   = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { getCopilotSdkProject } = require('../lib/copilot-sdk');
 const {
   scanProject,
   filterByName,
@@ -41,6 +42,13 @@ const {
 
 const cwd    = process.cwd();
 const issues = [];
+if (getCopilotSdkProject(cwd)) {
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    reason: 'GitHub Copilot SDK standalone spike does not support AI Teammate scaffolding; use a365-setup standalone registration, without changing hosting',
+  }));
+  process.exit(1);
+}
 
 // ── Detect language ─────────────────────────────────────────────────────────
 // One walk; bucket by name afterwards.

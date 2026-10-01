@@ -1,12 +1,16 @@
 ---
 name: a365-setup
 description: >
+  TypeScript @github/copilot-sdk projects take an EXCLUSIVE standalone branch:
+  read shared/copilot-sdk-standalone.md, never the generic setup-all/install workflow.
+  Read-only/no-approval runs report evidence and blockers without commands or edits.
   Entry point for general Agent 365 (A365) registration and CLI setup — use this skill whenever
   the user wants to "set up A365", "register agent", "create blueprint", or general A365 onboarding
   for non-AI-Teammate agents (Register, Observability paths). Verifies and installs the CLI,
   validates Azure prerequisites, then delegates to make-a365-agent or make-ai-teammate at Step 3.
   Does NOT run a365 setup all inline — setup is run by the delegated skill. Supports .NET AgentFramework,
-  Node.js LangChain, and Python agents.
+  Node.js LangChain, and Python agents. Recognizes TypeScript @github/copilot-sdk projects
+  for a guarded standalone registration/basic-observability spike, never AI Teammate routing.
 compatibility:
   - claude-code
   - vscode-copilot
@@ -22,11 +26,24 @@ hooks:
       timeout: 5000
   stop:
     - type: command
-      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-a365-setup.js
+      command: node ${CLAUDE_PLUGIN_ROOT}/hooks/stop/validate-a365-setup.js --report-only
       timeout: 15000
     - type: prompt
       prompt: |
-        Before ending, verify ALL of the following:
+        Select exactly one checklist; never combine them.
+        IF the direct dependency or cache identifies GitHub Copilot SDK:
+          Use shared/copilot-sdk-standalone.md, including its final-response check.
+          No generic setup-all, login/install, hosted, or AI Teammate recommendations.
+          Missing useMicrosoftOpenTelemetry is not evidence of missing standalone telemetry.
+          Read-only/no-approval runs may finish with pending prerequisites and no commands/edits.
+          The --report-only executable result permits ending the report, not proceeding.
+          For approved setup, verify standaloneApprovals.scope/s2s reflect explicit user
+          confirmations. Never create these flags merely to satisfy a validator.
+          Their final answer must use the shared three-paragraph report template and END.
+          No command names/examples, parenthetical setup-all mentions, next steps, or secret requests.
+          Return {"ok": false, "reason": "<specific violation>"} for a violated guard;
+          otherwise return {"ok": true}. STOP; do not evaluate the generic checklist.
+        ELSE, for non-Copilot-SDK projects only, verify ALL of the following:
         1. All required system prerequisites were checked: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
         2. a365 CLI is installed and confirmed with a365 -h.
         3. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
@@ -54,7 +71,13 @@ hooks:
 
 ---
 
-> **YOUR VERY FIRST ACTION:** Output the intro message below to the user, then silently detect the agent stack. Do NOT create todos, run setup commands, or read further until all Phase 1 questions are answered.
+> **YOUR VERY FIRST ACTION:** Output the neutral intro below, then select exactly one route before generic detection, todos, prerequisites, or authentication.
+
+**Read-only Copilot SDK request exception:** when the request explicitly identifies
+the SDK and read-only/no-approval scope, use only this intro instead:
+
+> I'll inspect the permitted local files and report the standalone detection,
+> preserved behavior, and unverified prerequisites. I will stop after that report.
 
 **MANDATORY INTRO MESSAGE — output this before doing anything else:**
 
@@ -63,14 +86,70 @@ I'll help you set up Agent 365 for this agent. Here's what I'll do:
 
   1. Detect your agent type, stack, and language (silently, takes a few seconds)
   2. Ask you to confirm what I found — or correct anything I got wrong
-  3. Ask how your agent authenticates (OBO / S2S)
-  4. Ask which capabilities you want (Register, Observability, WorkIQ, AI Teammate)
+  3. Ask which supported capabilities you want, preserving standalone hosting when applicable
+  4. Confirm authentication for the selected capabilities
 
-After those answers, I'll install any missing prerequisites, validate your Azure
-environment, and hand off to the right skill for the rest of setup.
+I'll report evidence and blockers for the selected route. Read-only or unapproved
+work stops at that report: no installs, authentication, provisioning, or file edits.
 
 Detecting your agent now…
 ```
+
+## Exclusive route selection
+
+Read the selected project's `package.json` before trusting any cache. If it has an
+exact `@github/copilot-sdk` key in `dependencies` or `devDependencies`, choose
+**Route A**. Also choose Route A when the cache claims `agentStack = "GitHub Copilot SDK"`
+but the dependency is absent; report the mismatch instead of using stale routing.
+Only when neither condition applies may you enter the **Generic workflow** below.
+
+### Route A: GitHub Copilot SDK — exclusive, no fall-through
+
+**Read** `${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md` and use its
+section 0 for TypeScript detection and section 1 for this skill's workflow.
+This is a replacement workflow, **not a prerequisite to the generic workflow**.
+After confirming TypeScript, say:
+
+> Detected a standalone TypeScript GitHub Copilot SDK agent, not Microsoft 365
+> Copilot/AI Teammate. I will use only the standalone blueprint/basic-observability
+> procedure, preserving the existing runtime and hosting.
+
+The shared reference owns the checklist, approved prerequisites, version pins,
+optional observability contract, and operator handoff. If read-only or approval is
+absent, use only permitted file reads and its final-response check, then **STOP**.
+Do not run prerequisite scans or create a detection cache in that branch.
+The setup hook's `--report-only` result allows only ending the report; its
+`operationAllowed: false` is not registration or instrumentation authorization.
+A direct validator invocation without that flag requires confirmed scope/S2S
+cache metadata. Conflicting or malformed existing cache still blocks a report.
+The final response MUST use exactly the shared three-paragraph template:
+**Detected / preserved**, **Local evidence**, **Blocked / not verified**.
+End after the report. Do not append a next-gate/next-steps section, an admin
+handoff, command names/examples, or an offer/question requesting credentials.
+`a365 setup all` must not appear anywhere in that response, including parentheses,
+negated explanations, or recommendations for someone else. These constraints
+apply to recommendations as well as execution.
+
+**Do not execute OR recommend** generic Phases 1A-1C, Steps 1-3, their todo list,
+quick scan, auto-installs, Azure login, `a365 setup all`, or appendix/troubleshooting
+commands for Route A. In particular, do not present `az login` as preparation for
+`setup all`. Missing approval is a blocker, not a reason to offer those commands.
+Only the shared reference's separately approved standalone procedure may continue;
+any delegation is to its `make-a365-agent` branch, never generic provisioning.
+
+The inspected standalone helper uses explicit `NodeTracerProvider` /
+`Agent365Exporter` and Microsoft scopes. **Do not require `useMicrosoftOpenTelemetry`**
+or infer that observability is absent from that call's absence. Use the shared
+reference's section 3 composite contract; unread source means **not evaluated**.
+Stop on conflicting hosting/cache markers or unsupported source, without fallback.
+
+Before every Route A response, apply the shared **Standalone final-response check**.
+**RETURN after Route A; never continue into the Generic workflow below.**
+
+## Generic workflow — non-Copilot-SDK projects only
+
+Everything below, including completion rules and troubleshooting, is inapplicable
+to Route A. Do not borrow its commands, prerequisites, or telemetry heuristics.
 
 **RULE 1 — DETECT AGENT STACK AND CODE, ASK VALIDATION QUESTIONS, THEN CREATE ALL TODOS.**
 
@@ -833,3 +912,13 @@ For detailed guidance, refer to:
 ### Escalating to GitHub
 
 If the issue appears to be a CLI bug, draft an issue with: CLI version (`a365 --version`), OS/shell, exact steps to reproduce, error output, and expected vs actual behavior. Present the draft to the user — do not create the issue unless authorized.
+
+## Final route check
+
+For GitHub Copilot SDK, return to **Route A** and the shared **Standalone
+final-response check** before answering. The generic body above must not appear
+as that route's plan or next steps. A correct SDK classification, unchanged files,
+or successful skill invocation does not excuse an unsafe recommendation.
+For read-only/no-approval Route A, output only the shared three-paragraph report
+and END. No generic outro, next steps, command names/examples (even parenthetical),
+admin handoff, or request for secrets.

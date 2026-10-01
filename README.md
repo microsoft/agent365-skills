@@ -50,6 +50,21 @@ Or install via the marketplace first (inside a Claude Code session), then the CL
 
 ### GitHub Copilot CLI — `gh skill` (recommended)
 
+For **session-local plugin testing**, use the full Copilot CLI development host
+and the absolute path to this checkout's `plugins\agent365` directory, not its
+`.claude-plugin` subdirectory. The root `plugin.json` declares the same skills as
+the Claude manifest without its automatic version-check hooks. The full CLI
+[manifest reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)
+also supports legacy Claude manifests; adding a root manifest is not proof of
+runtime discovery.
+
+**Keep development-time onboarding separate from the standalone agent runtime.**
+Plugin discovery depends on the full CLI's capabilities and configuration; do not
+assume the bundled agent runtime supports its launch arguments. Keep the app's
+runtime configuration unchanged and use an isolated development host. Verify both
+actual skill invocation and successful fixture/reference reads before counting
+the model response as a content-based plugin test.
+
 The fastest way to install for GitHub Copilot CLI and VS Code agent mode:
 
 ```bash
@@ -86,6 +101,19 @@ gh copilot suggest "Instrument observability for this agent"
 ---
 
 ## Recommended Workflow
+
+**Experimental Copilot SDK support:** TypeScript projects with a direct
+`@github/copilot-sdk` dependency can use `a365-setup` for the guarded
+[standalone registration/basic-observability route](plugins/agent365/shared/copilot-sdk-standalone.md).
+It preserves the existing runtime and hosting; it does not add AI Teammate, Teams,
+Digital Worker, Agent Template, agentic users/mailboxes, WorkIQ, or notifications.
+Published versions are pinned, provisioning requires preview/approval, and
+instrumentation is gated on the companion `microsoft/Agent365-Samples`
+`nodejs/copilot-sdk` helper, which is pending/unpublished (no public immutable
+revision linked). Tenant registration,
+grants, and ingestion are not proven by offline checks. No marketplace publication
+or global installation is required for local evaluation. Strict report-only
+response adherence is not guaranteed; this is not autonomous end-to-end onboarding.
 
 **Start with `a365-setup`** — it verifies CLI and Azure prerequisites, asks which capabilities you want, then delegates to the right skill:
 

@@ -63,7 +63,7 @@ function add(severity, id, message, file) {
 }
 
 const py = byName('.py');
-const ts = byName('.ts', '.js');
+const ts = byName('.ts', '.js', '.mts', '.cts');
 const req = byName('requirements.txt', 'pyproject.toml');
 const pkg = byName('package.json');
 const env = byName('.env', '.env.example', '.env.production', '.env.local');
@@ -597,6 +597,26 @@ function validatePython() {
 }
 
 function validateNode() {
+  const rootPackage = readJsonSafe(path.join(cwd, 'package.json'));
+  const isCopilotSdk = [rootPackage?.dependencies, rootPackage?.devDependencies]
+    .some(section => section && Object.hasOwn(section, '@github/copilot-sdk'));
+  if (isCopilotSdk) {
+    add('info', 'copilot-sdk-standalone-review-required',
+      'GitHub Copilot SDK standalone spike: inspect the verified local sample contract, explicit provider/scopes, exporter opt-in, identity and shutdown. Generic hosting/auto-instrumentation checks do not prove this path; no live registration or ingestion is verified.');
+    if (!anyMatches(ts, /\bnew\s+NodeTracerProvider\s*\(/)) {
+      add('medium', 'copilot-sdk-missing-provider',
+        'No explicit NodeTracerProvider bootstrap was found. Standalone instrumentation is not established; inspect the companion source contract before any approved changes.');
+    }
+    if (!anyMatches(ts, /\bnew\s+Agent365Exporter\s*\(/)) {
+      add('info', 'copilot-sdk-missing-exporter',
+        'No explicit Agent365Exporter was found. This may be intentional for local-only telemetry; backend export is not wired. Keep export disabled until identity/grants and the companion contract are verified.');
+    }
+    if (anyContains(ts, 'useMicrosoftOpenTelemetry') || anyContains(ts, 'configureA365Hosting')) {
+      add('medium', 'copilot-sdk-bootstrap-review',
+        'A distro/hosting bootstrap appears alongside a direct Copilot SDK dependency. Review provider ownership against the standalone contract; do not add another provider or convert hosting.');
+    }
+    return;
+  }
   const hasPackage = pkg.some(f => read(f).includes('@microsoft/opentelemetry'));
   const hasDistro = anyContains(ts, 'useMicrosoftOpenTelemetry');
   const nodeStates = nodeDistroCallStates(ts);

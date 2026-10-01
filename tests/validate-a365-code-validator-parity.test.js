@@ -25,6 +25,12 @@ function sortedIds(result) {
 // Each fixture targets a check that was previously missing from the standalone
 // runner, plus one broad mixed-stack case.
 const fixtures = {
+  'standalone Copilot SDK direct exporter does not require distro bootstrap': {
+    'package.json': JSON.stringify({
+      dependencies: { '@github/copilot-sdk': '1.0.14', '@microsoft/opentelemetry': '1.4.0' },
+    }),
+    'src/telemetry.mts': 'const provider = new NodeTracerProvider({}); new Agent365Exporter({ tokenResolver, useS2SEndpoint: true });',
+  },
   'python exporter env-dependent (was missing from standalone)': {
     'requirements.txt': 'microsoft-opentelemetry>=1.3.4\n',
     '.env.example': 'ENABLE_A365_OBSERVABILITY_EXPORTER=true\n',
@@ -87,4 +93,53 @@ describe('validate-a365-code-validator parity (plugin runner vs standalone runne
       }
     });
   }
+});
+
+describe('partial standalone Copilot SDK instrumentation', () => {
+  for (const [label, source, expected] of [
+    ['neither component', 'export {};', ['copilot-sdk-missing-provider', 'copilot-sdk-missing-exporter']],
+    ['provider only', 'new NodeTracerProvider({});', ['copilot-sdk-missing-exporter']],
+    ['exporter only', 'new Agent365Exporter({});', ['copilot-sdk-missing-provider']],
+    ['both components', 'new NodeTracerProvider({}); new Agent365Exporter({});', []],
+    ['existing distro', 'useMicrosoftOpenTelemetry({});', [
+      'copilot-sdk-missing-provider', 'copilot-sdk-missing-exporter', 'copilot-sdk-bootstrap-review',
+    ]],
+  ]) {
+    test(`${label}: same SDK-specific findings, never a generic initializer repair`, () => {
+      const dir = createFixture({
+        'package.json': JSON.stringify({
+          devDependencies: { '@github/copilot-sdk': '1.0.14' },
+          dependencies: { '@microsoft/opentelemetry': '1.4.0' },
+        }),
+        'src/telemetry.cts': source,
+      });
+      try {
+        const plugin = runValidator(PLUGIN, dir);
+        const standalone = runValidator(STANDALONE, dir);
+        assert.equal(plugin.ok, true);
+        assert.equal(standalone.ok, true);
+        assert.deepEqual(standalone.findings, plugin.findings);
+        assert.deepEqual(sortedIds(plugin), [
+          'copilot-sdk-standalone-review-required', ...expected,
+        ].sort());
+        assert.doesNotMatch(JSON.stringify(plugin.findings), /useMicrosoftOpenTelemetry|node-missing-distro-init/);
+        const exporter = plugin.findings.find(item => item.id === 'copilot-sdk-missing-exporter');
+        if (exporter) assert.match(exporter.message, /intentional for local-only/);
+      } finally { cleanup(dir); }
+    });
+  }
+
+  test('non-SDK Node.js keeps its generic missing initializer finding', () => {
+    const dir = createFixture({
+      'package.json': '{"dependencies":{"@microsoft/opentelemetry":"1.4.0"}}',
+      'src/index.ts': 'export {};',
+    });
+    try {
+      for (const runner of [PLUGIN, STANDALONE]) {
+        const result = runValidator(runner, dir);
+        assert.ok(sortedIds(result).includes('node-missing-distro-init'));
+        assert.ok(!sortedIds(result).some(id => id.startsWith('copilot-sdk-')));
+      }
+    } finally { cleanup(dir); }
+  });
 });

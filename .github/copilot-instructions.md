@@ -2,6 +2,18 @@
 
 Skills for instrumenting and registering Microsoft Agent 365 agents. When a user asks for any of the trigger phrases below, follow the corresponding SKILL.md exactly.
 
+**Standalone GitHub Copilot SDK spike:** TypeScript + a direct `@github/copilot-sdk`
+dependency uses [the standalone route](../plugins/agent365/shared/copilot-sdk-standalone.md)
+through existing setup/registration/observability skills. Re-check before cache
+reuse; GitHub Copilot is not a Microsoft 365 Copilot/CEA signal. This exception
+overrides generic hosting/latest-version rules. Confirm standalone scope/S2S,
+blueprint reuse/preview approval, verified sample contract and diff approval before
+instrumentation. Pin published releases; separate local checks from live evidence.
+No teammate/Teams/WorkIQ/agentic-user/mailbox/licensing, runtime rewrite, model-based
+telemetry, or cloud operations during this local unpublished spike.
+The shared route records explicit scope/S2S and operation approvals; report-only
+hook completion never authorizes registration or instrumentation.
+
 ---
 
 ## Quick reference

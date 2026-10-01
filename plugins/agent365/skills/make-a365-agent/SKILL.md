@@ -26,7 +26,16 @@ hooks:
       timeout: 15000
     - type: prompt
       prompt: |
-        Before ending, verify ALL of the following:
+        Select exactly one branch.
+        IF GitHub Copilot SDK is detected:
+          Use shared/copilot-sdk-standalone.md section 2 only.
+          Require recorded scope/S2S and registration/reuse approvals plus consistent
+          local blueprint config. A report-only setup result is not authorization.
+          Missing approvals/config must return {"ok": false, "reason": "<missing gate>"}.
+          Otherwise return {"ok": true} for local config validation only; live login,
+          identity, grants, registry and export require separate evidence.
+          STOP; do not evaluate the generic checklist below or recommend its commands.
+        ELSE verify ALL of the following:
         1. a365 setup all completed without fatal errors.
         2. a365.generated.config.json exists with a valid agentBlueprintId.
         3. Setup Summary table was shown to the user verbatim.
@@ -63,6 +72,15 @@ hooks:
 ---
 
 ## Phase 0 — Load Context
+
+**GitHub Copilot SDK route (before generic context/menu/hosting):** Read the selected
+project's `package.json` for `@github/copilot-sdk`, even if the cache is fresh.
+If present or `agentStack = "GitHub Copilot SDK"`, **read**
+`${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md` and follow **section 2**
+instead of Phases 1-5 below. If prerequisites/cache are missing, first follow its
+`a365-setup` section. Preserve standalone hosting, use preview/approval, and never
+offer WorkIQ or silently route to AI Teammate. Report blocked registration honestly;
+generic success/managed-identity/secret-suppression instructions do not apply.
 
 > **Show the user a visible task checklist BEFORE Phase 1 work begins.** This skill has no per-phase `TaskCreate` calls in the body — derive the checklist from the phase headers (`## Phase 0 — Load Context`, `## Phase 1 — Collect Provisioning Inputs`, `## Phase 2 — Register with Agent 365`, etc.). Exactly one item in_progress at a time; complete before moving on.
 > - **Claude Code:** call `TaskCreate` once per phase header (already in `allowed-tools`); the list renders natively. Use `TaskUpdate` to flip statuses.
