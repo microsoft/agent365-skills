@@ -143,6 +143,7 @@ To manually test a skill against an eval:
 | 3 | Already instrumented (.NET) | Idempotency: skip if marker comments present |
 | 4 | Already instrumented (Node.js) | Idempotency: skip if marker comments present |
 | 5 | Unknown agent type | Write `.a365setup-unknown-agent` marker and exit with clear error |
+| 11 | Delegated telemetry migration (Node.js AI Teammate) | Legacy `refreshObservabilityToken` / no `useS2SEndpoint` wiring is treated as partial and migrated to the S2S route with an app-only token — no OtelWrite / consent step |
 
 ### `test-local` Evals
 
@@ -168,6 +169,8 @@ To manually test a skill against an eval:
 | 8 | Code clean, Activity empty | Branches to tenant-side causes (licensing, enrollment, resource SP, lag) instead of a false code bug |
 | 9 | No `invoke_agent` root | Catches child-span-only runs / identity-less spans ("0 identity groups") that never land in MAC |
 | 10 | Guided remediation | Verifies `apply_safe_fixes` applies only the deterministic exporter fix and asks before design changes |
+| 11 | Blueprint permissions | Read-only `a365 query-entra` checks; a registered blueprint agent needs no OtelWrite — flags missing registration instead |
+| 12 | Delegated telemetry (AI Teammate) | Catches OBO tokens / the delegated route fed to the exporter; recommends the app-only resolver + S2S route, not an OtelWrite grant |
 
 ---
 

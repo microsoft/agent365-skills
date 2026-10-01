@@ -122,7 +122,7 @@ After completion:
 node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint ID:', c.agentBlueprintId)"
 ```
 
-**If the CLI output includes a "Permission Grants" action item or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can copy it. This is only expected for agents upgrading from a pre-1.1 CLI version where OtelWrite was not yet auto-granted. For newly provisioned agents no admin consent step is required.
+**If the CLI output includes an Observability API S2S app role action item, another "Permission Grants" action item, or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can hand it to a Global Administrator. AI Teammate telemetry is exported over the S2S route with an app-only token for the agent instance (never a delegated token). That route accepts the `Agent365.Observability.OtelWrite` **application** role, which the script grants on the Blueprint, and it also accepts the instance's registration where service policy allows. A declined or pending app role grant does not block the rest of setup; continue with the next phase and surface it in the final summary.
 
 ---
 
@@ -255,8 +255,8 @@ Pull `<agentBlueprintId>`, `<agentBlueprintClientSecret>`, `<tenantId>` from `a3
 > **Not in this table (and why)** — the following Node.js keys appeared in older skill versions but are NOT consumed by `@microsoft/Agents-for-js` or `@microsoft/opentelemetry`, so the skill must NOT write them as required vars:
 > - `USE_AGENTIC_AUTH` — handler selection is in code (`MyAgent.authHandlerName = 'agentic'`); env var is informational only.
 > - `agentic_connectionName` — invalid key for the agentic handler (only `type`, `scopes`, `altBlueprintConnectionName` are recognized; `connectionName` is an Azure-Bot-handler legacy alias).
-> - `agent365Observability__agentBlueprintId` — CLI writes `__agentId`, not `__agentBlueprintId`. Stray.
-> - `agent365Observability__clientId` / `__clientSecret` — never written by the CLI and never read by the distro. Stray.
+> - `agent365Observability__agentBlueprintId` — written by the CLI; keep it if present. Observability fallback guards use it to avoid treating a blueprint ID as a runtime agent identity.
+> - `agent365Observability__clientId` / `__clientSecret` — written by the CLI for compatibility. Current observability wiring gets tokens from the hosting connection instead; keep these keys if present, but do not hand-author them for new code.
 > - `agent365Observability__sponsorUserId` / `__sponsorUserName` / `__sponsorUserEmail` — S2S-only. For AI Teammate (always `agentic-user`), `CallerDetails` come from the turn context — these env vars are inert.
 
 **For `runTarget = "prod"` — additional verification:**
@@ -601,4 +601,3 @@ Connect to `http://localhost:3978/api/messages` (or the dev tunnel URL) and send
 
 
 ---
-

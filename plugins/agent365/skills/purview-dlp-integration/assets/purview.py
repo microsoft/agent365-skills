@@ -226,8 +226,8 @@ class PurviewGuard:
 
     async def _get_token(self, authorization, auth_handler_name, context) -> str:
         """Agent-identity (agentic delegated) Graph token — carries the delegated
-        Content.Process.User scope granted on the agent's agentic consent. Uses the same
-        exchange_token call the A365 host uses for observability."""
+        Content.Process.User scope granted on the agent's agentic consent. This token is
+        for Purview Graph calls only; A365 observability uses an app-only S2S token."""
         handler = auth_handler_name or self.auth_handler_name
         resp = await authorization.exchange_token(context, scopes=[GRAPH_SCOPE], auth_handler_id=handler)
         token = getattr(resp, "token", None) or (resp if isinstance(resp, str) else None)

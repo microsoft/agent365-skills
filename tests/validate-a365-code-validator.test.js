@@ -4,6 +4,7 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 const { createFixture, runValidator, cleanup } = require('./helpers');
 
@@ -286,6 +287,649 @@ useMicrosoftOpenTelemetry({
         result.findings.find(f => f.id === 'node-exporter-explicitly-disabled').severity,
         'critical'
       );
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
+
+// ── S2S route with an app-only token in every auth mode ─────────────────────
+
+const STANDALONE = path.join(__dirname, '../plugins/agent365/skills/a365-code-validator/references/a365-code-validator.js');
+
+const NODE_PKG = JSON.stringify({ name: 'node-agent', dependencies: { '@microsoft/opentelemetry': '^1.4.0' } }, null, 2);
+const NODE_S2S_INDEX = `
+import { useMicrosoftOpenTelemetry } from '@microsoft/opentelemetry';
+useMicrosoftOpenTelemetry({
+  a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver },
+});
+`.trim();
+
+describe('validate-a365-code-validator — S2S route and delegated telemetry', () => {
+  test('Node distro without useS2SEndpoint reports delegated route (high)', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX.replace(' useS2SEndpoint: true,', ''),
+    });
+    try {
+      const result = runValidator(VALIDATOR, dir);
+      assert.equal(result.ok, true);
+      const finding = result.findings.find(f => f.id === 'node-obs-delegated-route');
+      assert.ok(finding, 'expected node-obs-delegated-route');
+      assert.equal(finding.severity, 'high');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Node lowercase refreshObservabilityToken without authorization literal reports delegated token; app-only S2S wiring does not', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': `
+await AgenticTokenCacheInstance.refreshObservabilityToken(
+  agentId, tenantId, turnContext as any, app.auth);
+      `.trim(),
+    });
+    try {
+      const result = runValidator(VALIDATOR, dir);
+      const ids = findingIds(result);
+      assert.ok(ids.includes('node-obs-delegated-token'));
+      assert.ok(!ids.includes('node-obs-delegated-route'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Node PascalCase RefreshObservabilityToken app-only overload is allowed; delegated overload is flagged by both scanners', () => {
+    const appOnly = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': 'await tokenCache.RefreshObservabilityToken(agentId, tenantId, resolver);',
+    });
+    const delegated = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': 'await tokenCache.RefreshObservabilityToken(agentId, tenantId, buildContext({ nested: [1, 2] }), app.auth);',
+    });
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(!findingIds(runValidator(scanner, appOnly)).includes('node-obs-delegated-token'), scanner);
+        assert.ok(findingIds(runValidator(scanner, delegated)).includes('node-obs-delegated-token'), scanner);
+      }
+    } finally {
+      cleanup(appOnly);
+      cleanup(delegated);
+    }
+  });
+
+  test('Node dynamic enabled is active; dynamic exporter with route and resolver is accepted by both scanners', () => {
+    const missingRoute = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const enabled = process.env.A365_ENABLED === "true";',
+        'useMicrosoftOpenTelemetry({ a365: { enabled, enableObservabilityExporter: true, tokenResolver: appTokenResolver } });',
+      ].join('\n'),
+    });
+    const docShape = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const A365_ENABLED = process.env.ENABLE_A365_OBSERVABILITY_EXPORTER === "true";',
+        'useMicrosoftOpenTelemetry({',
+        '  a365: {',
+        '    enabled: A365_ENABLED,',
+        '    enableObservabilityExporter: A365_ENABLED,',
+        '    useS2SEndpoint: true,',
+        '    tokenResolver: appTokenResolver,',
+        '  },',
+        '});',
+        'InvokeAgentScope.start(request, details, agentDetails, callerDetails);',
+      ].join('\n'),
+    });
+    const ids = result => findingIds(result).filter(id => /node-(obs-delegated-route|obs-token-resolver-missing|exporter)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(ids(runValidator(scanner, missingRoute)).includes('node-obs-delegated-route'), scanner);
+        assert.deepEqual(ids(runValidator(scanner, docShape)), [], scanner);
+      }
+    } finally {
+      cleanup(missingRoute);
+      cleanup(docShape);
+    }
+  });
+
+  test('Node literal false or absent enabled stays inactive; shorthand enabled variable is active', () => {
+    const disabled = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enabled: false, enableObservabilityExporter: true } });',
+    });
+    const absent = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } });',
+    });
+    const shorthandActive = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const enabled = true;\nuseMicrosoftOpenTelemetry({ a365: { enabled, enableObservabilityExporter: true, tokenResolver: appTokenResolver } });',
+    });
+    const expressionActive = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "useMicrosoftOpenTelemetry({ a365: { enabled: false || process.env.X === 'true', enableObservabilityExporter: true, tokenResolver: appTokenResolver } });",
+    });
+    const nodeA365Ids = result => findingIds(result).filter(id => /^node-(?:obs-|exporter|missing-identity|no-explicit)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, disabled)), [], scanner);
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, absent)), [], scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, shorthandActive)).includes('node-obs-delegated-route'), scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, expressionActive)).includes('node-obs-delegated-route'), scanner);
+      }
+    } finally {
+      cleanup(disabled);
+      cleanup(absent);
+      cleanup(shorthandActive);
+      cleanup(expressionActive);
+    }
+  });
+
+  test('Node calls with no visible A365 options stay inactive, but unreadable options are active', () => {
+    const emptyCall = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry();',
+    });
+    const azureMonitorOnly = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ azureMonitor: { connectionString } });',
+    });
+    const factory = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry(buildOtelOptions());\nfunction buildOtelOptions() { return { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } }; }',
+    });
+    const nodeA365Ids = result => findingIds(result).filter(id => /^node-(?:obs-|exporter|missing-identity|no-explicit)/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, emptyCall)), [], scanner);
+        assert.deepEqual(nodeA365Ids(runValidator(scanner, azureMonitorOnly)), [], scanner);
+        assert.ok(nodeA365Ids(runValidator(scanner, factory)).includes('node-obs-delegated-route'), scanner);
+      }
+    } finally {
+      cleanup(emptyCall);
+      cleanup(azureMonitorOnly);
+      cleanup(factory);
+    }
+  });
+
+  test('Node options spreads are followed, and unresolvable spreads keep the call active in both scanners', () => {
+    const spreadNoRoute = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const baseOptions = { a365: { enabled: true, enableObservabilityExporter: true, tokenResolver: appTokenResolver } };\nuseMicrosoftOpenTelemetry({ ...baseOptions });',
+    });
+    const spreadWired = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'const baseOptions = { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };\nuseMicrosoftOpenTelemetry({ ...baseOptions });',
+    });
+    const spreadCall = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ ...buildBaseOptions() });',
+    });
+    const spreadImport = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "import { baseOptions } from './otel-options';\nuseMicrosoftOpenTelemetry({ ...baseOptions });",
+    });
+    const s2sIds = result => findingIds(result).filter(id => /^node-obs-(?:delegated-route|token-resolver-missing)$/.test(id)).sort();
+    const unwired = ['node-obs-delegated-route', 'node-obs-token-resolver-missing'];
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadNoRoute)), ['node-obs-delegated-route'],
+          `${scanner}: a same-file options spread is read, so its missing route is reported`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadWired)), [],
+          `${scanner}: route and resolver inside a same-file options spread count as wired`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadCall)), unwired,
+          `${scanner}: a spread built by a call cannot be read, so the call stays active and unwired`);
+        assert.deepEqual(s2sIds(runValidator(scanner, spreadImport)), unwired,
+          `${scanner}: an imported spread cannot be read, so the call stays active and unwired`);
+      }
+    } finally {
+      cleanup(spreadNoRoute);
+      cleanup(spreadWired);
+      cleanup(spreadCall);
+      cleanup(spreadImport);
+    }
+  });
+
+  test('.NET distro without UseS2SEndpoint and with AgenticTokenStruct registration reports both findings', () => {
+    const dir = createFixture({
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Exporters = ExportTarget.Agent365; });',
+      'MyAgent.cs': `
+_agentTokenCache?.RegisterObservability(agentId, tenantId,
+    new AgenticTokenStruct(userAuthorization: UserAuthorization, turnContext: turnContext, authHandlerName: name),
+    EnvironmentUtils.GetObservabilityAuthenticationScope());
+      `.trim(),
+      'appsettings.json': '{ "EnableAgent365Exporter": true }',
+    });
+    try {
+      const ids = findingIds(runValidator(VALIDATOR, dir));
+      assert.ok(ids.includes('dotnet-obs-delegated-route'));
+      assert.ok(ids.includes('dotnet-obs-delegated-token'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('.NET distro with UseS2SEndpoint = true and S2S scaffold registration reports no delegated findings', () => {
+    const dir = createFixture({
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
+      'ObservabilityTokenService.cs': '_tokenCache.RegisterObservability(_agentId, _tenantId, obsResult.AccessToken, ObservabilityScopes);',
+      'appsettings.json': '{ "EnableAgent365Exporter": true }',
+    });
+    try {
+      const ids = findingIds(runValidator(VALIDATOR, dir));
+      assert.ok(!ids.includes('dotnet-obs-delegated-route'));
+      assert.ok(!ids.includes('dotnet-obs-delegated-token'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Python OBO agent without the S2S flag and with a delegated observability exchange reports both findings', () => {
+    const dir = createFixture({
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'app.py': `
+from microsoft.opentelemetry import use_microsoft_opentelemetry
+use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=cache.get)
+
+async def setup(self, context):
+    token = await self.agent_app.auth.exchange_token(context, scopes=get_observability_authentication_scope(), auth_handler_id=h)
+      `.trim(),
+    });
+    try {
+      const result = runValidator(VALIDATOR, dir);
+      const ids = findingIds(result);
+      assert.ok(ids.includes('python-s2s-endpoint-not-set'));
+      assert.ok(ids.includes('python-obs-delegated-token'));
+      assert.equal(result.findings.find(f => f.id === 'python-s2s-endpoint-not-set').severity, 'high');
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Python workload exchange_token for MCP scopes is not reported as delegated telemetry', () => {
+    const dir = createFixture({
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'app.py': `
+from microsoft.opentelemetry import use_microsoft_opentelemetry
+use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)
+token = await auth.exchange_token(context, scopes=["ea9ffc3e-8a23-4a7d-836d-234d7c7565c1/.default"], auth_handler_id=h)
+      `.trim(),
+    });
+    try {
+      const ids = findingIds(runValidator(VALIDATOR, dir));
+      assert.ok(!ids.includes('python-obs-delegated-token'));
+      assert.ok(!ids.includes('python-s2s-endpoint-not-set'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Blueprint agent without a recorded registration uses detection cache before aiTeammate fallback', () => {
+    const agentId = '22222222-2222-2222-2222-222222222222';
+    const blueprintId = '33333333-3333-3333-3333-333333333333';
+    const systemAgent = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'system-agent' }),
+      'a365.config.json': JSON.stringify({}),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const registered = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'system-agent' }),
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId, agentRegistrationId: 'reg-1' }),
+    });
+    const aiTeammate = createFixture({
+      '.a365-workspace-detection.local.json': JSON.stringify({ agentType: 'ai-teammate' }),
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const fallback = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const noBlueprint = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agenticAppId: agentId }),
+    });
+    const configFree = createFixture({
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const noAiTeammateField = createFixture({
+      'a365.config.json': JSON.stringify({ agentBlueprintId: blueprintId }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    const explicitAiTeammate = createFixture({
+      'a365.config.json': JSON.stringify({ aiTeammate: true }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: blueprintId, agenticAppId: agentId }),
+    });
+    try {
+      const finding = runValidator(VALIDATOR, systemAgent).findings.find(f => f.id === 'agent-registration-not-recorded');
+      assert.ok(finding, 'expected agent-registration-not-recorded');
+      assert.equal(finding.severity, 'medium');
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(findingIds(runValidator(scanner, systemAgent)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(findingIds(runValidator(scanner, fallback)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, registered)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, aiTeammate)).includes('agent-registration-not-recorded'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, noBlueprint)).includes('agent-registration-not-recorded'),
+          `${scanner}: without a blueprint ID there is no blueprint agent instance to register`);
+        assert.ok(findingIds(runValidator(scanner, configFree)).includes('agent-registration-not-recorded'),
+          `${scanner}: config-free blueprint setup writes no a365.config.json, and only blueprint setup writes agenticAppId`);
+        assert.ok(findingIds(runValidator(scanner, noAiTeammateField)).includes('agent-registration-not-recorded'),
+          `${scanner}: a blueprint config does not need an explicit aiTeammate:false field`);
+        assert.ok(!findingIds(runValidator(scanner, explicitAiTeammate)).includes('agent-registration-not-recorded'),
+          `${scanner}: an explicit aiTeammate:true config is an AI Teammate, which --agent-registration-only does not apply to`);
+      }
+    } finally {
+      cleanup(systemAgent);
+      cleanup(registered);
+      cleanup(aiTeammate);
+      cleanup(fallback);
+      cleanup(noBlueprint);
+      cleanup(configFree);
+      cleanup(noAiTeammateField);
+      cleanup(explicitAiTeammate);
+    }
+  });
+
+  test('standalone references/a365-code-validator.js reports the same S2S findings as the stop hook', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX.replace(' useS2SEndpoint: true,', ''),
+      'agent.ts': 'await AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization);',
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { });',
+      'MyAgent.cs': '_c.RegisterObservability(a, t, new AgenticTokenStruct(userAuthorization: u, turnContext: c, authHandlerName: n), s);',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'app.py': 'use_microsoft_opentelemetry(enable_a365=True)\nt = await auth.exchange_token(ctx, scopes=get_observability_authentication_scope())',
+      'a365.config.json': JSON.stringify({ aiTeammate: false }),
+      'a365.generated.config.json': JSON.stringify({ agentBlueprintId: 'b', agenticAppId: 'a' }),
+    });
+    const s2sIds = ids => ids.filter(id => /obs-delegated|s2s-endpoint|agent-registration/.test(id)).sort();
+    try {
+      const hook = s2sIds(findingIds(runValidator(VALIDATOR, dir)));
+      const standalone = s2sIds(findingIds(runValidator(STANDALONE, dir)));
+      assert.deepEqual(standalone, hook);
+      assert.deepEqual(hook, [
+        'agent-registration-not-recorded',
+        'dotnet-obs-delegated-route',
+        'dotnet-obs-delegated-token',
+        'node-obs-delegated-route',
+        'node-obs-delegated-token',
+        'python-obs-delegated-token',
+        'python-s2s-endpoint-not-set',
+      ]);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('standalone and stop-hook scanners flag non-inline delegated telemetry and a missing connection manager identically', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX.replace('tokenResolver: appTokenResolver', "tokenResolver: (a, t) => AgenticTokenCacheInstance.getObservabilityToken(a, t) ?? ''"),
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; });',
+      'A365OtelWrapper.cs': 'var agenticToken = new AgenticTokenStruct(userAuthorization: u, turnContext: c, authHandlerName: n);\nagentTokenCache?.RegisterObservability(agentId, tenantId, agenticToken, scopes);',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'use_microsoft_opentelemetry(enable_a365=True, a365_use_s2s_endpoint=True, a365_token_resolver=get_cached_agentic_token)',
+        'token = await self.agent_app.auth.exchange_token(context, auth_handler_id=h)',
+        'cache_agentic_token(tenant_id, agent_id, token.token)',
+        'await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)',
+      ].join('\n'),
+      'token_cache.py': 'def cache_agentic_token(tenant_id, agent_id, token):\n    pass\n',
+    });
+    const s2sIds = ids => ids.filter(id => /obs-|s2s-endpoint|agent-registration/.test(id)).sort();
+    try {
+      const hook = s2sIds(findingIds(runValidator(VALIDATOR, dir)));
+      const standalone = s2sIds(findingIds(runValidator(STANDALONE, dir)));
+      assert.deepEqual(standalone, hook);
+      assert.deepEqual(hook, [
+        'dotnet-obs-delegated-token',
+        'dotnet-obs-token-resolver-missing',
+        'node-obs-delegated-token',
+        'python-obs-delegated-token',
+        'python-obs-prefetch-connection-missing',
+      ]);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('Python lambda resolver over get_cached_agentic_token is flagged by both scanners; a lambda over the app-only resolver is not', () => {
+    const delegated = createFixture({
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=lambda agent_id, tenant_id: get_cached_agentic_token(tenant_id, agent_id))',
+    });
+    const appOnly = createFixture({
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=lambda agent_id, tenant_id: OBS_TOKENS.resolve(agent_id, tenant_id))',
+    });
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.ok(findingIds(runValidator(scanner, delegated)).includes('python-obs-delegated-token'), scanner);
+        assert.ok(!findingIds(runValidator(scanner, appOnly)).includes('python-obs-delegated-token'), scanner);
+      }
+    } finally {
+      cleanup(delegated);
+      cleanup(appOnly);
+    }
+  });
+
+  test('route-only distro configs without a token resolver are flagged in every language by both scanners', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX.replace(', tokenResolver: appTokenResolver', ''),
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True)',
+    });
+    const resolverIds = ids => ids.filter(id => /token-resolver-missing/.test(id)).sort();
+    try {
+      const hook = resolverIds(findingIds(runValidator(VALIDATOR, dir)));
+      assert.deepEqual(hook, [
+        'dotnet-obs-token-resolver-missing',
+        'node-obs-token-resolver-missing',
+        'python-obs-token-resolver-missing',
+      ]);
+      assert.deepEqual(resolverIds(findingIds(runValidator(STANDALONE, dir))), hook);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  test('resolver symbols outside the distro call do not count in either scanner; options passed by variable do', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const unwired = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': `import { tokenResolver } from './workload-token-resolver';\n${NODE_S2S_INDEX.replace(', tokenResolver: appTokenResolver', '')}`,
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; });',
+      'WorkloadTokens.cs': 'workloadOptions.TokenResolver = workloadTokens.ResolveAsync;',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True)\na365_token_resolver = OBS_TOKENS.resolve',
+    });
+    const byVariable = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const otelOptions = { a365: { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver } };',
+        'useMicrosoftOpenTelemetry(otelOptions);',
+      ].join('\n'),
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'OTEL_KWARGS = dict(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        'use_microsoft_opentelemetry(**OTEL_KWARGS)',
+      ].join('\n'),
+    });
+    const resolverIds = ids => ids.filter(id => /token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(resolverIds(findingIds(runValidator(scanner, unwired))), [
+          'dotnet-obs-token-resolver-missing',
+          'node-obs-token-resolver-missing',
+          'python-obs-token-resolver-missing',
+        ], scanner);
+        assert.deepEqual(resolverIds(findingIds(runValidator(scanner, byVariable))), [], scanner);
+      }
+    } finally {
+      cleanup(unwired);
+      cleanup(byVariable);
+    }
+  });
+
+  test('Node a365 direct properties and resolved identifiers pass; nested or unresolvable options fail in both scanners', () => {
+    const direct = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+    });
+    const resolved = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': [
+        'const a365Options = { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver };',
+        'useMicrosoftOpenTelemetry({ a365: a365Options });',
+      ].join('\n'),
+    });
+    const nested = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: { enabled: true, enableObservabilityExporter: true, custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } } });',
+    });
+    const unresolvable = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': 'useMicrosoftOpenTelemetry({ a365: buildA365Options() });\nfunction buildA365Options() { return { enabled: true, enableObservabilityExporter: true, useS2SEndpoint: true, tokenResolver: appTokenResolver }; }',
+    });
+    const ids = result => findingIds(result).filter(id => /node-obs-delegated-route|node-obs-token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(ids(runValidator(scanner, direct)), [], scanner);
+        assert.deepEqual(ids(runValidator(scanner, resolved)), [], scanner);
+        assert.deepEqual(ids(runValidator(scanner, nested)), [
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+        ], scanner);
+        assert.deepEqual(ids(runValidator(scanner, unresolvable)), [
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+        ], scanner);
+      }
+    } finally {
+      cleanup(direct);
+      cleanup(resolved);
+      cleanup(nested);
+      cleanup(unresolvable);
+    }
+  });
+
+  test('the stop hooks and the standalone scanner share one distro-call helper', () => {
+    const observabilityHook = path.join(__dirname, '../plugins/agent365/hooks/stop/validate-instrument-observability.js');
+    const helperText = file => {
+      const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+      const start = text.indexOf('const DISTRO_CALLS = {');
+      const end = text.indexOf('\n}\n', text.indexOf('function codeCallMatches('));
+      assert.ok(start >= 0 && end > start, `${file}: distro-call helper not found`);
+      return text.slice(start, end);
+    };
+    const expected = helperText(VALIDATOR);
+    assert.equal(helperText(STANDALONE), expected, 'standalone scanner must use the same distro-call helper');
+    assert.equal(helperText(observabilityHook), expected, 'instrument-observability hook must use the same distro-call helper');
+  });
+
+  test('route flags outside the distro call and legacy calls in comments are handled the same by both scanners', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const routeElsewhere = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': `${NODE_S2S_INDEX.replace(' useS2SEndpoint: true,', '')}\nconst workloadOptions = { useS2SEndpoint: true };`,
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });\nworkloadOptions.UseS2SEndpoint = true;',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_token_resolver=OBS_TOKENS.resolve)\nconfigure_workload_client(a365_use_s2s_endpoint=True)',
+    });
+    const commentedLegacy = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'agent.ts': '// Do NOT call AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization).',
+      'Agent.csproj': csproj,
+      'Program.cs': [
+        'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
+        '// Legacy: _cache.RegisterObservability(a, t, new AgenticTokenStruct(userAuthorization: u, turnContext: c, authHandlerName: n), s);',
+      ].join('\n'),
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        '# Legacy: token = await auth.exchange_token(context, scopes=get_observability_authentication_scope())',
+      ].join('\n'),
+    });
+    const routeIds = ids => ids.filter(id => /obs-delegated-route|s2s-endpoint-not-set/.test(id)).sort();
+    const tokenIds = ids => ids.filter(id => /obs-delegated-token/.test(id));
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(routeIds(findingIds(runValidator(scanner, routeElsewhere))), [
+          'dotnet-obs-delegated-route',
+          'node-obs-delegated-route',
+          'python-s2s-endpoint-not-set',
+        ], scanner);
+        assert.deepEqual(tokenIds(findingIds(runValidator(scanner, commentedLegacy))), [], scanner);
+      }
+    } finally {
+      cleanup(routeElsewhere);
+      cleanup(commentedLegacy);
+    }
+  });
+
+  test('route and resolver options count only where the SDK reads them, in both scanners', () => {
+    const csproj = '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>';
+    const misplaced = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': "useMicrosoftOpenTelemetry({\n  a365: { enabled: true, enableObservabilityExporter: true },\n  instrumentationOptions: { custom: { useS2SEndpoint: true, tokenResolver: appTokenResolver } },\n});",
+      'Agent.csproj': csproj,
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { workloadOptions.UseS2SEndpoint = true; workloadOptions.TokenResolver = r; });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': 'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, instrumentation_options=dict(a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve))',
+    });
+    const ids = list => list.filter(id => /obs-delegated-route|s2s-endpoint-not-set|token-resolver-missing/.test(id)).sort();
+    try {
+      for (const scanner of [VALIDATOR, STANDALONE]) {
+        assert.deepEqual(ids(findingIds(runValidator(scanner, misplaced))), [
+          'dotnet-obs-delegated-route',
+          'dotnet-obs-token-resolver-missing',
+          'node-obs-delegated-route',
+          'node-obs-token-resolver-missing',
+          'python-obs-token-resolver-missing',
+          'python-s2s-endpoint-not-set',
+        ], scanner);
+      }
+    } finally {
+      cleanup(misplaced);
+    }
+  });
+
+  test('app-only S2S wiring in all three languages produces no delegated-telemetry findings in either scanner', () => {
+    const dir = createFixture({
+      'package.json': NODE_PKG,
+      'index.ts': NODE_S2S_INDEX,
+      'Agent.csproj': '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="Microsoft.OpenTelemetry" Version="1.1.0" /></ItemGroup></Project>',
+      'Program.cs': 'builder.UseMicrosoftOpenTelemetry(o => { o.Agent365.UseS2SEndpoint = true; o.Agent365.TokenResolver = (a, t) => r.ResolveAsync(a, t); });',
+      'requirements.txt': 'microsoft-opentelemetry>=1.1.0\n',
+      'host.py': [
+        'use_microsoft_opentelemetry(enable_a365=True, a365_enable_observability_exporter=True, a365_use_s2s_endpoint=True, a365_token_resolver=OBS_TOKENS.resolve)',
+        'self.connection_manager = MsalConnectionManager.from_environment()',
+        'await OBS_TOKENS.prefetch(self.connection_manager, tenant_id, agent_id)',
+      ].join('\n'),
+    });
+    const s2sIds = ids => ids.filter(id => /obs-|s2s-endpoint/.test(id));
+    try {
+      assert.deepEqual(s2sIds(findingIds(runValidator(VALIDATOR, dir))), []);
+      assert.deepEqual(s2sIds(findingIds(runValidator(STANDALONE, dir))), []);
     } finally {
       cleanup(dir);
     }

@@ -741,8 +741,8 @@ Every key below is consumed by something specific — no dead lines, no duplicat
 > **What's NOT in this template** (and why):
 > - `USE_AGENTIC_AUTH` — not read by `@microsoft/Agents-for-js`. Handler selection is driven by `MyAgent.authHandlerName = 'agentic'` in code plus the `agentic_*` env keys above. Including it is harmless but informational only.
 > - `agentic_connectionName` — invalid key for the agentic handler per [authorizationManager.ts](https://github.com/microsoft/Agents-for-js/blob/main/packages/agents-hosting/src/app/auth/authorizationManager.ts). The agentic handler recognizes only `type`, `scopes`, `altBlueprintConnectionName`. (`connectionName` is a legacy alias for `azureBotOAuthConnectionName` — Azure Bot handler only.)
-> - `agent365Observability__agentBlueprintId` — never written by the CLI (it writes `__agentId`) and never read by the distro. Stray.
-> - `agent365Observability__clientId/clientSecret` — never written by the CLI and never read by `@microsoft/opentelemetry`. Stray.
+> - `agent365Observability__agentBlueprintId` — written by the CLI; keep it if present. The observability fallback guard uses it to avoid treating a blueprint ID as a runtime agent identity.
+> - `agent365Observability__clientId/clientSecret` — written by the CLI for compatibility. Current `@microsoft/opentelemetry` wiring gets telemetry tokens from the hosting connection instead; keep these keys if present, but do not hand-author them for new code.
 > - `agent365Observability__sponsorUserId/Name/Email` — S2S-only per [instrument-observability/SKILL.md](../../instrument-observability/SKILL.md). For `agentic-user` (AI Teammate, always), `CallerDetails` come from the turn context, not env vars. Omit.
 
 ### The template
