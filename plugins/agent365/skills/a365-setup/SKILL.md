@@ -305,7 +305,7 @@ Then create all todos for the path and mark Todo 1 in-progress:
 
 You are an AI coding agent with access to execute shell commands, read the Agent365-devTools repository (code and docs), and browse the web for documentation or GitHub issues. Your task is to set up, configure, and deploy all prerequisite components for a Microsoft Agent 365–compliant agent using the Agent 365 CLI. You must handle this end-to-end: from installation and configuration to deployment. Work step-by-step, and adapt to any issues or differences in CLI versions along the way.
 
-> **CRITICAL BLOCKING PREREQUISITE:** Before running ANY `a365` CLI commands (including `setup`, `publish`, or `query-entra`), you MUST validate that the custom client app registration exists in Entra ID with all required permissions and admin consent. This is validated in Step 2. Failure to validate this will cause all CLI commands to fail. Do NOT skip this validation step.
+> **Client app — the CLI validates it, not you.** The `a365` CLI resolves its own sign-in client app: the Microsoft-managed **Agent 365 CLI** enterprise application by default, falling back to a tenant-owned app registration named "Agent 365 CLI" only when the Microsoft-managed app isn't available in the tenant. Do NOT try to verify it by hand before running `a365` commands — no Azure portal / Entra admin center checks, no **App registrations** lookups, and no `az ad app list` / `az ad app show` queries. The Microsoft-managed app has no app registration in the tenant, so those checks report it missing even when the CLI works. Step 2 runs `a365 setup requirements`, which performs the real check.
 
 ---
 
@@ -325,7 +325,6 @@ echo "--- a365 CLI ---"    && a365 --version          2>/dev/null || echo "NOT F
 echo "--- PowerShell ---"  && pwsh --version          2>/dev/null || echo "NOT FOUND"
 echo "--- Azure CLI ---"   && az version              2>/dev/null | head -2 || echo "NOT FOUND"
 echo "--- Git ---"         && git --version           2>/dev/null || echo "NOT FOUND"
-echo "--- GitHub CLI ---"  && gh --version            2>/dev/null | head -1 || echo "NOT FOUND"
 echo "--- Node.js ---"     && node --version          2>/dev/null || echo "NOT FOUND"
 echo "--- npm ---"         && npm --version           2>/dev/null || echo "NOT FOUND"
 echo "--- Python ---"      && python --version        2>/dev/null || echo "NOT FOUND"
@@ -486,7 +485,7 @@ pwsh -Command "Get-Module -ListAvailable Az.Accounts | Select-Object -First 1 Ve
 
 ### 1.6 — Git
 
-**Required by:** cloning Agent365-Samples when creating a new AI Teammate agent from scratch.
+**Required by:** cloning Agent365-Samples when creating a new AI Teammate agent from scratch. The samples repository is public — no GitHub account, GitHub CLI (`gh`), or `gh auth login` is needed.
 
 > **Skip this section if the quick scan showed ✅ for Git.**
 
@@ -506,37 +505,7 @@ Verify with `git --version`.
 
 ---
 
-### 1.7 — GitHub CLI (gh)
-
-**Required by:** AI Teammate new-agent path (cloning a sample from Agent365-Samples with `gh auth login`). Skip this check if the user is working with an existing agent and does not need a new-agent clone.
-
-> **Skip this section if the quick scan showed ✅ for GitHub CLI.**
-
-```bash
-gh --version 2>/dev/null | head -1 || echo "NOT FOUND"
-```
-
-If missing and the user may need it:
-
-> "**GitHub CLI** is needed if you want to clone a sample agent to start from. Install it now?"
->
-> - **Windows:** `winget install GitHub.cli`
-> - **macOS:** `brew install gh`
-> - **Linux:** follow https://cli.github.com/manual/installation
-
-After install, authenticate:
-
-```bash
-gh auth login
-```
-
-Select "GitHub.com" → "HTTPS" → "Login with a web browser".
-
-Verify: `gh auth status`
-
----
-
-### 1.8 — Language-specific build tools
+### 1.7 — Language-specific build tools
 
 Check the tools required for the **detected project type** (`programmingLanguage` from Phase 1A).
 
@@ -599,7 +568,7 @@ Confirm at least one SDK entry at 8.0 or above is listed.
 
 ## Step 2: Configure Azure Identity and Validate Access
 
-> **DO NOT SKIP THIS STEP.** You MUST validate Azure CLI login, Entra ID roles, and the custom client app before any `a365` commands will work. Mark this todo in-progress now.
+> **DO NOT SKIP THIS STEP.** You MUST confirm the Azure CLI login and Entra ID roles, then run `a365 setup requirements` so the CLI validates its own client app, before any `a365 setup` commands run. Mark this todo in-progress now.
 
 ### Azure CLI login
 
@@ -675,12 +644,12 @@ az login --allow-no-subscriptions --use-device-code
 The authenticated account needs roles based on which setup steps will run:
 
 - **Agent ID Developer** — required to run `a365 setup blueprint` (and the blueprint phase of `setup all`).
-- **Application Administrator** *(recommended — lightest privilege)*, **Cloud Application Administrator**, or **Global Administrator** — required to complete `a365 setup requirements` (creates the `Agent 365 CLI` app registration and grants admin consent) and `a365 setup permissions {mcp, bot, custom, copilotstudio}` (per-MCP OAuth2 consent). GA is heaviest but not required — Application Admin works. Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration
+- **Application Administrator** *(recommended — lightest privilege)*, **Cloud Application Administrator**, or **Global Administrator** — required for `a365 setup permissions {mcp, bot, custom, copilotstudio}` (per-MCP OAuth2 consent), and — only in tenants where the Microsoft-managed Agent 365 CLI app isn't available — to create the tenant-owned `Agent 365 CLI` app registration and grant admin consent via `a365 setup requirements`. GA is heaviest but not required — Application Admin works. Reference: https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration
 - **Azure Subscription Contributor** — required when the CLI provisions Azure resources (App Service Plan, Web App).
 
 If the developer is not an admin (Application Admin / Cloud App Admin / GA), `a365 setup all` runs as far as it can and **prints PowerShell next-steps for an admin** to complete the consent grants. There is no separate `setup admin` subcommand — the admin reads the printed instructions and runs them.
 
-> **Note:** The CLI detects admin role via the `wids` claim in the access token. If `wids` isn't configured on your app registration (step 5 of [custom-client-app-registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration)), the CLI shows handoff scripts even when you ARE an admin — add the claim once to fix.
+> **Note:** The CLI detects admin role via the `wids` claim in the access token. For the Microsoft-managed Agent 365 CLI app, Microsoft configures `wids` and it can't be changed in the tenant; it's also absent when the signed-in account holds no directory role — if the CLI warns about it, sign in with an admin account and re-run. For a tenant-owned app, if `wids` isn't configured (step 5 of [custom-client-app-registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration)), the CLI shows handoff scripts even when you ARE an admin — add the claim once to fix.
 
 If the logged-in user lacks the minimum roles, prompt them to switch accounts or to ask an admin to grant the role.
 
@@ -696,24 +665,38 @@ On Windows machines, `a365 setup all` may authenticate via **Windows Account Man
 
 
 
-### Custom client app
+### Agent 365 CLI client app (validated by the CLI)
 
-The CLI resolves the client app automatically by the well-known display name **"Agent 365 CLI"** registered in the tenant. Do NOT ask the user for a client app ID.
+The CLI picks and validates its own sign-in client app. Do NOT ask the user for a client app ID, and do NOT check for the app by hand (Azure portal, Entra admin center, **App registrations**, `az ad app list` / `az ad app show`).
 
-If the CLI reports that "Agent 365 CLI" cannot be found, inform the user that an admin must register an Entra app with that exact display name and grant admin consent, then retry.
+The CLI resolves the app in this order:
 
-To validate the app and check consent status before running setup:
+1. **Microsoft-managed "Agent 365 CLI" enterprise application** (`f54280f4-395e-4ea8-9e48-bf2d4952aa14`) — the default whenever it's present in the tenant. Microsoft owns it, so it has **no app registration** in the tenant; in the portal it only appears under **Enterprise applications** with *Application type* set to *Microsoft Applications*. Any developer, including **Agent ID Developer**, can use it — there is nothing to register.
+2. **Tenant-owned app registration named "Agent 365 CLI"** — fallback when the Microsoft-managed app hasn't rolled out to the tenant.
+3. **Neither found** — the CLI asks for a client app ID (an admin can enter `C` to create the tenant-owned app).
+
+Validate it with:
 
 ```bash
-a365 query-entra --help
+a365 setup requirements
 ```
 
-This surfaces scope grants, permission status, and consent state — useful for diagnosing `Authorization_RequestDenied` errors before they block `setup all`.
+Show the output verbatim (RULE 6), then act on the client app result:
+
+| CLI output | What to do |
+|------------|------------|
+| The **Client App Configuration** check passes (with no `a365.config.json`, the CLI first logs e.g. `Using the first-party Agent 365 CLI application (f54280f4-…)`) | Continue. |
+| `First-party client app …` errors (service principal not found, lookup failed, authorization failed, missing scopes) | Tell the user a tenant admin must enable or authorize the Microsoft-managed **Agent 365 CLI** enterprise application. Do not create or modify a tenant app registration for it. |
+| `App "Agent 365 CLI" was not found …` followed by a prompt for a client app ID, or `No Agent 365 CLI enterprise application or custom client app was found — client app validation skipped` | Neither app exists. Do not invent or guess an ID, and do not treat "validation skipped" as a pass. If the command is waiting at the prompt, stop it and hand off: a tenant admin (Application Administrator, Cloud Application Administrator, or Global Administrator) runs `a365 setup requirements` and enters `C` to create the tenant-owned app, or follows [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration). Re-run after they confirm. |
+| Errors about a tenant-owned app (missing permissions, admin consent, redirect URIs, `wids`) | Follow the remediation the CLI prints — for a tenant-owned app, its **App registrations** steps are correct. |
+| `wids` warning for the Microsoft-managed app | Informational — see the `wids` note above. Continue. |
+
+Other checks in the same output (PowerShell modules, tenant enrollment) follow RULE 6 — show them and act on the guidance the CLI prints.
 
 > **STOP AND CONFIRM before leaving Step 2:**
 > - Azure CLI login confirmed with correct account and tenant
 > - Entra ID roles confirmed (Agent ID Admin/Developer or Global Admin)
-> - Custom client app "Agent 365 CLI" validated in the tenant
+> - `a365 setup requirements` passed its client app check (Microsoft-managed app or tenant-owned fallback). If it reported that neither app exists, stop here and give the user the admin handoff — do not continue to Step 3.
 
 > **BEFORE MOVING ON:** Mark Todo 2 (Step 2) as **completed**. Mark Todo 3 in-progress → proceed to Step 3.
 

@@ -348,6 +348,26 @@
         "Phase 9.7.2c: a365 setup blueprint --update-endpoint --m365 runs UNCONDITIONALLY (mandatory — NOT gated on whether chosenEndpoint differs from existing messagingEndpoint; --m365 is required)",
         "Phase 9.7.5: Dev Portal Notification URL = chosenEndpoint (= reconciled messagingEndpoint)"
       ]
+    },
+    {
+      "id": 19,
+      "prompt": "/make-ai-teammate create a dotnet agentframework agent",
+      "description": "Empty workspace, new .NET agent from Agent365-Samples — clones the public sample anonymously; never requires a GitHub CLI install or GitHub sign-in",
+      "language": "dotnet",
+      "expected_output": "Phase 0A Step 1 triage finds no project files and no detection cache, so it routes to Phase 0A.5. The 'dotnet agentframework' hint pre-selects option 1 (.NET Agent Framework) without showing the menu. Phase 0A.5 checks git and the .NET SDK, clones https://github.com/microsoft/Agent365-Samples.git anonymously, copies dotnet/agent-framework/sample-agent into the workspace, removes the temp clone, and runs dotnet restore. It never installs or runs the GitHub CLI (gh) and never asks the user to sign in to GitHub. It then reads a365-setup/SKILL.md to register the new agent; a365-setup's quick scan has no GitHub CLI entry and its Step 2 validates the CLI client app with a365 setup requirements instead of a manual portal check.",
+      "files": [],
+      "expectations": [
+        "Phase 0A Step 1: cacheState=missing and hasProjectFiles=false route to Phase 0A.5 (new-agent path)",
+        "Phase 0A.5: argFramework 'dotnet agentframework' pre-selects option 1 (.NET Agent Framework) — sample menu not shown",
+        "Phase 0A.5 Step 1: git --version checked",
+        "Phase 0A.5: gh --version, gh auth status and gh auth login are NOT run, and the user is NOT asked to sign in to GitHub",
+        "Phase 0A.5 Step 2: dotnet --version checked (.NET 8+)",
+        "Phase 0A.5 Step 3: git clone --depth 1 https://github.com/microsoft/Agent365-Samples.git runs without GitHub credentials; dotnet/agent-framework/sample-agent is copied into the workspace and _tmp_a365samples is removed",
+        "Phase 0A.5 Step 4: dotnet restore runs",
+        "After scaffolding, a365-setup/SKILL.md is read and followed to register the new agent",
+        "a365-setup Step 1 quick scan does not check the GitHub CLI",
+        "a365-setup Step 2 validates the Agent 365 CLI client app with a365 setup requirements — no manual Azure portal / App registrations check"
+      ]
     }
   ]
 }

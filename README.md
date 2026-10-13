@@ -16,13 +16,15 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
-### Tenant prerequisites (one-time, admin-only)
+### Tenant prerequisites
 
-The Agent 365 CLI requires a custom Entra ID app registration in your tenant. This is a **one-time tenant-wide setup** — once any tenant admin runs `a365 setup requirements`, all developers in the tenant inherit the ready state and skip this step.
+The Agent 365 CLI signs in with the Microsoft-managed **Agent 365 CLI** enterprise application by default when it's available in your tenant — there's no app registration to create for the CLI. Don't look for it under **App registrations**: Microsoft owns it, so it only appears under **Enterprise applications** (Application type = *Microsoft Applications*). Run `a365 setup requirements` and the CLI verifies it for you.
 
-Required admin role: **Application Administrator** *(recommended — lightest)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. See [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration) for full details.
+If the Microsoft-managed app hasn't rolled out to your tenant yet, the CLI falls back to a tenant-owned app registration named **Agent 365 CLI**. Creating it is a **one-time tenant-wide setup** — a tenant admin runs `a365 setup requirements` and enters `C` when prompted, and all developers in the tenant then inherit the ready state.
 
-If you're a developer without admin access and the CLI reports the tenant prerequisites are missing (e.g. `403` or "tenant not ready" from `a365 setup all`), share the `a365 setup requirements` command above with your tenant admin — once they run it, you'll inherit the ready state automatically.
+Required admin role for that fallback: **Application Administrator** *(recommended — lightest)*, **Cloud Application Administrator**, or **Global Administrator**. GA is not required. See [custom client app registration](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/custom-client-app-registration) for full details.
+
+If you're a developer without admin access and the CLI reports that no Agent 365 CLI app was found (or other tenant prerequisites are missing, e.g. `403` or "tenant not ready" from `a365 setup all`), share the `a365 setup requirements` command above with your tenant admin — once they run it, you'll inherit the ready state automatically.
 
 ---
 

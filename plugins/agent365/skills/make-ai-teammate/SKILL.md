@@ -206,6 +206,8 @@ Pick a framework and I'll clone the sample, then continue with the AI Teammate s
 
 **If the user picks a sample (1–7), run prerequisite checks BEFORE cloning:**
 
+> **No GitHub sign-in is needed.** `microsoft/Agent365-Samples` is a public repository, so `git clone` over HTTPS works anonymously. Do NOT install the GitHub CLI (`gh`), run `gh auth status` / `gh auth login`, or ask the user to sign in to GitHub. If the clone fails, show the git error verbatim — it is a network, proxy, or git problem, not a GitHub sign-in requirement.
+
 ### Step 1 — Verify git is installed
 
 ```bash
@@ -217,40 +219,7 @@ If the command fails:
 
 Stop until the user confirms git is installed.
 
-### Step 2 — Verify GitHub CLI is installed
-
-```bash
-gh --version
-```
-
-If the command fails:
-> "**GitHub CLI (gh) is not installed.** Install it from https://cli.github.com/ and restart
-> your terminal. The CLI is used to authenticate with GitHub before cloning the sample."
-
-Stop until the user confirms `gh` is installed.
-
-### Step 3 — Verify GitHub authentication
-
-```bash
-gh auth status
-```
-
-Check the output:
-- If output contains `Logged in to github.com` → authenticated, proceed.
-- If output contains `not logged in` or exits non-zero:
-
-> "You are not logged in to GitHub. Run the following command to authenticate:
->
-> ```
-> gh auth login
-> ```
->
-> Choose **GitHub.com**, then **HTTPS**, then **Login with a web browser**.
-> Follow the prompts, then come back here."
-
-Stop until `gh auth status` succeeds.
-
-### Step 4 — Verify language-specific toolchain (pre-clone)
+### Step 2 — Verify language-specific toolchain (pre-clone)
 
 Run the relevant check for the chosen sample:
 
@@ -266,7 +235,7 @@ If the check fails:
 
 Stop until the check passes.
 
-### Step 5 — Clone the sample
+### Step 3 — Clone the sample
 
 Once all checks pass, clone and copy the chosen sample into the current directory:
 
@@ -299,7 +268,7 @@ Tell the user:
 Set `language` and `agentStack` from the chosen option, re-run the LLM entry point detection
 above, then continue to Phase 0B as normal.
 
-### Step 6 — Install sample dependencies (post-clone)
+### Step 4 — Install sample dependencies (post-clone)
 
 Before continuing, install the sample's dependencies so subsequent build steps succeed:
 
