@@ -11,7 +11,7 @@ into a Node.js agent. Aligned with `@microsoft/opentelemetry` **GA 1.0.x** (upda
 >
 > **Sample-lag note (2026-05):** `Agent365-Samples/nodejs/langchain/sample-agent` has migrated to `@microsoft/opentelemetry` and matches the patterns in this reference. `Agent365-Samples/nodejs/openai/sample-agent` still imports from the legacy `@microsoft/agents-a365-observability*` packages as of this writing — the skill direction (unified `@microsoft/opentelemetry`) is forward-looking. If a user's project already has the legacy imports from following the OpenAI sample literally, the skill should migrate them to `@microsoft/opentelemetry` during the wiring step rather than co-existing.
 >
-> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `useS2SEndpoint: true` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy); newer `a365 setup all` versions skip it for blueprint agents, while older versions may still grant it harmlessly. AI Teammate setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the app-role action item it prints, because the S2S route accepts that role.
+> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `useS2SEndpoint: true` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy), and neither do AI Teammates, which the route authorizes by their Blueprint's registration. Newer `a365 setup all` versions skip that grant for both, while older versions may still grant it, or print an `OtelWrite` application-role action item for AI Teammates, harmlessly.
 
 ---
 
@@ -368,10 +368,10 @@ export function createAppTokenResolver(getProvider: ConnectionProvider) {
 > `agent365Observability__agentBlueprintId`: for AI Teammates the CLI writes the blueprint ID
 > there, and a blueprint cannot export over the S2S route.
 
-> **Authorization:** registered blueprint agent instances are authorized on the S2S route without
-> the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy).
-> For AI Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate`
-> prints. Do not add a delegated observability scope to the auth handler for telemetry.
+> **Authorization:** registered blueprint agent instances, and AI Teammates through their
+> Blueprint's registration, are authorized on the S2S route without the
+> `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy).
+> Do not add a delegated observability scope to the auth handler for telemetry.
 
 ---
 
@@ -1117,6 +1117,6 @@ Key console messages:
 | TypeScript error on `agentAuid` | Interface field is `agentAUID` (uppercase UID) | Change to `agentAUID: '...'` |
 | S2S: direct MSAL client credentials rejected | Direct MSAL client credentials not supported for the agent | Use the 3-hop FMI chain: Blueprint → FMI path → Agent Identity → Observability API token |
 | S2S: 401 on `observabilityService/` | Token scope or principal mismatch | Ensure the final hop's scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default` and the token is app-only (no `scp`), minted for the agent identity |
-| S2S: 403 `insufficient_scope` on `observabilityService/` | The agent instance is not registered and has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). AI Teammates: complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts |
+| S2S: 403 `insufficient_scope` on `observabilityService/` | The service could not authorize the agent by registration, and it has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances, and AI Teammates through their Blueprint's registration, without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). For any agent, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts (see "Authorization — registration, not OtelWrite" in `SKILL.md`) |
 | S2S: MSI fails locally | No Managed Identity in dev | Set `AGENT365_USE_MANAGED_IDENTITY=false` and provide `AGENT365_CLIENT_SECRET` |
 | MSAL `AADSTS82008: fmipath parameter required` | `@azure/msal-node` v3.x does not serialize `fmiPath` to the token endpoint | Use the direct HTTP POST workaround in `acquireT1ViaClientSecret` (MSAL-side limitation; remove once MSAL ships native support) |

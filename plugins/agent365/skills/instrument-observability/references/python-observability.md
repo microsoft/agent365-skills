@@ -12,7 +12,7 @@ into a Python agent. Aligned with `microsoft-opentelemetry` **GA 1.2.x** (releas
 >
 > **Sample-lag note (2026-05):** `Agent365-Samples/python/agent-framework/sample-agent` is the verified canonical sample — it uses **manual per-turn `BaggageBuilder()` in the handler** (NOT `ObservabilityHostingManager` middleware) and imports `BaggageBuilder` from `microsoft.opentelemetry.a365.core.middleware.baggage_builder`. The OpenAI sample still uses the legacy `configure(...)` + `OpenAIAgentsTraceInstrumentor().instrument()` pattern — the skill direction (unified `use_microsoft_opentelemetry`) is forward-looking; migrate existing code to it.
 >
-> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `a365_use_s2s_endpoint=True` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token (for example from `exchange_token(... scopes=get_observability_authentication_scope() ...)`) to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy); newer `a365 setup all` versions skip it for blueprint agents, while older versions may still grant it harmlessly. AI Teammate setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the app-role action item it prints, because the S2S route accepts that role.
+> **Telemetry always uses the S2S route.** Every agent (`agentic-user` AI Teammates, `obo`, and `s2s`) exports with `a365_use_s2s_endpoint=True` and an **app-only** token for the exporting agent identity. `authMode` only selects workload (MCP / Graph) auth and how the telemetry token is sourced. The S2S route rejects delegated (`scp`) tokens, so never pass an OBO or Agentic User token (for example from `exchange_token(... scopes=get_observability_authentication_scope() ...)`) to the exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy), and neither do AI Teammates, which the route authorizes by their Blueprint's registration. Newer `a365 setup all` versions skip that grant for both, while older versions may still grant it, or print an `OtelWrite` application-role action item for AI Teammates, harmlessly.
 
 ---
 
@@ -369,10 +369,10 @@ def _claims(token):
 > case-sensitive on Linux. Use that ID for both `prefetch(...)` and the turn's
 > `BaggageBuilder().agent_id(...)`.
 
-> **Authorization:** registered blueprint agent instances are authorized on the S2S route without
-> the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy).
-> For AI Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate`
-> prints. Do not add a delegated observability scope to the auth handler for telemetry.
+> **Authorization:** registered blueprint agent instances, and AI Teammates through their
+> Blueprint's registration, are authorized on the S2S route without the
+> `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy).
+> Do not add a delegated observability scope to the auth handler for telemetry.
 
 ---
 
@@ -1085,7 +1085,7 @@ python -c "from microsoft.opentelemetry import use_microsoft_opentelemetry; from
 | Spans dropped silently | Missing tenant/agent ID in baggage | Ensure `enable_baggage=True` and that `populate(builder, context)` runs before scope creation |
 | Delegated (OBO) telemetry token code still runs in the handler | Telemetry no longer uses a per-turn OBO exchange in any mode | Remove the `exchange_token(... get_observability_authentication_scope() ...)` / `cache_agentic_token` path. Interactive agents prefetch an app-only token; `s2s` agents use the background token service |
 | S2S 401: wrong Hop 3 scope | FMI Hop 3 used `https://api.powerplatform.com/.default` from older samples | Change Hop 3 scope to `api://9b975845-388f-4429-889e-eab1ef63949c/.default` |
-| 403 `insufficient_scope` even with correct scope | The agent instance is not registered and has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). AI Teammates: complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts |
+| 403 `insufficient_scope` even with correct scope | The service could not authorize the agent by registration, and it has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances, and AI Teammates through their Blueprint's registration, without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). For any agent, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts (see "Authorization — registration, not OtelWrite" in `SKILL.md`) |
 | S2S: MSI fails locally | No Managed Identity in dev | Set `AGENT365_USE_MANAGED_IDENTITY=false` and provide `AGENT365_CLIENT_SECRET` |
 | S2S: FMI Hop 1+2 returns 400 | `fmi_path` missing or wrong `client_id` | Ensure `fmi_path=<agentId>` (Agent Identity app ID, not Blueprint ID) and `client_id=<blueprintClientId>` |
 | S2S: `TypeError: Session.request() got an unexpected keyword argument 'fmi_path'` | MSAL Python v1.34.0 limitation | Use direct HTTP POST to `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token` with `fmi_path` as form data instead of MSAL `acquire_token_for_client(fmi_path=...)`. MSAL is still used for Hop 3 (no `fmi_path` needed) |

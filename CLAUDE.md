@@ -140,9 +140,11 @@ agent365-skills/
    blueprint agents and fail when registration fails or cannot be verified; older versions may
    still grant OtelWrite (harmless) and may exit 0 after a failed registration, so check setup
    output and rerun `a365 setup all --agent-registration-only` if needed. For blueprint agents,
-   a 403 `insufficient_scope` means the instance isn't registered. AI Teammates complete
-   the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. The application
-   role is always an accepted fallback on the S2S route.
+   a 403 `insufficient_scope` means the instance isn't registered. AI Teammates are authorized by
+   their Blueprint's registration (subject to service policy), so newer CLI versions skip OtelWrite
+   for them too; older versions still print an `OtelWrite` application-role step, which is harmless
+   to complete. The application role on the Blueprint is always an accepted fallback on the S2S
+   route.
 
 ---
 

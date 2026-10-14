@@ -122,7 +122,7 @@ After completion:
 node -e "const c=require('./a365.generated.config.json'); console.log('Blueprint ID:', c.agentBlueprintId)"
 ```
 
-**If the CLI output includes an Observability API S2S app role action item, another "Permission Grants" action item, or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can hand it to a Global Administrator. AI Teammate telemetry is exported over the S2S route with an app-only token for the agent instance (never a delegated token). That route accepts the `Agent365.Observability.OtelWrite` **application** role, which the script grants on the Blueprint, and it also accepts the instance's registration where service policy allows. A declined or pending app role grant does not block the rest of setup; continue with the next phase and surface it in the final summary.
+**If the CLI output includes a "Permission Grants" action item or any 403 errors:** display the PowerShell script printed in the CLI output verbatim so the user can hand it to a Global Administrator. AI Teammate telemetry is exported over the S2S route with an app-only token for the agent instance (never a delegated token), and the route authorizes it by the Blueprint's registration (subject to service policy), so newer CLI versions request no Observability API permissions. Older CLI versions may still print an Observability API S2S app role action item; its script grants the `Agent365.Observability.OtelWrite` **application** role on the Blueprint, which the route also accepts, so it is harmless to run. A declined or pending grant does not block the rest of setup; continue with the next phase and surface it in the final summary.
 
 ---
 
