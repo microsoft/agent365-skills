@@ -161,8 +161,8 @@ The S2S route requires an Observability API token with:
 ```text
 no scp claim (any delegated token is rejected)
 azp/appid == the exporting Agent Identity == /agents/{agentId}
-roles may be absent or empty for a registered agent instance; roles containing
-Agent365.Observability.OtelWrite are also accepted
+roles may be absent or empty for a registered agent instance or an AI Teammate whose Blueprint
+is registered; roles containing Agent365.Observability.OtelWrite are also accepted
 ```
 
 Select the transport in code: `useS2SEndpoint: true` (Node.js), `a365_use_s2s_endpoint=True`
@@ -251,13 +251,15 @@ Compare the live ID printed by the command with the local `agentBlueprintId`. A 
 Blueprint or a local ID that no longer resolves is a configuration blocker; do not rewrite the
 ID automatically.
 
-For observability, the S2S route (every auth mode) authorizes a **registered agent instance**
-without `Agent365.Observability.OtelWrite` (subject to service policy); the application role
-`Agent365.Observability.OtelWrite` on the Blueprint is accepted as well. The Agent 365 CLI no
-longer requests Observability API permissions for blueprint agents, so a missing OtelWrite grant
-is **not** a blocker when the instance is registered (`agentRegistrationId` in
-`a365.generated.config.json`). If neither registration nor the application role is evident,
-report `high` and recommend `a365 setup all --agent-registration-only` for blueprint agents. For AI Teammates, recommend the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. A delegated
+For observability, the S2S route (every auth mode) authorizes a **registered agent instance**, and
+an AI Teammate through its Blueprint's registration, without `Agent365.Observability.OtelWrite`
+(subject to service policy); the application role `Agent365.Observability.OtelWrite` on the
+Blueprint is accepted as well. The Agent 365 CLI no longer requests Observability API permissions
+for blueprint agents or AI Teammates, so a missing OtelWrite grant is **not** a blocker for an AI
+Teammate or when a blueprint agent instance is registered (`agentRegistrationId` in
+`a365.generated.config.json`). If a blueprint agent shows neither registration nor the application
+role, report `high` and recommend `a365 setup all --agent-registration-only`. If an AI Teammate's
+export returns 403 `insufficient_scope`, recommend the `OtelWrite` application-role fallback. A delegated
 `Agent365.Observability.OtelWrite` scope matters only to legacy delegated-route exporters — flag
 that code for migration (§5) instead.
 
@@ -312,7 +314,7 @@ database, endpoint, or correlation details into the validator report.
 | Export accepted (200/`sent`) but nothing in MAC | Confirm the target tenant and user satisfy current Agent 365 licensing and enrollment prerequisites |
 | Token fails `AADSTS500011` (resource principal not found) | Observability resource SP isn't in the tenant — Agent 365/observability onboarding, not a code fix |
 | S2S token via bare `ClientSecretCredential` → 403 | Mint via the FMI exchange so the principal == runtime Agent Identity (see §5) |
-| S2S export → 403 `insufficient_scope` with a valid app-only token | Instance not registered and no OtelWrite application role. Blueprint agents: run `a365 setup all --agent-registration-only` (a grant is not the expected fix). AI Teammates: complete the application-role step `a365 setup all --aiteammate` prints |
+| S2S export → 403 `insufficient_scope` with a valid app-only token | The service could not authorize the agent by registration, and it has no OtelWrite application role. Blueprint agents: run `a365 setup all --agent-registration-only` (a grant is not the expected fix). AI Teammates: a Global Administrator grants the `OtelWrite` application role on the Blueprint |
 | Exporter fed an OBO / Agentic User token (per-turn refresh or `AgenticTokenStruct` registration) | Replace with the app-only resolver and set the S2S transport flag (see §5) |
 | Python only passes `enable_a365=True` | Also pass `a365_enable_observability_exporter=True` or set exporter env true |
 | Queue/background job calls baggage helper with only `blueprint_id` | Pass the runtime `agent_id` explicitly |

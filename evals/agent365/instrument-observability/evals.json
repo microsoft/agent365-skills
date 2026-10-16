@@ -340,7 +340,7 @@
       "id": 11,
       "prompt": "Add A365 observability to this agent",
       "description": "Node.js LangChain AI Teammate that already wires observability the legacy delegated way: useMicrosoftOpenTelemetry without useS2SEndpoint, tokenResolver = AgenticTokenCacheInstance.getObservabilityToken, and a per-turn preloadObservabilityToken helper that calls AgenticTokenCacheInstance.refreshObservabilityToken(agentId, tenantId, turnContext, this.authorization)",
-      "expected_output": "The skill treats the delegated telemetry wiring as has_obs_partial and migrates it to the S2S route with an app-only token. It writes observability/app-token-resolver.ts, switches tokenResolver to the app-only resolver, adds useS2SEndpoint: true, and removes the preloadObservabilityToken helper and refreshObservabilityToken call. The baggage and scope wiring stay intact, and workload (MCP) OBO auth is untouched. It recommends a365.durableDelivery: { enabled: false } during the migration on @microsoft/opentelemetry 1.4.x, and lists every replaced call in the final summary. It does not ask for the delegated OtelWrite scope or a consent flow. If the AI Teammate's OtelWrite application-role step is still pending, it points to the action item that a365 setup all --aiteammate printed.",
+      "expected_output": "The skill treats the delegated telemetry wiring as has_obs_partial and migrates it to the S2S route with an app-only token. It writes observability/app-token-resolver.ts, switches tokenResolver to the app-only resolver, adds useS2SEndpoint: true, and removes the preloadObservabilityToken helper and refreshObservabilityToken call. The baggage and scope wiring stay intact, and workload (MCP) OBO auth is untouched. It recommends a365.durableDelivery: { enabled: false } during the migration on @microsoft/opentelemetry 1.4.x, and lists every replaced call in the final summary. It does not ask for the delegated OtelWrite scope or a consent flow, and it notes that the AI Teammate needs no Observability API permission because the S2S route authorizes it by its Blueprint's registration.",
       "files": [],
       "expectations": [
         "Idempotency / Phase 3: marker comments alone do not short-circuit — the missing S2S route flag and the delegated refresh trigger the delegated-telemetry migration instead of a skip",
@@ -350,7 +350,7 @@
         "Phase 4: the preloadObservabilityToken helper and the AgenticTokenCacheInstance.refreshObservabilityToken(..., this.authorization) call are removed; BaggageBuilder / InvokeAgentScope wiring is preserved",
         "Phase 4: workload OBO calls (MCP tool registration via agentApplication.authorization) are unchanged",
         "Phase 7: validate-instrument-observability.js passes (S2S route flag present, no delegated refresh left)",
-        "Phase 9: final summary lists each replaced delegated call, states that no delegated OBS consent is needed, and (AI Teammate) points to any pending OtelWrite application-role step from a365 setup all --aiteammate"
+        "Phase 9: final summary lists each replaced delegated call and states that no OBS permission or consent is needed (the AI Teammate is authorized by its Blueprint's registration)"
       ]
     }
   ]

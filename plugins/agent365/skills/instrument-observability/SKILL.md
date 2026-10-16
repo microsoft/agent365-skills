@@ -97,10 +97,10 @@ delegated telemetry" in Phase 3).
 > agent identity, whatever the `authMode`. The S2S route rejects delegated (`scp`) tokens, so
 > OBO / Agentic User tokens are used only for workload calls (MCP / Graph), never for the
 > exporter. Registered blueprint agent instances need no `Agent365.Observability.OtelWrite`
-> permission or admin consent (subject to service policy). Newer `a365 setup all` versions skip
-> that grant for blueprint agents; older versions may still grant it harmlessly. AI Teammate setup (`a365 setup all --aiteammate`) still offers the
-> `OtelWrite` application role; complete the app-role action item it prints, because the S2S route
-> accepts that role.
+> permission or admin consent (subject to service policy), and neither do AI Teammates, which the
+> route authorizes by their Blueprint's registration. Newer `a365 setup all` versions skip that
+> grant for both; older versions may still grant it, or print an `OtelWrite` application-role
+> action item for AI Teammates, and completing it is harmless.
 
 ---
 
@@ -789,7 +789,7 @@ Without this phase the skill ends "instrumented successfully" but the user has n
    - **Indexing lag: 15–90 minutes** between first successful export and spans appearing in `admin.cloud.microsoft → Advanced Hunting → CloudAppEvents`. If you query immediately after instrumenting, you'll see empty results — that's not a bug.
    - **Instance approval required.** Spans only attribute to a `CloudAppEvents` row when the AI Teammate's agent instance has been approved at `admin.cloud.microsoft/#/agents/all/requested` and an Agentic User UPN has been issued. Without that, exported spans land but don't surface in MAC queries.
    - **KQL filter MUST use the AUID, NOT the blueprint id.** The `AgentId` column in `CloudAppEvents` is the runtime AUID resolved from `turnContext.activity.recipient.agenticAppId`. For AI Teammates, the `agent365Observability__agentId` env var that `a365 setup all` stamps into `.env` is the BLUEPRINT id, and filtering by that value returns empty results. Get the AUID from your agent logs (the exporter logs `Obtained token for agent <AUID> tenant ...`) or from `recipient.agenticAppId` in any inbound activity.
-   - **OBS authorization.** Telemetry is exported over the S2S route with an app-only token. Blueprint agents: no OBS permission or consent step — registered instances are authorized without `Agent365.Observability.OtelWrite` (subject to service policy); on 403 `insufficient_scope`, run `a365 setup all --agent-registration-only`. AI Teammates: complete the Observability API S2S app-role action item that `a365 setup all --aiteammate` printed, if it is still pending.
+   - **OBS authorization.** Telemetry is exported over the S2S route with an app-only token. Blueprint agents: no OBS permission or consent step — registered instances are authorized without `Agent365.Observability.OtelWrite` (subject to service policy); on 403 `insufficient_scope`, run `a365 setup all --agent-registration-only`. AI Teammates: no OBS permission or consent step either — the route authorizes them by their Blueprint's registration (subject to service policy); on 403 `insufficient_scope`, use the application-role fallback in "Authorization — registration, not OtelWrite".
 
    **Verbose logging — only enable when actively debugging:**
    - Node.js / Python: uncomment `OTEL_LOG_LEVEL=INFO` AND `A365_OBSERVABILITY_LOG_LEVEL=info|warn|error` in `.env`. **Both** are required to see `[Agent365Exporter]` activity — the exporter uses a wrapped logger that defaults to silent.
@@ -852,11 +852,15 @@ This skill is safe to rerun. On subsequent runs:
 
 ### Authorization — registration, not OtelWrite
 
-Telemetry is exported over the S2S route with an app-only token for the agent identity. Registered agent instances are authorized on that route **without** `Agent365.Observability.OtelWrite` or admin consent (subject to service policy). Newer `a365 setup all` versions skip Observability API permissions for blueprint agents and exit 1 when registration fails or cannot be verified. Older versions may still grant OtelWrite (harmless) and may exit 0 after a failed registration, so check setup output for registration errors and rerun `a365 setup all --agent-registration-only` if needed.
+Telemetry is exported over the S2S route with an app-only token for the agent identity. Registered blueprint agent instances, and AI Teammates through their Blueprint's registration, are authorized on that route **without** `Agent365.Observability.OtelWrite` or admin consent (subject to service policy). Newer `a365 setup all` versions skip Observability API permissions for both, and for blueprint agents exit 1 when registration fails or cannot be verified. Older versions may still grant OtelWrite (harmless) and may exit 0 after a failed registration, so check setup output for registration errors and rerun `a365 setup all --agent-registration-only` if needed.
 
-- **403 `insufficient_scope` on export** → the agent instance is not registered and has no `OtelWrite` application role. Blueprint agents: run `a365 setup all --agent-registration-only` (idempotent), then retry. AI Teammates: that flag does not apply — complete the Observability API S2S app-role action item `a365 setup all --aiteammate` prints (the application role below).
-- **Application role (AI Teammates, and fallback for blueprint agents):** a Global Administrator can grant the `Agent365.Observability.OtelWrite` **application** role on the Blueprint, which agent identities inherit. The S2S route accepts it. Use the PowerShell steps that `a365 setup all` prints, or the Entra portal: App registrations > Blueprint > API permissions > APIs my organization uses > `9b975845-388f-4429-889e-eab1ef63949c` > **Application** `Agent365.Observability.OtelWrite` > Grant admin consent. `a365 setup all --aiteammate` still requests OtelWrite as both delegated and application permission; run the printed script. The application role is what the S2S route accepts, and the delegated part is harmless and not used for telemetry.
-- **Do not** add the delegated `OtelWrite` scope or run a delegated consent flow for telemetry. Delegated tokens are rejected by the S2S route. Only agents still on an old SDK that exports over the delegated route need that grant, and they should migrate instead (see "Migrating delegated telemetry" in Phase 3).
+- **403 `insufficient_scope` on export** → the service could not authorize the agent by registration, and it has no `OtelWrite` application role. Blueprint agents: run `a365 setup all --agent-registration-only` (idempotent), then retry. AI Teammates: that flag does not apply. First re-run `a365 setup all --aiteammate --m365` (idempotent) and check its output for Blueprint registration errors; if registration succeeded and exports still return 403, use the application role below.
+- **Application role (fallback):** a Global Administrator grants the `Agent365.Observability.OtelWrite` **application** role on the Blueprint, which the S2S route accepts. The Global Administrator runs both steps below, because a non-admin run of `setup permissions custom` stops at the delegated grant before it creates the inheritable entry. Use the Observability API app ID for the agent's cloud: Commercial `9b975845-388f-4429-889e-eab1ef63949c`, GCC Moderate `2c672ad5-b104-44ed-8069-bb68dd138546`, GCC High `009c6bd0-82e4-4466-95b3-4c996521f3d7`, DoD `a9e04047-c6a7-430b-a7ae-faf8f8eed1b7`.
+  1. Agent identities inherit the role only through the Blueprint's Observability inheritable-permission entry, which newer CLI versions no longer create, so run `a365 setup permissions custom --resource-app-id <Observability app ID> --scopes Agent365.Observability.OtelWrite` (the delegated scope it also adds is harmless and not used for telemetry).
+  2. Grant the role in the Entra portal: App registrations > Blueprint > API permissions > APIs my organization uses > `<Observability app ID>` > **Application** `Agent365.Observability.OtelWrite` > Grant admin consent.
+
+  Older `a365 setup all --aiteammate` versions print a PowerShell script that grants the role; run that script if its action item is still pending.
+- **Do not** add the delegated `OtelWrite` scope or run a delegated consent flow to authorize telemetry. Delegated tokens are rejected by the S2S route. Only agents still on an old SDK that exports over the delegated route need that grant, and they should migrate instead (see "Migrating delegated telemetry" in Phase 3).
 
 ### Node.js and .NET SDK `/otlp/` URL Path Bug
 

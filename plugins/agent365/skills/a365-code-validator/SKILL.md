@@ -407,13 +407,14 @@ Interpret observability authorization for the S2S route, which every auth mode u
 | Tenant state | Classification |
 |---|---|
 | Agent instance registered (`agentRegistrationId` present in `a365.generated.config.json`, or registration confirmed by `a365 setup all`) | OK — registered instances are authorized without `Agent365.Observability.OtelWrite` (subject to service policy) |
+| AI Teammate | OK — authorized by its Blueprint's registration without `Agent365.Observability.OtelWrite` (subject to service policy); it has no `agentRegistrationId` to check |
 | Application role `Agent365.Observability.OtelWrite` granted on the Blueprint (inherited by agent identities) | OK — the S2S route also accepts it |
-| Neither registration nor the application role is evident | `high` — export will likely return 403 `insufficient_scope`. Blueprint agents: `a365 setup all --agent-registration-only`. AI Teammates: complete the `OtelWrite` application-role step `a365 setup all --aiteammate` prints |
+| Blueprint agent with neither registration nor the application role evident | `high` — export will likely return 403 `insufficient_scope`; recommend `a365 setup all --agent-registration-only` |
 | Only the delegated `Agent365.Observability.OtelWrite` scope is granted | Informational — it only matters to legacy delegated-route exporters; flag the code for migration instead (§3.5) |
 
-Do **not** treat a missing `OtelWrite` grant as a blocker for a registered blueprint agent: newer
-Agent 365 CLI versions skip Observability API permissions for blueprint agents, and older versions
-may still grant them harmlessly. Treat a
+Do **not** treat a missing `OtelWrite` grant as a blocker for a registered blueprint agent or an AI
+Teammate: newer Agent 365 CLI versions skip Observability API permissions for both, and older
+versions may still grant them harmlessly. Treat a
 non-zero `inheritance` result for another required resource as `high`. Permission names and
 resource display names are safe to summarize, but redact tenant, Blueprint, application,
 service-principal, and agent IDs.
@@ -422,8 +423,9 @@ For remediation, report the CLI guidance without applying it:
 
 - Run `a365 setup requirements` when the output points to a missing `wids` claim or CLI consent.
 - Run `a365 setup all --agent-registration-only` (idempotent) when a blueprint agent instance is
-  not registered. For AI Teammates, point to the `OtelWrite` application-role step that
-  `a365 setup all --aiteammate` prints (the registration-only flag does not apply to them). Run the relevant `a365 setup permissions ...` flow as a Global Administrator to
+  not registered (the flag does not apply to AI Teammates). If an AI Teammate's export still
+  returns 403 `insufficient_scope`, point to the `OtelWrite` application-role fallback in
+  `instrument-observability`. Run the relevant `a365 setup permissions ...` flow as a Global Administrator to
   reconcile other grants and inheritance.
 - For a stale Blueprint ID, hand off to `a365-setup` so the developer can explicitly choose the
   correct reuse/re-run/fresh path. Do not rewrite the ID automatically.
@@ -497,10 +499,11 @@ When the code checks above pass, have the user confirm, in the *target* tenant:
   returns a service principal in the tenant. A `404` / `AADSTS500011` ("resource principal … not
   found") means the observability app isn't provisioned there — an onboarding step, not a code fix.
 - **Agent instance registration** — a 403 `insufficient_scope` from the S2S route with a valid
-  app-only token means the instance is not registered (and has no `OtelWrite` application role).
-  For blueprint agents, registration is the expected fix, not a permission grant:
-  `a365 setup all --agent-registration-only`. For AI Teammates, complete the `OtelWrite`
-  application-role step that `a365 setup all --aiteammate` prints.
+  app-only token means the service could not authorize the agent by registration (and it has no
+  `OtelWrite` application role). For blueprint agents, registration is the expected fix, not a
+  permission grant: `a365 setup all --agent-registration-only`. AI Teammates are authorized by
+  their Blueprint's registration; if they still get 403, a Global Administrator grants the
+  `OtelWrite` application role on the Blueprint (see `instrument-observability`).
 - **Ingestion lag** — Defender `CloudAppEvents` populates before the admin center; give it ~5 min.
 
 **Mark task complete: "Check live blueprint permissions and runtime state".**

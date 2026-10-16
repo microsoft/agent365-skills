@@ -12,10 +12,9 @@ into a .NET AgentFramework agent. All samples mirror the official Microsoft Lear
 > route rejects delegated (`scp`) tokens, so do not register per-turn OBO tokens
 > (`RegisterObservability(..., new AgenticTokenStruct(...))`) for telemetry. Registered blueprint
 > agent instances need no `Agent365.Observability.OtelWrite` permission or admin consent (subject
-> to service policy). Newer `a365 setup all` versions skip that grant for blueprint agents; older
-> versions may still grant it harmlessly. AI Teammate
-> setup (`a365 setup all --aiteammate`) still offers the `OtelWrite` application role; complete the
-> app-role action item it prints, because the S2S route accepts that role.
+> to service policy), and neither do AI Teammates, which the route authorizes by their Blueprint's
+> registration. Newer `a365 setup all` versions skip that grant for both; older versions may still
+> grant it, or print an `OtelWrite` application-role action item for AI Teammates, harmlessly.
 >
 > **Option paths by distro version:** `Microsoft.OpenTelemetry` 1.0.3+ exposes the exporter
 > options directly on `o.Agent365` (`o.Agent365.UseS2SEndpoint`, `o.Agent365.TokenResolver`).
@@ -202,7 +201,7 @@ public static class ObservabilityServiceExtensions
 >   - `true` (production) — MSI → Blueprint FIC → Agent Identity → API
 >   - `false` (local dev) — Client Secret → Blueprint FIC → Agent Identity → API
 >
-> **Authorization:** registered agent instances are authorized on the S2S route without the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy). Newer `a365 setup all` versions skip that grant for blueprint agents; older versions may still grant it harmlessly. If export returns 403 `insufficient_scope`, register a blueprint agent instance with `a365 setup all --agent-registration-only`; for AI Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `OtelWrite` application role.
+> **Authorization:** registered blueprint agent instances, and AI Teammates through their Blueprint's registration, are authorized on the S2S route without the `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy). Newer `a365 setup all` versions skip that grant for both; older versions may still grant it harmlessly. If export returns 403 `insufficient_scope`, register a blueprint agent instance with `a365 setup all --agent-registration-only`. For any agent, a Global Administrator can grant the `OtelWrite` application role on the Blueprint as a fallback (see "Authorization — registration, not OtelWrite" in `SKILL.md`).
 
 ```csharp
 using Azure.Core;
@@ -641,9 +640,9 @@ public sealed class AgentAppTokenResolver
 > deployment serve several agent instances/tenants and inherit certificate, federated-identity,
 > or managed-identity credentials. The Agent365 samples use a dedicated single-identity OBS
 > credential when telemetry auth should be isolated from business auth.
-> Registered blueprint agent instances are authorized on the S2S route without the
-> `Agent365.Observability.OtelWrite` permission or admin consent (subject to service policy). For AI
-> Teammates, complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints.
+> Registered blueprint agent instances, and AI Teammates through their Blueprint's registration,
+> are authorized on the S2S route without the `Agent365.Observability.OtelWrite` permission or
+> admin consent (subject to service policy).
 
 ### Required appsettings.json keys (OBO / AI Teammate)
 
@@ -1539,7 +1538,7 @@ The `a365 setup` command (as of April 2026) automatically writes the following t
 | S2S: token service skipped at startup | Placeholder or missing `Agent365Observability` credentials | Run `a365 setup all` or populate `TenantId`, `AgentId`, `ClientId`, and `ClientSecret` (when `UseManagedIdentity` is `false`) |
 | S2S: 401 on export | Token acquired for wrong scope or app | Verify FMI Hop 3 scope is `api://9b975845-388f-4429-889e-eab1ef63949c/.default` and that the token is app-only and minted for the agent identity |
 | S2S: FMI Hop 1+2 fails | Blueprint credentials wrong or `.WithFmiPath(agentId)` target incorrect | Check `ClientId` (Blueprint app ID) and `ClientSecret` in appsettings; verify `AgentId` matches the Agent Identity app ID |
-| 403 `insufficient_scope` on export | The agent instance is not registered and has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). AI Teammates: complete the `OtelWrite` application-role step that `a365 setup all --aiteammate` prints. Either way, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts |
+| 403 `insufficient_scope` on export | The service could not authorize the agent by registration, and it has no `OtelWrite` application role. The S2S route authorizes registered blueprint instances, and AI Teammates through their Blueprint's registration, without `OtelWrite` (subject to service policy) | Blueprint agents: register the instance with `a365 setup all --agent-registration-only` (idempotent). For any agent, a Global Administrator can grant the `Agent365.Observability.OtelWrite` application role on the Blueprint, which the S2S route accepts (see "Authorization — registration, not OtelWrite" in `SKILL.md`) |
 | S2S: MSI fails locally | No Managed Identity available in dev | Set `UseManagedIdentity: false` in appsettings.Development.json, ensure `ClientSecret` is populated |
 | S2S: `UseMicrosoftOpenTelemetry` not found | Unified distro not installed | Run `dotnet add package Microsoft.OpenTelemetry` (GA 1.0.2+) |
 | Duplicate spans for SemanticKernel / OpenAI / AgentFramework | Both unified distro auto-instrumentation toggles and the legacy `Microsoft.Agents.A365.Observability.Extensions.*` packages are wired | Uninstall the `Extensions.*` packages — the distro's `o.Instrumentation.Enable*Instrumentation` toggles supersede them |
