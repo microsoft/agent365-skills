@@ -105,6 +105,14 @@ hooks:
 
 ## Phase 0A — Workspace Triage and Detection Cache
 
+**Standalone Copilot SDK guard:** Before cache reuse or scaffolding, read the selected
+project's `package.json`. A direct `@github/copilot-sdk` dependency/devDependency or
+cached `agentStack = "GitHub Copilot SDK"` belongs to the standalone spike in
+`${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md`. **Stop this skill** and
+refer to `/agent365:a365-setup` for standalone registration/basic observability.
+Do not add Teams, AI Teammate, Digital Worker, Agent Template, agentic user/mailbox,
+notifications, licensing, or hosting; a conflicting existing project is a blocker.
+
 ### Step 1 — Triage the workspace
 
 Run in parallel and combine results:

@@ -81,6 +81,13 @@ All changes are **additive** and **idempotent** — rerunning is safe.
 
 ## Phase 0A — Workspace Triage and Detection Cache
 
+**Standalone Copilot SDK guard:** A direct `@github/copilot-sdk` dependency/devDependency
+in the selected project's `package.json` (check even with a fresh cache), or cached
+`agentStack = "GitHub Copilot SDK"`, is outside this skill's supported scope.
+**Stop before installs, catalog queries, manifest writes, or wiring.** Read
+`${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md`; no WorkIQ adapter or
+notifications are offered by the standalone spike, regardless of cached authMode.
+
 ### Step 1 — Triage the workspace
 
 Run in parallel:

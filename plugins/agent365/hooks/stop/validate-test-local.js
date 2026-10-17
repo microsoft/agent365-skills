@@ -14,6 +14,7 @@
 
 const { execSync } = require('child_process');
 const { scanProject, filterByName } = require('../lib/project-scan');
+const { getCopilotSdkProject } = require('../lib/copilot-sdk');
 
 // In unit tests we set VALIDATE_SKIP_EXEC=1 to bypass the tool-presence
 // checks — otherwise test results depend on what happens to be installed on
@@ -30,6 +31,15 @@ function run(cmd) {
 
 const cwd = process.cwd();
 const issues = [];
+const copilotSdk = getCopilotSdkProject(cwd);
+if (copilotSdk) {
+  process.stdout.write(JSON.stringify({
+    ok: copilotSdk.issues.length === 0,
+    ...(copilotSdk.issues.length ? { reason: copilotSdk.issues.join('; ') } : {}),
+    note: 'Standalone static guardrails only. Use the verified project offline build/test/smoke scripts; no AgentsPlayground, runtime, login, or export was launched',
+  }));
+  process.exit(copilotSdk.issues.length ? 1 : 0);
+}
 
 // ── Detect project type ─────────────────────────────────────────────────────
 

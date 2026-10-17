@@ -3,6 +3,17 @@
 This repository is a **Claude Code / GitHub Copilot CLI plugin marketplace** containing
 skills for the Microsoft Agent 365 platform. Read this file before making any changes.
 
+**Standalone GitHub Copilot SDK spike:** A direct `@github/copilot-sdk` dependency
+plus TypeScript source uses [the standalone route](plugins/agent365/shared/copilot-sdk-standalone.md)
+through existing setup/registration/observability skills. Re-check before cache
+reuse. This exception overrides generic hosting and latest-version installs: confirm
+standalone scope/S2S, blueprint reuse/preview approval, and verified sample/diff
+approval before edits. Pin published releases and separate offline from live
+evidence. Never infer Microsoft 365 Copilot or add teammate/Teams/WorkIQ/agentic-user,
+licensing, runtime rewrites, model-based telemetry, or local-spike cloud operations.
+The shared route records explicit scope/S2S and operation approvals; report-only
+hook completion never authorizes registration or instrumentation.
+
 ---
 
 ## What's in this repo

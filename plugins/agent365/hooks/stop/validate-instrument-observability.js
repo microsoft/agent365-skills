@@ -15,7 +15,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
+const { getCopilotSdkProject, getCopilotSdkObservabilityIssues } = require('../lib/copilot-sdk');
 const {
   scanProject,
   filterByName,
@@ -26,6 +27,30 @@ const {
 
 const cwd = process.cwd();
 const issues = [];
+const copilotSdk = getCopilotSdkProject(cwd);
+if (copilotSdk) {
+  const standaloneIssues = getCopilotSdkObservabilityIssues(copilotSdk);
+  if (!standaloneIssues.length && !process.env.VALIDATE_SKIP_EXEC) {
+    const compiler = path.join(cwd, 'node_modules', 'typescript', 'bin', 'tsc');
+    if (!fs.existsSync(compiler)) {
+      standaloneIssues.push('Local TypeScript compiler is missing; restore the approved pinned dependencies before build validation (no automatic install)');
+    } else {
+      try {
+        execFileSync(process.execPath, [compiler, '--noEmit'], { cwd, timeout: 15000, stdio: 'pipe' });
+      } catch {
+        standaloneIssues.push('Standalone TypeScript compilation failed; run the existing build command for diagnostics and fix it before completion');
+      }
+    }
+  }
+  process.stdout.write(JSON.stringify({
+    ok: standaloneIssues.length === 0,
+    status: standaloneIssues.length ? 'blocked' : 'local-wiring-validated',
+    operationAllowed: false,
+    ...(standaloneIssues.length ? { reason: standaloneIssues.join('; ') } : {}),
+    note: 'Standalone static wiring checks only; verify the sample tests and actual opt-in export separately. No proof of tenant grants, ingestion, or MAC visibility',
+  }));
+  process.exit(standaloneIssues.length ? 1 : 0);
+}
 
 const workspaceDetection = readJson(path.join(cwd, '.a365-workspace-detection.local.json')) || {};
 const authMode = (workspaceDetection.authMode || '').toLowerCase();

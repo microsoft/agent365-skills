@@ -113,6 +113,15 @@ TaskCreate: "Offer guided remediation"
 
 ## Phase 1 — Detect Stack and A365 Artifacts
 
+**GitHub Copilot SDK:** If the selected project's `package.json` declares
+`@github/copilot-sdk` or the cache says `agentStack = "GitHub Copilot SDK"`, first
+read `${CLAUDE_PLUGIN_ROOT}/shared/copilot-sdk-standalone.md`. Its **section 4**
+governs validation/remediation: static/offline evidence is not E2E evidence, export
+may intentionally be disabled, and a standalone app does not need Teams,
+TurnContext, an agentic user, WorkIQ, or a Web App managed identity. Do not repair
+missing telemetry with generic hosting snippets or a guessed Copilot adapter.
+Keep this report-first; for the local spike the operator owns all live checks.
+
 **Mark task in progress:** "Detect stack and A365 artifacts"
 
 Read, in parallel when possible:
