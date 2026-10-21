@@ -13,7 +13,7 @@ jobs:
     name: JSON lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate all JSON files
         run: |
           FAIL=0
@@ -30,7 +30,7 @@ jobs:
     name: JS hook syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check all hook JS files
         run: |
           FAIL=0
@@ -47,7 +47,7 @@ jobs:
     name: Version parity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: plugin.json == .claude-plugin/marketplace.json == .github/plugin/marketplace.json
         run: |
           V1=$(node -e "process.stdout.write(require('./plugins/agent365/.claude-plugin/plugin.json').version)")
@@ -71,7 +71,7 @@ jobs:
     name: Cross-platform patterns
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check for non-portable shell commands in SKILL.md files
         run: |
           FAIL=0
@@ -104,7 +104,7 @@ jobs:
     name: Internal link integrity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Check that all reference file links in SKILL.md files resolve
         run: |
           FAIL=0
@@ -131,8 +131,8 @@ jobs:
     name: Hook validator tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
       - name: Run validator unit tests
@@ -143,7 +143,7 @@ jobs:
     name: Hook coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Every skill directory has a corresponding stop-hook validator
         run: |
           FAIL=0
@@ -162,7 +162,7 @@ jobs:
     name: Plugin name format (kebab-case)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Validate kebab-case plugin names
         run: |
           python3 <<'PY'
