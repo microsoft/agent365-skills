@@ -10,7 +10,7 @@ Shared heuristics for classifying an agent before any instrumentation or setup r
 The skill MUST detect and store these three variables before asking ANY questions:
 
 1. **`agentStack`** — Agent stack/framework
-   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`, `Semantic Kernel`, `Claude`, `Google ADK`
+   - Possible values: `Agent Framework`, `LangChain`, `OpenAI`, `Semantic Kernel`, `Claude`, `Google ADK`, `GitHub Copilot SDK`
    - Detection: See detection logic below
 
 2. **`programmingLanguage`** — Programming language
@@ -34,6 +34,7 @@ Agent Framework  → .csproj + (Microsoft.Agents.* OR AgentApplication OR Micros
 Semantic Kernel  → .csproj + Microsoft.SemanticKernel
 
 # Node.js ────────────────────────────────────────────────────────────────── (check in order)
+GitHub Copilot SDK → exact @github/copilot-sdk dependency/devDependency + TypeScript source
 LangChain        → package.json + @langchain/* OR "langchain"
 OpenAI           → package.json + @openai/agents OR "openai" (no LangChain)
 Claude           → package.json + @anthropic-ai/claude-agent-sdk OR @anthropic-ai/sdk OR "anthropic"
@@ -59,6 +60,13 @@ Python → requirements.txt OR .py files
 ```
 
 ### Custom Engine Agent Detection (usesTeamsOrCopilot)
+
+**GitHub Copilot SDK exception:** Before using a cached stack or applying CEA/AI
+Teammate routing, read the selected project's `package.json` for the exact
+`@github/copilot-sdk` dependency. Follow [copilot-sdk-standalone.md](copilot-sdk-standalone.md)
+for this TypeScript-only spike. GitHub Copilot is not Microsoft 365 Copilot and is
+not a CEA signal. Conflicting actual Teams/teammate markers block this route rather
+than silently selecting AI Teammate. Never use a generic Node.js runtime fallback.
 
 Run these checks in parallel (Glob + Grep).
 
@@ -99,6 +107,7 @@ BOT_ID / MicrosoftAppId / TEAMS_APP_ID   + structural → CEA
 ## Classification Order (always follow this sequence)
 
 ```
+Step 0: Direct GitHub Copilot SDK dependency?            → Standalone reference; no generic/AI Teammate fallback
 Step 1: Unsupported? (M365/Teams/BizChat non-AI-teammate) → STOP
 Step 2: AI Teammate?                                    → Warn, special publish path
 Step 3: Supported type? (dotnet-agentframework, dotnet-semantic-kernel, nodejs-langchain, python-agentframework) → Full support
@@ -110,7 +119,8 @@ Step 5: Unknown (no signals)                               → Ask user
 
 ## Step 1 — Unsupported Scenario Detection (HARD STOP)
 
-Run these checks **first**, before any other detection.
+For stacks other than the standalone GitHub Copilot SDK route, run these checks
+**first**, before the remaining classification steps.
 
 ### Grep signals for M365 / Teams / BizChat / Copilot
 

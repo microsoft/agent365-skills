@@ -3,6 +3,40 @@
   "eval_instructions": "When running these evals, test against real .NET AgentFramework, Node.js LangChain, and Python agent projects. Verify that all instrumented code includes the marker comment appropriate for the language: '// A365 Observability — best-effort instrumentation (verify against official sample)' for .NET and Node.js, or '# A365 Observability — best-effort instrumentation (verify against official sample)' for Python.",
   "evals": [
     {
+      "id": 1002,
+      "prompt": "Use the inspected local Copilot SDK sample helpers to add basic observability to this standalone agent. I approve the minimal local diff only; keep export disabled and preserve my current model, tools, session behavior, and hosting.",
+      "description": "Companion explicit-provider template adaptation after source verification, no first-class adapter or hosted fallback",
+      "expected_output": "Reviews the local source/pinned contract, preserves the existing runtime, adapts only config/auth/telemetry bootstrap and invocation/custom-tool wrapping, and checks offline build/tests. Uses NodeTracerProvider and direct Agent365Exporter only behind the false-by-default export gate, not useMicrosoftOpenTelemetry or hosted baggage middleware.",
+      "files": [],
+      "expectations": [
+        "Checks the actual local sample source is supplied and matches the build-verified contract; no invented release URL",
+        "Records explicit scope/S2S and observability source-contract/diff approval; report-only setup completion never authorizes instrumentation",
+        "Uses SDK 1.0.14/bundled runtime 1.0.85, distro 1.4.0, MSAL 7.0.0 and exact OTel dependency pins",
+        "Uses InvokeAgentScope/ExecuteToolScope with explicit AgentDetails and tool parentContext",
+        "Preserves existing runtime callbacks and custom tools; does not copy the arithmetic demo agent/model/system prompt over the app",
+        "Creates one provider and shutdown path; stops for verified integration if a provider already exists",
+        "Exporter remains opt-in false, actual usage stays an SDK event, and no InferenceScope is fabricated",
+        "Runs local build/tests/offline smoke only; no tenant token acquisition, registration or live prompt is implied",
+        "Separates static hook success, actual offline tests, real Copilot events, and unverified tenant ingestion"
+      ]
+    },
+    {
+      "id": 1001,
+      "prompt": "Add basic Agent 365 observability to my standalone TypeScript @github/copilot-sdk app without changing hosting. The local reference helper has not yet been verified and I have no tenant credentials.",
+      "description": "Copilot SDK instrumentation contract gate; overrides generic Node.js snippets",
+      "expected_output": "Reads the standalone reference and reports observability wiring pending verified sample contract. Leaves the existing runtime unchanged rather than generating a Copilot adapter, generic TurnContext hosting, or token recipe. Local deterministic evidence and future live evidence are separated.",
+      "files": [],
+      "expectations": [
+        "Uses existing instrument-observability skill, not a competing onboarding skill",
+        "No runtime helper edits until source revision/files, exact released pins, auth/env contract, lifecycle and tests are verified",
+        "No TurnContext, AgentApplication, configureA365Hosting, Teams, agentic user/mailbox, or WorkIQ",
+        "No model-generated telemetry, invented token counts, sendAndWait-as-inference span, or claim of built-in tool/all model coverage",
+        "Export is opt-in, disabled without identity/grants; no silent live smoke test",
+        "Reruns preserve SDK model/tools/session and avoid duplicate providers/listeners/wrappers",
+        "Offline build/tests never count as registration, S2S grants, ingestion, or MAC/Defender visibility"
+      ]
+    },
+    {
       "id": 1,
       "prompt": "Instrument observability for this agent",
       "description": "Test on a .NET AgentFramework project — authMode: obo (OBO path)",
