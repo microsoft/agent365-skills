@@ -256,7 +256,7 @@ Run the relevant check for the chosen sample:
 
 | Sample | Check command | Install URL if missing |
 |--------|--------------|------------------------|
-| .NET (1, 2) | `dotnet --version` | https://dotnet.microsoft.com/download (requires .NET 8+) |
+| .NET (1, 2) | `dotnet --version` | https://dotnet.microsoft.com/download (requires .NET 10+) |
 | Node.js (3, 4) | `node --version && npm --version` | https://nodejs.org (requires Node.js 18+) |
 | Python (5, 6, 7) | `python --version` or `python3 --version` | https://www.python.org/downloads (requires 3.11+) |
 

@@ -292,7 +292,7 @@ function checkA365() {
   } else {
     warn('a365 CLI not found. Install with:');
     log('  dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli');
-    log('  (requires .NET 8.0 or later)');
+    log('  (requires .NET 10.0 or later)');
   }
 }
 

@@ -12,7 +12,7 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 ## Prerequisites
 
 - **Microsoft Agent 365** tenant with developer access
-- **Node.js 18+**, **.NET 8.0+**, or **Python 3.11+** (depending on your agent)
+- **Node.js 18+**, **.NET 10.0+**, or **Python 3.11+** (depending on your agent)
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
