@@ -13,6 +13,8 @@ body:
         - make-a365-agent
         - add-workiq-tools
         - instrument-observability
+        - a365-code-validator
+        - purview-dlp-integration
         - test-local
         - new skill
     validations:

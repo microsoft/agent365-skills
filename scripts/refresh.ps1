@@ -6,7 +6,7 @@
 #   - the version-check cache ($LOCALAPPDATA/agent365-skills/)
 #   - the project-local detection cache (.a365-workspace-detection.local.json)
 #   - the per-project Agent 365 skills under .agents/skills/<plugin-skill>/
-#     (only the 6 plugin-owned skills; any other subdir is left alone)
+#     (only the 8 plugin-owned skills; any other subdir is left alone)
 #   - the Agent 365 instructions section in .github/copilot-instructions.md
 #     (surgically removed via the "# Agent 365 Skills" H1 marker — other
 #     content above the marker is preserved)
@@ -30,6 +30,8 @@ $pluginSkills = @(
     'make-a365-agent',
     'add-workiq-tools',
     'instrument-observability',
+    'a365-code-validator',
+    'purview-dlp-integration',
     'test-local'
 )
 
