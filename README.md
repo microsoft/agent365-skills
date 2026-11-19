@@ -1,7 +1,7 @@
 # Agent 365 Skills
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/microsoft/agent365-skills/blob/main/plugins/agent365/.claude-plugin/plugin.json)
 
 Agent skills and MCP configuration for [Microsoft Agent 365](https://learn.microsoft.com/en-us/microsoft-agent-365/developer/) — works with Claude Code and GitHub Copilot. Skills cover the full A365 lifecycle: transforming agents into AI Teammates, registering Blueprints for registration or Observability paths, wiring WorkIQ MCP servers, instrumenting observability, validating A365 telemetry code, and local testing with AgentsPlayground.
 
@@ -12,7 +12,7 @@ Browse the [`plugins/agent365/skills/`](https://github.com/microsoft/agent365-sk
 ## Prerequisites
 
 - **Microsoft Agent 365** tenant with developer access
-- **Node.js 18+**, **.NET 8.0+**, or **Python 3.11+** (depending on your agent)
+- **Node.js 18+**, **.NET 10.0+**, or **Python 3.11+** (depending on your agent)
 - **a365 CLI** — `dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli`
 - **Azure CLI** — `winget install Microsoft.AzureCLI` (Windows) or `brew install azure-cli` (macOS)
 
@@ -56,7 +56,7 @@ The fastest way to install for GitHub Copilot CLI and VS Code agent mode:
 gh skill add microsoft/agent365-skills
 ```
 
-This reads `.github/plugin/marketplace.json` and installs all seven skills directly into your Copilot CLI session. Use `/skills list` to verify, and invoke skills by name:
+This reads `.github/plugin/marketplace.json` and installs all eight skills directly into your Copilot CLI session. Use `/skills list` to verify, and invoke skills by name:
 
 ```bash
 gh copilot suggest "Make this agent an AI Teammate"
@@ -72,7 +72,7 @@ cd my-agent-project
 node /path/to/agent365-skills/scripts/install.js
 ```
 
-The installer copies all seven skill directories into `.agents/skills/` in your project. Skills then appear automatically in VS Code's Configure Skills menu (`/skills list`) and are loaded on demand by VS Code agent mode and the Copilot cloud agent.
+The installer copies all eight skill directories into `.agents/skills/` in your project. Skills then appear automatically in VS Code's Configure Skills menu (`/skills list`) and are loaded on demand by VS Code agent mode and the Copilot cloud agent.
 
 ### GitHub Copilot CLI (`gh copilot`)
 
@@ -423,7 +423,7 @@ Check which Agent 365 capabilities have already been applied to this agent and t
 
 ## What's Included
 
-- **6 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP servers, observability instrumentation, and local testing with AgentsPlayground
+- **8 skills** covering full AI Teammate transformation, Blueprint provisioning for all capability paths, WorkIQ MCP servers, observability instrumentation, telemetry validation, Purview DLP integration, and local testing with AgentsPlayground
 - **Multi-language support** — Node.js (LangChain, OpenAI Agents SDK, Claude SDK, Semantic Kernel, Google ADK), .NET (AgentFramework, Semantic Kernel), and Python (AgentFramework, LangChain, OpenAI, Claude, Semantic Kernel, Google ADK)
 - **Auth mode detection** — two-stage question flow determines agent kind (AI Teammate vs Agent (Non AI Teammate)) and auth mode (`obo` / `s2s` / `agentic-user`); drives the WorkIQ token path and how the app-only observability token is sourced (telemetry always uses the S2S route); cached in `.a365-workspace-detection.local.json` across skills
 - **Automatic agent detection** — skills detect your LLM framework, programming language, and Custom Engine Agent status, then ask validation questions before any code runs

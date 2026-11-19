@@ -183,7 +183,18 @@ function installCopilotInstructions() {
 // Copies each skill directory into .agents/skills/<skill-name>/ in the
 // target project. This is the open agentskills.io standard location,
 // recognised by VS Code agent mode, GitHub Copilot CLI, and cloud agent.
-// Only SKILL.md and references/ are copied — Claude-specific hooks are excluded.
+// Only SKILL.md and its bundled references/, assets/, and scripts/ resources are
+// copied — Claude-specific hooks are excluded.
+
+function copyDirSync(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDirSync(s, d);
+    else fs.copyFileSync(s, d);
+  }
+}
 
 function installAgentsSkills() {
   header('Agent Skills — .agents/skills/ (open standard)');
@@ -225,14 +236,10 @@ function installAgentsSkills() {
     const srcSkill = path.join(srcDir, 'SKILL.md');
     if (fs.existsSync(srcSkill)) fs.copyFileSync(srcSkill, destSkill);
 
-    // Copy references/ if present
-    const srcRefs = path.join(srcDir, 'references');
-    if (fs.existsSync(srcRefs)) {
-      const destRefs = path.join(destDir, 'references');
-      fs.mkdirSync(destRefs, { recursive: true });
-      for (const f of fs.readdirSync(srcRefs)) {
-        fs.copyFileSync(path.join(srcRefs, f), path.join(destRefs, f));
-      }
+    // SKILL.md links these by relative path (e.g. purview-dlp-integration's assets/ and scripts/)
+    for (const sub of ['references', 'assets', 'scripts']) {
+      const srcSub = path.join(srcDir, sub);
+      if (fs.existsSync(srcSub)) copyDirSync(srcSub, path.join(destDir, sub));
     }
 
     installed++;
@@ -292,7 +299,7 @@ function checkA365() {
   } else {
     warn('a365 CLI not found. Install with:');
     log('  dotnet tool install -g Microsoft.Agents.A365.DevTools.Cli');
-    log('  (requires .NET 8.0 or later)');
+    log('  (requires .NET 10.0 or later)');
   }
 }
 
@@ -335,6 +342,8 @@ console.log('    💡 "Registration setup for this agent"');
 console.log('    💡 "Add workiq tools to this agent"');
 console.log('    💡 "Instrument observability for this agent"');
 console.log('    💡 "Add A365 observability to this Python agent"');
+console.log('    💡 "Validate a365 code"');
+console.log('    💡 "Add Purview DLP to my agent"');
 console.log('    💡 "Test this agent locally"\n');
 console.log('  Slash commands (Claude Code only — requires marketplace install OR --plugin-dir):\n');
 console.log('    /plugin marketplace add microsoft/agent365-skills');
@@ -347,6 +356,8 @@ console.log(`    /agent365:a365-setup`);
 console.log(`    /agent365:make-a365-agent`);
 console.log(`    /agent365:add-workiq-tools`);
 console.log(`    /agent365:instrument-observability`);
+console.log(`    /agent365:a365-code-validator`);
+console.log(`    /agent365:purview-dlp-integration`);
 console.log(`    /agent365:test-local\n`);
 console.log('  Note: slash commands do NOT work in Copilot Chat or Copilot CLI (use trigger phrases above).');
 console.log('  If you see /make-ai-teammate (bare, no `agent365:` prefix), the skills are flat-copied to');

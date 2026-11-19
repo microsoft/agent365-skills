@@ -72,7 +72,7 @@ if (!playgroundVersion) {
 if (isDotnet) {
   const dotnetVersion = run('dotnet --version');
   if (!dotnetVersion) {
-    issues.push('.NET SDK not found — Phase 1.3 should have installed it. Run: winget install Microsoft.DotNet.SDK.8 (Windows) or brew install dotnet (macOS), restart your terminal, then re-run the skill.');
+    issues.push('.NET SDK not found — Phase 1.3 should have installed it. Run: winget install Microsoft.DotNet.SDK.10 (Windows) or brew install dotnet (macOS), restart your terminal, then re-run the skill.');
   }
 }
 

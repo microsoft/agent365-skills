@@ -27,7 +27,7 @@ hooks:
     - type: prompt
       prompt: |
         Before ending, verify ALL of the following:
-        1. All required system prerequisites were checked: .NET SDK 8+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
+        1. All required system prerequisites were checked: .NET SDK 10+, a365 CLI, PowerShell 7+, Azure CLI, Az PowerShell module, Git, and language-specific tools (Node.js/npm or Python/uv as applicable).
         2. a365 CLI is installed and confirmed with a365 -h.
         3. Azure CLI login was validated using az login --allow-no-subscriptions; az account show confirmed correct account and tenant.
         4. Capabilities were selected first; authMode (obo/s2s) was then collected only for non-AI Teammate agents and written to .a365-workspace-detection.local.json (authMode="agentic-user" for AI Teammate — agent's own M365 identity, not the caller's token).
@@ -344,22 +344,22 @@ Present the results to the user as a summary table showing ✅ (found / version 
 
 ---
 
-### 1.1 — .NET SDK 8+
+### 1.1 — .NET SDK 10+
 
 **Required by:** a365 CLI install, all .NET agent builds.
 
-> **Skip this section if the quick scan showed ✅ for .NET SDK at 8.0 or above.**
+> **Skip this section if the quick scan showed ✅ for .NET SDK at 10.0 or above.**
 
 ```bash
 dotnet --version
 dotnet --list-sdks
 ```
 
-If missing or below 8.0:
+If missing or below 10.0:
 
-> "**.NET SDK 8.0 or later** is required. Install it now?"
+> "**.NET SDK 10.0 or later** is required. Install it now?"
 >
-> - **Windows:** `winget install Microsoft.DotNet.SDK.8`
+> - **Windows:** `winget install Microsoft.DotNet.SDK.10`
 > - **macOS:** `brew install --cask dotnet-sdk` or download from https://dotnet.microsoft.com/download
 > - **Linux:** follow https://learn.microsoft.com/en-us/dotnet/core/install/linux
 
@@ -589,7 +589,7 @@ If `uv` is missing:
 dotnet --list-sdks
 ```
 
-Confirm at least one SDK entry at 8.0 or above is listed.
+Confirm at least one SDK entry at 10.0 or above is listed.
 
 ---
 

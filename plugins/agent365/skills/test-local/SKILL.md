@@ -129,19 +129,20 @@ AskUserQuestion:
 
 After detection, immediately verify the required build tool is installed:
 
-**For .NET** — check `dotnet --version`. If missing or below 8.0:
+**For .NET** — check `dotnet --version`. If missing or below 10.0:
 ```
 AskUserQuestion:
-  question: "dotnet SDK 8.0+ is required but not found. Install it now?"
+  question: "dotnet SDK 10.0+ is required but not found. Install it now?"
   options:
     - "Yes — install it for me"
     - "No — I'll install manually and re-run"
 ```
 If yes, show the appropriate command for the detected OS and ask the user to run it:
 ```
-Windows:      winget install Microsoft.DotNet.SDK.8
+Windows:      winget install Microsoft.DotNet.SDK.10
 macOS:        brew install --cask dotnet-sdk
-Linux:        sudo apt-get update && sudo apt-get install -y dotnet-sdk-8.0
+Linux:        sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+              (Ubuntu 22.04: run `sudo add-apt-repository ppa:dotnet/backports` first)
               (or: https://learn.microsoft.com/en-us/dotnet/core/install/linux)
 All:          https://dotnet.microsoft.com/download
 ```
@@ -406,7 +407,7 @@ To stop: Ctrl+C in the agent terminal.
 | Tool | Required | Install |
 |------|----------|---------|
 | `agentsplayground` | Yes (all stacks) | `npm install -g @microsoft/agentsplayground` |
-| `dotnet` (8.0+) | .NET only | Windows: `winget install Microsoft.DotNet.SDK.8` · macOS: `brew install --cask dotnet-sdk` · Linux: see https://learn.microsoft.com/en-us/dotnet/core/install/linux |
+| `dotnet` (10.0+) | .NET only | Windows: `winget install Microsoft.DotNet.SDK.10` · macOS: `brew install --cask dotnet-sdk` · Linux: see https://learn.microsoft.com/en-us/dotnet/core/install/linux |
 | `node` / `npm` (18+) | All stacks (agentsplayground requires npm) | Windows: `winget install OpenJS.NodeJS.LTS` · macOS: `brew install node` · Linux: `apt install nodejs npm` · https://nodejs.org |
 | `python3` or `python` (3.11+) | Python only | Windows: `winget install Python.Python.3.11` · macOS: `brew install python@3.11` · Linux: `apt install python3.11` · https://python.org |
 

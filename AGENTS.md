@@ -199,7 +199,7 @@ hooks:
 1. Create `skills/<skill-name>/SKILL.md` with the YAML frontmatter above.
 2. Add any reference docs to `skills/<skill-name>/references/`.
 3. Add a validator script to `hooks/stop/validate-<skill-name>.js`.
-4. Skills are auto-discovered from the `skills/` directory — no changes to `plugin.json` needed.
+4. Skills are auto-discovered from the `skills/` directory — no changes to `plugin.json` needed. Do add the skill to the explicit lists that are not auto-discovered: `plugins[0].skills` in `.github/plugin/marketplace.json` (read by `gh skill add`), `plugin_skills` / `$pluginSkills` in `scripts/refresh.sh` / `scripts/refresh.ps1`, and the skill dropdowns in `.github/ISSUE_TEMPLATE/`. `tests/skill-lists-parity.test.js` fails if these drift from `skills/`.
 5. Add eval cases to `evals/agent365/<skill-name>/evals.json`.
 6. Test with: `claude --plugin-dir /path/to/plugins/agent365`
 
